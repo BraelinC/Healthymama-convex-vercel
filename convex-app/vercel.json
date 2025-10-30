@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "app/api/scrape-recipe/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "github": {
+    "silent": true
+  }
+}
