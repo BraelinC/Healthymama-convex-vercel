@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd convex-app && npm ci && npm run build",
+  "devCommand": "cd convex-app && npm run dev",
+  "installCommand": "cd convex-app && npm ci",
+  "outputDirectory": "convex-app/.next",
+  "framework": "nextjs"
+}
