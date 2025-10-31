@@ -7,7 +7,7 @@ interface CompactRecipeCardProps {
   recipe: {
     _id: string;
     title: string;
-    image_url?: string;
+    imageUrl?: string;
   };
   onClick: () => void;
 }
@@ -20,9 +20,9 @@ export function CompactRecipeCard({ recipe, onClick }: CompactRecipeCardProps) {
     >
       {/* Recipe Image */}
       <div className="relative h-40 w-full bg-gray-200 dark:bg-gray-800">
-        {recipe.image_url ? (
+        {recipe.imageUrl ? (
           <ImageWithFallback
-            src={recipe.image_url}
+            src={recipe.imageUrl}
             alt={recipe.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
           />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   ShoppingCart,
@@ -34,7 +34,7 @@ interface GroceryListPanelProps {
 }
 
 // Food category icons mapping
-const categoryIcons: { [key: string]: JSX.Element } = {
+const categoryIcons: { [key: string]: React.JSX.Element } = {
   produce: <Apple className="w-4 h-4 text-green-600" />,
   meat: <Beef className="w-4 h-4 text-red-600" />,
   dairy: <Milk className="w-4 h-4 text-blue-600" />,
@@ -63,7 +63,7 @@ export function GroceryListPanel({ isOpen, onClose, userId }: GroceryListPanelPr
 
   // Group ingredients by category
   const categorizedIngredients: { [key: string]: Ingredient[] } =
-    groceryList?.consolidatedIngredients.reduce((acc, ingredient) => {
+    groceryList?.consolidatedIngredients.reduce((acc: any, ingredient: any) => {
       const category = ingredient.category || 'other';
       if (!acc[category]) {
         acc[category] = [];

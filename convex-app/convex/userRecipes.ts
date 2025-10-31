@@ -16,7 +16,7 @@ export const saveRecipeToUserCookbook = mutation({
     // Recipe data
     title: v.string(),
     description: v.optional(v.string()),
-    image_url: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
     ingredients: v.array(v.string()),
     instructions: v.array(v.string()),
 
@@ -63,7 +63,7 @@ export const saveRecipeToUserCookbook = mutation({
 
       title: args.title,
       description: args.description,
-      image_url: args.image_url,
+      imageUrl: args.imageUrl,
       ingredients: args.ingredients,
       instructions: args.instructions,
 
@@ -278,9 +278,9 @@ export const getCookbookStats = query({
     const result = cookbookCategories.map((category) => {
       const data = stats[category] || { count: 0, recipes: [] };
       const recipeImages = data.recipes
-        .filter((r) => r.image_url)
+        .filter((r) => r.imageUrl)
         .slice(0, 4)
-        .map((r) => r.image_url);
+        .map((r) => r.imageUrl);
 
       return {
         id: category,

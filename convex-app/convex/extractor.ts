@@ -535,7 +535,7 @@ export const saveRecipe = internalMutation({
     url: v.string(),
     title: v.string(),
     description: v.optional(v.string()),
-    image_url: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
     ingredients: v.array(v.string()),
     instructions: v.array(v.string()),
     servings: v.optional(v.string()),
@@ -564,7 +564,7 @@ export const saveRecipe = internalMutation({
       url: args.url,
       title: args.title,
       description: args.description,
-      image_url: args.image_url,
+      imageUrl: args.imageUrl,
       ingredients: args.ingredients,
       instructions: args.instructions,
       servings: args.servings,
@@ -1011,13 +1011,13 @@ export const filterUrlsWithGrok = action({
         throw new Error("OPEN_ROUTER_API_KEY not set");
       }
 
-      // Process in batches of 50 URLs with high parallelization
-      const batchSize = 50;
-      const maxParallelBatches = 30; // Process 30 batches simultaneously for maximum speed
+      // Process in batches of 100 URLs with high parallelization
+      const batchSize = 100;
+      const maxParallelBatches = 50; // Process 50 batches simultaneously for maximum speed
       const allFilteredUrls: string[] = [];
       const totalBatches = Math.ceil(args.urls.length / batchSize);
 
-      console.log(`⚡ [GPT-5 FILTER] Processing ${totalBatches} batches with ${maxParallelBatches} parallel requests`);
+      console.log(`⚡ [gpt-oss-20b FILTER] Processing ${totalBatches} batches with ${maxParallelBatches} parallel requests`);
 
       // Helper function to process a single batch
       const processSingleBatch = async (batch: string[], batchNumber: number, batchStartIndex: number) => {
@@ -1025,57 +1025,22 @@ export const filterUrlsWithGrok = action({
         console.log(`📋 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber}/${totalBatches} START - ${batch.length} URLs (indices ${batchStartIndex}-${batchStartIndex + batch.length})`);
 
         const filterType = args.jobType === "profile" ? "creator profile" : "recipe";
-        const prompt = `You are a URL classifier. Analyze each URL and determine if it's a ${filterType} page.
+        const prompt = `Classify each URL as a ${filterType} page. Return TRUE only for standalone ${filterType} pages with actual content.
 
 URLs to classify (${batch.length} total):
 ${batch.map((url, idx) => `${idx + 1}. ${url}`).join("\n")}
 
-CRITICAL INSTRUCTIONS:
-- DO NOT SKIP ANY URLs - classify all ${batch.length} URLs
-- Return TRUE ONLY if the URL is DEFINITELY a standalone ${filterType} page
-- Return FALSE for:
-  * Blog posts, announcements, personal updates, life stories
-  * Numbered list articles ("24 groceries", "10 ways to")
-  * Category pages, tag pages, about pages, contact pages
-  * Monthly/yearly roundups, favorites lists
-  * Any URL that looks like editorial content rather than a recipe
-- When uncertain, return FALSE (be conservative)
+Rules:
+- Classify all ${batch.length} URLs
+- Return FALSE for: blog posts, numbered lists ("10-ways"), categories, tags, roundups, announcements, lifestyle/personal content
+${args.jobType === "recipe" ? `- Recipe URLs must be single food/dish names only (e.g., "lentil-soup", "chocolate-cookies")
+- Exclude: abstract concepts, temporal references ("in-october"), personal pronouns, lifestyle keywords` : ""}
+- When uncertain, return FALSE
 
-${args.jobType === "recipe" ? `
-RECIPE PAGE INDICATORS (must have ALL of these):
-- URL slug is a SINGLE dish/food name (e.g., "lentil-soup", "chocolate-cookies", "roasted-vegetables")
-- Simple, descriptive food/dish names (1-3 words max)
-- No personal pronouns or lifestyle keywords (our, my, meet, life, etc.)
-- Looks like it would have: ingredients list + cooking instructions + servings
+Output valid JSON only (no markdown):
+{"results": [{"url": "exact_url_here", "is${args.jobType === "profile" ? "Profile" : "Recipe"}": true}]}
 
-NON-RECIPE INDICATORS (immediately exclude if found):
-- Numbers at start ("24-", "10-", "5-ways-")
-- Personal/lifestyle words: introducing, weekend, update, announcement, meet, our-life, guess-what, lunch-date, vacation, blogging
-- Temporal references: "in-october", "september-", monthly/yearly patterns
-- Photo/picture posts: "-pictures", "-photos"
-- Abstract concepts: rhythm, bloom, evolution, thoughts, things, survival, guide, party (when not a food)
-- Compound emotional/lifestyle words: tiny-bloom, slow-fall-rhythm, its-the-little-things
-- Multi-word lifestyle phrases: holiday-survival-guide, the-evolution-of, thoughts-at-three-months
-- Generic blog topics that are NOT food items
-
-CRITICAL: Recipe URLs must be LITERAL FOOD/DISH NAMES ONLY, not:
-- Abstract concepts (rhythm, bloom, thoughts, survival, evolution)
-- Emotional phrases (little things, sad people)
-- Social activities (dinner club, party as an event)
-- Personal reflections or lifestyle content
-
-EXAMPLES:
-✅ TRUE: "lentil-soup", "chocolate-chip-cookies", "roasted-vegetables", "chicken-curry"
-❌ FALSE: "meet-our-office-manager", "sage-in-october", "the-hardest-times", "our-life-without-sugar", "september-lunch-date", "on-full-time-blogging", "slow-fall-rhythm", "tiny-bloom", "the-evolution-of-a-food-photo", "holiday-survival-guide-for-sad-people", "its-the-little-things", "thoughts-at-three-months", "partypartyparty", "dinner-club"
-` : ""}
-
-Output ONLY valid JSON in this exact format (no markdown):
-{"results": [
-  {"url": "exact_url_here", "is${args.jobType === "profile" ? "Profile" : "Recipe"}": true},
-  {"url": "exact_url_here", "is${args.jobType === "profile" ? "Profile" : "Recipe"}": false}
-]}
-
-The JSON must have exactly ${batch.length} entries.`;
+Must have exactly ${batch.length} entries.`;
 
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
@@ -1086,7 +1051,7 @@ The JSON must have exactly ${batch.length} entries.`;
             "X-Title": "HealthyMama Extractor",
           },
           body: JSON.stringify({
-            model: "openai/gpt-5-mini",
+            model: "openai/gpt-oss-20b",
             messages: [
               {
                 role: "system",
@@ -1103,7 +1068,7 @@ The JSON must have exactly ${batch.length} entries.`;
         });
 
         if (!response.ok) {
-          const error = `GPT-5 Mini API error for batch ${batchNumber}: ${response.statusText}`;
+          const error = `gpt-oss-20b API error for batch ${batchNumber}: ${response.statusText}`;
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} FAILED - API returned ${response.status}`);
           throw new Error(error);
         }
@@ -1124,8 +1089,8 @@ The JSON must have exactly ${batch.length} entries.`;
 
         // Validate JSON before parsing
         if (!jsonContent || jsonContent.length === 0) {
-          console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} FAILED - Empty response from GPT-5 Mini`);
-          throw new Error(`Empty response from GPT-5 Mini for batch ${batchNumber}`);
+          console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} FAILED - Empty response from gpt-oss-20b`);
+          throw new Error(`Empty response from gpt-oss-20b for batch ${batchNumber}`);
         }
 
         let parsed;
@@ -1135,7 +1100,7 @@ The JSON must have exactly ${batch.length} entries.`;
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} FAILED - JSON parse error`);
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Raw content preview:`, content.substring(0, 500));
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Parse error:`, parseError.message);
-          throw new Error(`Failed to parse GPT-5 Mini response for batch ${batchNumber}: ${parseError.message}`);
+          throw new Error(`Failed to parse gpt-oss-20b response for batch ${batchNumber}: ${parseError.message}`);
         }
 
         if (parsed.results && Array.isArray(parsed.results)) {
@@ -1436,7 +1401,7 @@ export const continueExtraction = action({
 
       // Filter out already-extracted URLs
       const extractedUrlsList = job.extractedUrlsList || [];
-      const remainingUrls = allUrls.filter(url => !extractedUrlsList.includes(url));
+      const remainingUrls = allUrls.filter((url: any) => !extractedUrlsList.includes(url));
 
       console.log(`📋 [CONTINUE EXTRACTION] Total URLs: ${allUrls.length}, Already extracted: ${extractedUrlsList.length}, Remaining: ${remainingUrls.length}`);
 
@@ -1469,7 +1434,7 @@ export const continueExtraction = action({
 
         // Process all recipes in this batch in parallel
         const batchResults = await Promise.allSettled(
-          batch.map(async (url) => {
+          batch.map(async (url: any) => {
             try {
               await ctx.runAction(api.extractor.extractRecipeFromUrl, {
                 jobId: args.jobId,
@@ -1499,7 +1464,7 @@ export const continueExtraction = action({
           extractedCount: (job.extractedCount || 0) + extractedCount,
         });
 
-        const successCount = batchResults.filter(r => r.status === 'fulfilled' && r.value.success).length;
+        const successCount = batchResults.filter((r: any) => r.status === 'fulfilled' && r.value.success).length;
         console.log(`✅ [CONTINUE EXTRACTION] Batch ${batchNumber} complete: ${successCount}/${batch.length} succeeded`);
       }
 

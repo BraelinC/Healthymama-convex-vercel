@@ -364,7 +364,7 @@ export const embedExtractedRecipe = action({
       community: extractedRecipe.communityId,
       dietTags,
       embedding,
-      imageUrl: extractedRecipe.image_url,
+      imageUrl: extractedRecipe.imageUrl,
       sourceUrl: extractedRecipe.url,
       createdBy: extractedRecipe.userId,
     });

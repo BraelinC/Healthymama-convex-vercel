@@ -115,7 +115,7 @@ export function MealPlanCookbookSelector({
             /* Step 1: Show Cookbook Categories */
             <div className="space-y-3">
               {cookbookStats ? (
-                cookbookStats.map((category) => (
+                cookbookStats.map((category: any) => (
                   <button
                     key={category.id}
                     onClick={() => handleCookbookClick(category.id)}
@@ -176,7 +176,7 @@ export function MealPlanCookbookSelector({
                 </div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {recipes.map((recipe) => (
+                  {recipes.map((recipe: any) => (
                     <CompactRecipeCard
                       key={recipe._id}
                       recipe={recipe}

@@ -9,7 +9,7 @@ interface ExtractedRecipe {
   _id: string;
   title: string;
   description?: string;
-  image_url?: string;
+  imageUrl?: string;
   ingredients: string[];
   instructions: string[];
   prep_time?: string;
@@ -60,7 +60,7 @@ const ExtractedRecipeDisplay = ({ recipe }: ExtractedRecipeDisplayProps) => {
       {/* Recipe Image Section */}
       <div className="relative w-full">
         <img
-          src={imgError ? getFallbackImage() : (recipe.image_url || getFallbackImage())}
+          src={imgError ? getFallbackImage() : (recipe.imageUrl || getFallbackImage())}
           alt={recipe.title}
           className="w-full h-64 object-cover"
           onError={() => setImgError(true)}

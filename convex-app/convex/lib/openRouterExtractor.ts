@@ -53,7 +53,7 @@ JSON Schema:
   "description": "string (optional, short description)",
   "ingredients": ["ingredient 1 with quantity", "ingredient 2 with quantity", ...],
   "instructions": ["step 1", "step 2", "step 3", ...],
-  "image_url": "${imageUrl || ''}",
+  "imageUrl": "${imageUrl || ''}",
   "servings": "string (e.g., '4 servings')",
   "prep_time": "string (e.g., '15 mins')",
   "cook_time": "string (e.g., '30 mins')",
@@ -65,7 +65,7 @@ EXTRACTION RULES:
 2. Ignore any recipes in sidebars, "related recipes", "you might also like", or featured content
 3. List ALL ingredients with their quantities for the MAIN recipe only
 4. Break instructions into clear, sequential steps for the MAIN recipe only
-5. Use the provided image_url value
+5. Use the provided imageUrl value
 6. Extract prep time, cook time, servings if available for the MAIN recipe
 7. If any field is missing, use empty string or empty array
 
@@ -332,7 +332,7 @@ Example bad response: none`;
 
     // Try path suffix matching (compare last 2-3 path segments)
     try {
-      const aiPathSegments = responseText.split('/').filter(s => s && s !== 'http:' && s !== 'https:');
+      const aiPathSegments = responseText.split('/').filter((s: any) => s && s !== 'http:' && s !== 'https:');
       const aiSuffix = aiPathSegments.slice(-3).join('/').toLowerCase();
 
       if (aiSuffix) {

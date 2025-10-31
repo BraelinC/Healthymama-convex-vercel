@@ -384,7 +384,7 @@ export default function ConvexExtractor({ userId, communityId }: ConvexExtractor
 
         title: selectedRecipeForCookbook.title,
         description: selectedRecipeForCookbook.description,
-        image_url: selectedRecipeForCookbook.image_url,
+        imageUrl: selectedRecipeForCookbook.imageUrl,
         ingredients: selectedRecipeForCookbook.ingredients || [],
         instructions: selectedRecipeForCookbook.instructions || [],
 

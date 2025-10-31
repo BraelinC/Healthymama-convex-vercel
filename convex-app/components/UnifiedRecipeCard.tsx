@@ -15,7 +15,7 @@ interface UnifiedRecipeCardProps {
     _id?: string;
     title: string;
     description?: string;
-    image_url?: string;
+    imageUrl?: string;
     ingredients: string[];
     instructions: string[];
     time_minutes?: number;
@@ -85,9 +85,9 @@ export function UnifiedRecipeCard({
       {/* Image Section with Action Buttons Overlay */}
       <div className="relative">
         <div className="relative h-64 w-full bg-gray-200">
-          {recipe.image_url ? (
+          {recipe.imageUrl ? (
             <ImageWithFallback
-              src={recipe.image_url}
+              src={recipe.imageUrl}
               alt={recipe.title}
               className="w-full h-full object-cover"
             />

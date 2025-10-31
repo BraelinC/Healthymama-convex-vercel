@@ -49,7 +49,7 @@ export function CookbooksView() {
   const toggleFavorite = useMutation(api.userRecipes.toggleRecipeFavorite);
 
   const handleCategoryClick = (categoryId: string) => {
-    const category = cookbookStats?.find(c => c.id === categoryId);
+    const category = cookbookStats?.find((c: any) => c.id === categoryId);
     if (category) {
       setSelectedCookbook({ id: categoryId, name: category.name });
       setIsCookbookDetailOpen(true);
@@ -107,7 +107,7 @@ export function CookbooksView() {
 
         title: selectedRecipe.title,
         description: selectedRecipe.description,
-        image_url: selectedRecipe.image_url,
+        imageUrl: selectedRecipe.imageUrl,
         ingredients: selectedRecipe.ingredients || [],
         instructions: selectedRecipe.instructions || [],
 
@@ -190,7 +190,7 @@ export function CookbooksView() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {cookbookStats ? (
                   <>
-                    {cookbookStats.map((category) => (
+                    {cookbookStats.map((category: any) => (
                       <CookbookCategoryCard
                         key={category.id}
                         name={category.name}

@@ -16,7 +16,7 @@ interface CookbookSelectionSheetProps {
   onClose: () => void;
   recipe: {
     title: string;
-    image_url?: string;
+    imageUrl?: string;
   };
   onSelectCookbook: (cookbookId: string, cookbookName: string) => void;
 }
@@ -51,9 +51,9 @@ export function CookbookSelectionSheet({
         {/* Recipe Preview */}
         <div className="mt-6 mb-4 flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
           <div className="w-20 h-20 rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-700 flex-shrink-0">
-            {recipe.image_url ? (
+            {recipe.imageUrl ? (
               <ImageWithFallback
-                src={recipe.image_url}
+                src={recipe.imageUrl}
                 alt={recipe.title}
                 className="w-full h-full object-cover"
               />

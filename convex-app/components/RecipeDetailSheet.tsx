@@ -69,7 +69,7 @@ export function RecipeDetailSheet({
 
         title: recipe.title,
         description: recipe.description,
-        image_url: recipe.image_url,
+        imageUrl: recipe.imageUrl,
         ingredients: recipe.ingredients || [],
         instructions: recipe.instructions || [],
 

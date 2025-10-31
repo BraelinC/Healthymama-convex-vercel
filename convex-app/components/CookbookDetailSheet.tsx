@@ -79,7 +79,7 @@ export function CookbookDetailSheet({
 
         title: selectedRecipe.title,
         description: selectedRecipe.description,
-        image_url: selectedRecipe.image_url,
+        imageUrl: selectedRecipe.imageUrl,
         ingredients: selectedRecipe.ingredients || [],
         instructions: selectedRecipe.instructions || [],
 
@@ -156,7 +156,7 @@ export function CookbookDetailSheet({
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {recipes.map((recipe) => (
+                {recipes.map((recipe: any) => (
                   <CompactRecipeCard
                     key={recipe._id}
                     recipe={recipe}

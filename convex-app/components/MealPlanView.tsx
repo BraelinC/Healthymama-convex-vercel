@@ -150,13 +150,13 @@ export function MealPlanView({ userId }: MealPlanViewProps) {
 
       // Find meals for this day if mealPlanData exists
       if (mealPlanData) {
-        mealPlanData.forEach((entry) => {
+        mealPlanData.forEach((entry: any) => {
           if (entry.dayNumber === i && entry.recipe) {
             const mealEntry = {
               ...entry.recipe,
               mealPlanId: entry._id, // Store mealPlanId for removal
             };
-            dayMeals.meals[entry.mealType].push(mealEntry);
+            (dayMeals.meals as any)[entry.mealType].push(mealEntry);
           }
         });
       }

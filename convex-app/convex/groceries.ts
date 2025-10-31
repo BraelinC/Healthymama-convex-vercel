@@ -472,7 +472,7 @@ export const createInstacartShoppingList = action({
         },
         body: JSON.stringify({
           title: "Your Meal Plan Grocery List",
-          image_url: "",
+          imageUrl: "",
           link_type: "recipe",
           instructions: ["Shop for these ingredients for your meal plan."],
           ingredients: ingredients,

@@ -312,7 +312,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
         `;
         
         // Capture photo function
-        const capturePhoto = (e) => {
+        const capturePhoto = (e: any) => {
           e.preventDefault();
           e.stopPropagation();
           
@@ -343,7 +343,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
         captureBtn.ontouchend = capturePhoto;
         
         // Cancel function
-        const cancelCapture = (e) => {
+        const cancelCapture = (e: any) => {
           e.preventDefault();
           e.stopPropagation();
           stream.getTracks().forEach(track => track.stop());

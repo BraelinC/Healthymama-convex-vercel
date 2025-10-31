@@ -217,6 +217,15 @@ export default function ConvexCommunityChat({
   //   };
   // }, [selectedSessionId, userId, tempSessionId, finalizeThread]);
 
+  // Clear state when switching sessions
+  useEffect(() => {
+    // Clear recipe and streaming state when session changes
+    setCurrentRecipes([]);
+    setStreamingMessage("");
+    setSelectedRecipe(null);
+    console.log("[CHAT] Session changed, clearing state");
+  }, [selectedSessionId]);
+
   // Auto-scroll functions
   const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -243,6 +252,11 @@ export default function ConvexCommunityChat({
 
   // Handlers
   const handleCreateSession = async () => {
+    // Clear any lingering state from previous sessions
+    setCurrentRecipes([]);
+    setStreamingMessage("");
+    setSelectedRecipe(null);
+
     const sessionId = await createSession({
       userId,
       communityId,
@@ -598,7 +612,7 @@ export default function ConvexCommunityChat({
 
         title: selectedRecipeForCookbook.name || selectedRecipeForCookbook.title,
         description: selectedRecipeForCookbook.description,
-        image_url: selectedRecipeForCookbook.imageUrl || selectedRecipeForCookbook.image_url,
+        imageUrl: selectedRecipeForCookbook.imageUrl,
         ingredients: selectedRecipeForCookbook.ingredients || [],
         instructions: selectedRecipeForCookbook.steps || selectedRecipeForCookbook.instructions || [],
 
@@ -666,6 +680,11 @@ export default function ConvexCommunityChat({
                 <button
                   key={session._id}
                   onClick={async () => {
+                    // Clear state from previous session
+                    setCurrentRecipes([]);
+                    setStreamingMessage("");
+                    setSelectedRecipe(null);
+
                     setSelectedSessionId(session._id);
                     setShowMobileMenu(false);
 

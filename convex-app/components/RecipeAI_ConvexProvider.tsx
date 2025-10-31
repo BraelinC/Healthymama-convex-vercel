@@ -73,7 +73,9 @@ export function RecipeAI_ConvexProvider({ children }: Props) {
   }));
 
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+    >
       <QueryClientProvider client={queryClient}>
         <ConvexProviderWithDebug>{children}</ConvexProviderWithDebug>
       </QueryClientProvider>
