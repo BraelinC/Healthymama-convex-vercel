@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"npx convex dev\" \"next dev\"",
+    "prebuild": "npx convex codegen",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
