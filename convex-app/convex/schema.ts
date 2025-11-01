@@ -125,6 +125,9 @@ export default defineSchema({
       timestamp: v.number(),
     }))),
 
+    // Retry tracking
+    retryCount: v.optional(v.number()),
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })

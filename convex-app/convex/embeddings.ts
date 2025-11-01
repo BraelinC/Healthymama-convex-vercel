@@ -2,7 +2,7 @@
 
 import { action } from "./_generated/server";
 import { v } from "convex/values";
-import { updateMessageEmbedding, EMBEDDING_MODEL } from "./messages";
+import { updateMessageEmbedding, EMBEDDING_MODEL } from "./chat/messages";
 
 async function generateEmbedding(text: string): Promise<number[]> {
   const apiKey = process.env.OPENAI_API_KEY;

@@ -411,7 +411,9 @@ export const markChunkComplete = internalMutation({
     }
 
     const completedChunks = (job.completedChunks || 0) + 1;
-    console.log(`✅ [CHUNK TRACKING] Chunk ${args.chunkNumber} complete. Progress: ${completedChunks}/${job.totalChunks}`);
+    const failedChunksCount = (job.failedChunks || []).length;
+    const totalProcessed = completedChunks + failedChunksCount;
+    console.log(`✅ [CHUNK TRACKING] Chunk ${args.chunkNumber} complete. Progress: ${completedChunks}/${job.totalChunks} (${failedChunksCount} failed)`);
 
     // Update completion count
     await ctx.db.patch(args.jobId, {
@@ -419,9 +421,9 @@ export const markChunkComplete = internalMutation({
       updatedAt: Date.now(),
     });
 
-    // If all chunks are done, move to awaiting_confirmation
-    if (completedChunks >= (job.totalChunks || 0)) {
-      console.log(`🎉 [CHUNK TRACKING] All chunks complete! Moving to awaiting_confirmation`);
+    // If all chunks are done (completed OR failed), move to awaiting_confirmation
+    if (totalProcessed >= (job.totalChunks || 0)) {
+      console.log(`🎉 [CHUNK TRACKING] All chunks processed! ${completedChunks} succeeded, ${failedChunksCount} failed. Moving to awaiting_confirmation`);
 
       // Count total filtered URLs
       const urlBatches = await ctx.db
@@ -477,8 +479,40 @@ export const recordFailedChunk = internalMutation({
     const completedChunks = job.completedChunks || 0;
     const totalChunks = job.totalChunks || 1;
     const failureRate = failedChunks.length / totalChunks;
+    const totalProcessed = completedChunks + failedChunks.length;
 
-    if (failureRate > 0.5) {
+    console.log(`⚠️ [COMPLETION CHECK] After chunk ${args.chunkNumber} failure: ${totalProcessed}/${totalChunks} processed (${completedChunks} success, ${failedChunks.length} failed)`);
+
+    // Check if all chunks are done (completed + failed)
+    if (totalProcessed >= totalChunks) {
+      if (failureRate > 0.5) {
+        // Too many failures - mark as failed
+        console.error(`🚨 [CHUNK TRACKING] All chunks processed but too many failures (${failedChunks.length}/${totalChunks}), marking job as failed`);
+        await ctx.db.patch(args.jobId, {
+          status: "failed",
+          error: `Too many chunk failures: ${failedChunks.length} out of ${totalChunks} chunks failed`,
+          updatedAt: Date.now(),
+        });
+      } else {
+        // Some failures but acceptable - move to awaiting_confirmation
+        console.log(`🎉 [CHUNK TRACKING] All chunks processed! ${completedChunks} succeeded, ${failedChunks.length} failed (${Math.round(failureRate * 100)}% failure rate). Moving to awaiting_confirmation`);
+
+        // Count total filtered URLs from database
+        const urlBatches = await ctx.db
+          .query("extractedUrls")
+          .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+          .collect();
+
+        const totalFilteredUrls = urlBatches.flatMap((batch) => batch.urls).length;
+
+        await ctx.db.patch(args.jobId, {
+          status: "awaiting_confirmation",
+          totalUrls: totalFilteredUrls,
+          updatedAt: Date.now(),
+        });
+      }
+    } else if (failureRate > 0.5) {
+      // Not all chunks done yet, but already too many failures - mark as failed early
       console.error(`🚨 [CHUNK TRACKING] Too many failures (${failedChunks.length}/${totalChunks}), marking job as failed`);
       await ctx.db.patch(args.jobId, {
         status: "failed",
@@ -486,6 +520,169 @@ export const recordFailedChunk = internalMutation({
         updatedAt: Date.now(),
       });
     }
+  },
+});
+
+/**
+ * Retry all failed chunks for a job
+ */
+export const retryFailedChunks = mutation({
+  args: {
+    jobId: v.id("extractionJobs"),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+
+    const failedChunks = job.failedChunks || [];
+    if (failedChunks.length === 0) {
+      console.log(`⚠️ [RETRY] No failed chunks to retry for job ${args.jobId}`);
+      return { retriedCount: 0 };
+    }
+
+    // Check retry limit
+    const retryCount = (job.retryCount || 0) + 1;
+    if (retryCount > 3) {
+      console.error(`🚨 [RETRY] Max retry limit reached (3) for job ${args.jobId}`);
+      throw new Error("Maximum retry limit (3) reached for this job");
+    }
+
+    console.log(`🔄 [RETRY] Retrying ${failedChunks.length} failed chunks for job ${args.jobId} (retry ${retryCount}/3)`);
+
+    // Get the full URL list from the raw URLs table
+    const rawUrlBatches = await ctx.db
+      .query("rawExtractedUrls")
+      .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+      .collect();
+
+    const allRawUrls = rawUrlBatches.flatMap((batch) => batch.urls);
+
+    // Clear failed chunks array and increment retry count
+    await ctx.db.patch(args.jobId, {
+      failedChunks: [],
+      retryCount,
+      updatedAt: Date.now(),
+    });
+
+    // Schedule retry for each failed chunk
+    for (const failedChunk of failedChunks) {
+      const chunkUrls = allRawUrls.slice(failedChunk.startIndex, failedChunk.endIndex);
+
+      console.log(`🔄 [RETRY] Rescheduling chunk ${failedChunk.chunkNumber}: URLs ${failedChunk.startIndex}-${failedChunk.endIndex}`);
+
+      // Schedule the chunk for reprocessing
+      await ctx.scheduler.runAfter(0, internal.extractor.filterUrlsWithGrok, {
+        jobId: args.jobId,
+        urls: chunkUrls,
+        jobType: job.jobType as "profile" | "recipe",
+        chunkNumber: failedChunk.chunkNumber,
+        totalChunks: job.totalChunks || failedChunks.length,
+        startIndex: failedChunk.startIndex,
+        endIndex: failedChunk.endIndex,
+      });
+    }
+
+    console.log(`✅ [RETRY] Scheduled ${failedChunks.length} chunks for retry`);
+
+    return { retriedCount: failedChunks.length };
+  },
+});
+
+/**
+ * Retry a single failed chunk (for more granular control)
+ */
+export const retrySingleChunk = mutation({
+  args: {
+    jobId: v.id("extractionJobs"),
+    chunkNumber: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+
+    const failedChunks = job.failedChunks || [];
+    const chunkToRetry = failedChunks.find((c: any) => c.chunkNumber === args.chunkNumber);
+
+    if (!chunkToRetry) {
+      throw new Error(`Failed chunk ${args.chunkNumber} not found`);
+    }
+
+    console.log(`🔄 [RETRY] Retrying single chunk ${args.chunkNumber}: URLs ${chunkToRetry.startIndex}-${chunkToRetry.endIndex}`);
+
+    // Get the URL slice for this chunk
+    const rawUrlBatches = await ctx.db
+      .query("rawExtractedUrls")
+      .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+      .collect();
+
+    const allRawUrls = rawUrlBatches.flatMap((batch) => batch.urls);
+    const chunkUrls = allRawUrls.slice(chunkToRetry.startIndex, chunkToRetry.endIndex);
+
+    // Remove this chunk from failed chunks array
+    const updatedFailedChunks = failedChunks.filter((c: any) => c.chunkNumber !== args.chunkNumber);
+    await ctx.db.patch(args.jobId, {
+      failedChunks: updatedFailedChunks,
+      updatedAt: Date.now(),
+    });
+
+    // Schedule the chunk for reprocessing
+    await ctx.scheduler.runAfter(0, internal.extractor.filterUrlsWithGrok, {
+      jobId: args.jobId,
+      urls: chunkUrls,
+      jobType: job.jobType as "profile" | "recipe",
+      chunkNumber: chunkToRetry.chunkNumber,
+      totalChunks: job.totalChunks || failedChunks.length,
+      startIndex: chunkToRetry.startIndex,
+      endIndex: chunkToRetry.endIndex,
+    });
+
+    console.log(`✅ [RETRY] Scheduled chunk ${args.chunkNumber} for retry`);
+
+    return { success: true };
+  },
+});
+
+/**
+ * Get job completion status for debugging
+ */
+export const getJobCompletionStatus = query({
+  args: {
+    jobId: v.id("extractionJobs"),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) {
+      return null;
+    }
+
+    const completedChunks = job.completedChunks || 0;
+    const failedChunks = job.failedChunks || [];
+    const totalChunks = job.totalChunks || 0;
+    const totalProcessed = completedChunks + failedChunks.length;
+    const failureRate = totalChunks > 0 ? failedChunks.length / totalChunks : 0;
+
+    return {
+      jobId: args.jobId,
+      status: job.status,
+      completedChunks,
+      failedChunksCount: failedChunks.length,
+      failedChunks: failedChunks.map((chunk: any) => ({
+        chunkNumber: chunk.chunkNumber,
+        urlRange: `${chunk.startIndex}-${chunk.endIndex}`,
+        error: chunk.error,
+        timestamp: chunk.timestamp,
+      })),
+      totalChunks,
+      totalProcessed,
+      isComplete: totalProcessed >= totalChunks,
+      shouldTransition: totalProcessed >= totalChunks && job.status === "filtering",
+      failureRate: Math.round(failureRate * 100),
+      progressPercent: totalChunks > 0 ? Math.round((totalProcessed / totalChunks) * 100) : 0,
+    };
   },
 });
 
@@ -1005,7 +1202,69 @@ export const filterUrlsWithGrok = action({
     console.log(`🔍 [GPT-5 FILTER ${chunkInfo}] START - Filtering ${args.urls.length} URLs for ${args.jobType}s`);
     console.log(`📍 [GPT-5 FILTER ${chunkInfo}] URL range: ${args.startIndex}-${args.endIndex}`);
 
-    try {
+    // Retry configuration
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second
+    let lastError: any = null;
+
+    // Retry loop with exponential backoff
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 1) {
+          const delay = baseDelay * Math.pow(2, attempt - 2); // 1s, 2s, 4s
+          console.log(`🔄 [GPT-5 FILTER ${chunkInfo}] Retry attempt ${attempt}/${maxRetries} after ${delay}ms delay`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        // Main processing logic wrapped in try block
+        const result = await processChunk(ctx, args, chunkInfo);
+
+        // Success! Return the result
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Attempt ${attempt}/${maxRetries} failed:`, error.message);
+
+        // If this was the last attempt, break out to record the failure
+        if (attempt === maxRetries) {
+          break;
+        }
+
+        // Otherwise, continue to next retry attempt
+      }
+    }
+
+    // All retries exhausted - record the failure
+    const chunkDuration = Date.now() - startTime;
+    console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] FAILED after ${maxRetries} attempts (${chunkDuration}ms) - Error:`, lastError);
+
+    // Record failed chunk for debugging
+    if (args.chunkNumber) {
+      await ctx.runMutation(internal.extractor.recordFailedChunk, {
+        jobId: args.jobId,
+        chunkNumber: args.chunkNumber,
+        startIndex: args.startIndex || 0,
+        endIndex: args.endIndex || args.urls.length,
+        error: lastError.message,
+      });
+    } else {
+      // Legacy mode failure
+      await ctx.runMutation(internal.extractor.updateJobProgress, {
+        jobId: args.jobId,
+        status: "failed",
+        error: lastError.message,
+      });
+    }
+
+    throw lastError;
+  },
+});
+
+/**
+ * Helper function to process a chunk (extracted for retry logic)
+ */
+async function processChunk(ctx: any, args: any, chunkInfo: string) {
+      const startTime = Date.now();
       const apiKey = process.env.OPEN_ROUTER_API_KEY;
       if (!apiKey) {
         throw new Error("OPEN_ROUTER_API_KEY not set");
@@ -1100,7 +1359,22 @@ Must have exactly ${batch.length} entries.`;
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} FAILED - JSON parse error`);
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Raw content preview:`, content.substring(0, 500));
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Parse error:`, parseError.message);
-          throw new Error(`Failed to parse gpt-oss-20b response for batch ${batchNumber}: ${parseError.message}`);
+
+          // Attempt fallback: Extract JSON object from potentially truncated response
+          console.log(`🔄 [GPT-5 FILTER ${chunkInfo}] Attempting JSON recovery via regex extraction...`);
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              parsed = JSON.parse(jsonMatch[0]);
+              console.log(`✅ [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} - Successfully recovered partial JSON`);
+            } catch (recoveryError: any) {
+              console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] JSON recovery also failed:`, recoveryError.message);
+              throw new Error(`Failed to parse gpt-oss-20b response for batch ${batchNumber}: ${parseError.message}. Recovery attempt also failed: ${recoveryError.message}`);
+            }
+          } else {
+            console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] No JSON object found in response`);
+            throw new Error(`Failed to parse gpt-oss-20b response for batch ${batchNumber}: ${parseError.message}. No JSON object found.`);
+          }
         }
 
         if (parsed.results && Array.isArray(parsed.results)) {
@@ -1196,32 +1470,7 @@ Must have exactly ${batch.length} entries.`;
         filteredUrls: allFilteredUrls,
         count: allFilteredUrls.length,
       };
-    } catch (error: any) {
-      const chunkDuration = Date.now() - startTime;
-      console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] FAILED after ${chunkDuration}ms - Error:`, error);
-
-      // Record failed chunk for debugging
-      if (args.chunkNumber) {
-        await ctx.runMutation(internal.extractor.recordFailedChunk, {
-          jobId: args.jobId,
-          chunkNumber: args.chunkNumber,
-          startIndex: args.startIndex || 0,
-          endIndex: args.endIndex || args.urls.length,
-          error: error.message,
-        });
-      } else {
-        // Legacy mode failure
-        await ctx.runMutation(internal.extractor.updateJobProgress, {
-          jobId: args.jobId,
-          status: "failed",
-          error: error.message,
-        });
-      }
-
-      throw error;
-    }
-  },
-});
+}
 
 /**
  * Step 3: Extract recipe data with 3-pronged approach

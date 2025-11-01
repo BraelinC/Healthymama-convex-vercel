@@ -4,7 +4,7 @@
  * This file contains one-time migration scripts for updating the database schema.
  */
 
-import { internalMutation } from "./_generated/server";
+import { internalMutation, action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
@@ -181,3 +181,37 @@ export const migrateUserRecipesImageUrl = internalMutation({
   },
 });
 
+/**
+ * TEMPORARY: Public action to run extractedRecipes migration
+ * This allows running the migration from the CLI without deploying internal mutations
+ */
+export const runExtractedRecipesMigration = action({
+  args: {},
+  handler: async (ctx) => {
+    console.log("🚀 [MIGRATION RUNNER] Starting extractedRecipes migration...");
+
+    const result = await ctx.runMutation(internal.migrations.migrateExtractedRecipesImageUrl, {
+      batchSize: 100,
+    });
+
+    console.log("✅ [MIGRATION RUNNER] Migration complete:", result);
+    return result;
+  },
+});
+
+/**
+ * TEMPORARY: Public action to run userRecipes migration
+ */
+export const runUserRecipesMigration = action({
+  args: {},
+  handler: async (ctx) => {
+    console.log("🚀 [MIGRATION RUNNER] Starting userRecipes migration...");
+
+    const result = await ctx.runMutation(internal.migrations.migrateUserRecipesImageUrl, {
+      batchSize: 100,
+    });
+
+    console.log("✅ [MIGRATION RUNNER] Migration complete:", result);
+    return result;
+  },
+});
