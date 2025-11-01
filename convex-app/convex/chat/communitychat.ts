@@ -276,7 +276,7 @@ export const generateSessionTitle = action({
   },
   handler: async (ctx, args) => {
     // Get first 4 messages (2 user + 2 assistant typically)
-    const messages = await ctx.runQuery(api.communitychat.getSessionMessages, {
+    const messages = await ctx.runQuery(api.chat.communitychat.getSessionMessages, {
       sessionId: args.sessionId,
       limit: 4,
     });
@@ -336,7 +336,7 @@ export const generateSessionTitle = action({
 
       if (generatedTitle && generatedTitle !== "New Chat") {
         // Update session title
-        await ctx.runMutation(api.communitychat.updateSessionTitle, {
+        await ctx.runMutation(api.chat.communitychat.updateSessionTitle, {
           sessionId: args.sessionId,
           title: generatedTitle,
         });
@@ -394,7 +394,7 @@ export const sendChatMessage = action({
     });
 
     // Get conversation history
-    const history = await ctx.runQuery(api.communitychat.getSessionMessages, {
+    const history = await ctx.runQuery(api.chat.communitychat.getSessionMessages, {
       sessionId: args.sessionId,
       limit: 50,
     });

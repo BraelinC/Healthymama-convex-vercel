@@ -482,7 +482,7 @@ async function checkAndTriggerThreadSummary(
 //
 //     try {
 //       // Get recent messages
-//       const messages = await ctx.runQuery(api.communitychat.getSessionMessages, {
+//       const messages = await ctx.runQuery(api.chat.communitychat.getSessionMessages, {
 //         sessionId: args.sessionId,
 //         limit: args.messageCount,
 //       });
@@ -541,7 +541,7 @@ async function checkAndTriggerThreadSummary(
 // export const finalizeThreadOnExit = action({
 //   args: { sessionId: v.id("chatSessions"), userId: v.string() },
 //   handler: async (ctx, args) => {
-//     const messages = await ctx.runQuery(api.communitychat.getSessionMessages, {
+//     const messages = await ctx.runQuery(api.chat.communitychat.getSessionMessages, {
 //       sessionId: args.sessionId,
 //     });
 //

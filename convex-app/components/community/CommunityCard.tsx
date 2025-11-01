@@ -2,7 +2,7 @@
 
 import { Star, Users, ChefHat, DollarSign, BookOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { ImageWithFallback } from "./ImageWithFallback";
+import { ImageWithFallback } from "../shared/ImageWithFallback";
 
 interface CommunityCardProps {
   name: string;

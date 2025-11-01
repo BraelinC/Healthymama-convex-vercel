@@ -8,7 +8,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { CompactRecipeCard } from "./CompactRecipeCard";
+import { CompactRecipeCard } from "../recipe/CompactRecipeCard";
 import { useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,13 +43,13 @@ export function MealPlanCookbookSelector({
 
   // Fetch cookbook stats (categories)
   const cookbookStats = useQuery(
-    api.userRecipes.getCookbookStats,
+    api.recipes.userRecipes.getCookbookStats,
     userId ? { userId } : "skip"
   );
 
   // Fetch recipes for selected cookbook
   const recipes = useQuery(
-    api.userRecipes.getUserRecipesByCookbook,
+    api.recipes.userRecipes.getUserRecipesByCookbook,
     selectedCookbook && userId
       ? { userId, cookbookCategory: selectedCookbook }
       : "skip"

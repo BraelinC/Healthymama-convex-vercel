@@ -1,6 +1,6 @@
 "use client";
 
-import { ImageWithFallback } from "./ImageWithFallback";
+import { ImageWithFallback } from "../shared/ImageWithFallback";
 
 interface CookbookCategoryCardProps {
   name: string;

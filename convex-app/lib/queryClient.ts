@@ -1,5 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { buildApiUrl } from "../config/api";
+import { buildApiUrl } from "./apiUtils";
 
 // Centralized API request function with robust error handling and auto token refresh
 export async function apiRequest(

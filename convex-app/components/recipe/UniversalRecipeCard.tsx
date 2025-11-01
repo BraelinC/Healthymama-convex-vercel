@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ImageWithFallback } from "./ImageWithFallback";
+import { ImageWithFallback } from "../shared/ImageWithFallback";
 import { Plus, Share2, Heart, Clock, ShoppingCart } from "lucide-react";
 
 interface UniversalRecipeCardProps {

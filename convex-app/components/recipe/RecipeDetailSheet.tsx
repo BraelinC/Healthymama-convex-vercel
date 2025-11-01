@@ -32,8 +32,8 @@ export function RecipeDetailSheet({
   const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
 
   // Mutations
-  const toggleFavorite = useMutation(api.userRecipes.toggleRecipeFavorite);
-  const saveRecipe = useMutation(api.userRecipes.saveRecipeToUserCookbook);
+  const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
+  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
 
   const handleToggleFavorite = async () => {
     if (!userId || !recipe._id) return;

@@ -55,7 +55,7 @@ export default function ConvexExtractor({ userId, communityId }: ConvexExtractor
   const [selectedRecipeForCookbook, setSelectedRecipeForCookbook] = useState<any>(null);
 
   // Mutations for saving recipes
-  const saveRecipe = useMutation(api.userRecipes.saveRecipeToUserCookbook);
+  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
   const [enrichResult, setEnrichResult] = useState<{
     total: number;
     successCount: number;
@@ -145,13 +145,13 @@ export default function ConvexExtractor({ userId, communityId }: ConvexExtractor
   const deleteAllData = useMutation(api.extractor.deleteAllExtractionData);
 
   // Action: Embed recipes to vector database
-  const embedJobRecipes = useAction(api.recipeEmbeddings.embedJobRecipes);
+  const embedJobRecipes = useAction(api.recipes.recipeEmbeddings.embedJobRecipes);
 
   // Action: Enrich recipes with AI tags
-  const enrichJobRecipes = useAction(api.enrichExistingRecipes.enrichRecipesByJobId);
+  const enrichJobRecipes = useAction(api.recipes.enrichExistingRecipes.enrichRecipesByJobId);
 
   // Mutation: Clear embedded recipes (for re-embedding with new schema)
-  const deleteRecipesForCommunity = useMutation(api.recipeMaintenance.deleteRecipesForCommunity);
+  const deleteRecipesForCommunity = useMutation(api.recipes.recipeMaintenance.deleteRecipesForCommunity);
 
   const handleExtract = async () => {
     if (!sourceUrl.trim() || !userId) return;
