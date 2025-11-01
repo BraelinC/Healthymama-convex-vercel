@@ -5,7 +5,7 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from "./ui/sheet";
+} from "@/components/ui/sheet";
 import { CompactRecipeCard } from "./CompactRecipeCard";
 import { RecipeDetailSheet } from "./RecipeDetailSheet";
 import { Heart } from "lucide-react";

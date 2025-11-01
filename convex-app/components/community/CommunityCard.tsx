@@ -1,7 +1,7 @@
 "use client";
 
 import { Star, Users, ChefHat, DollarSign, BookOpen } from "lucide-react";
-import { Badge } from "./ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { ImageWithFallback } from "./ImageWithFallback";
 
 interface CommunityCardProps {

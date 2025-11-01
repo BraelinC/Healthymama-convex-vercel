@@ -7,11 +7,11 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from "./ui/sheet";
+} from "@/components/ui/sheet";
 import { CompactRecipeCard } from "./CompactRecipeCard";
 import { useState } from "react";
 import { ChevronLeft } from "lucide-react";
-import { Button } from "./ui/button";
+import { Button } from "@/components/ui/button";
 
 interface MealPlanCookbookSelectorProps {
   isOpen: boolean;
