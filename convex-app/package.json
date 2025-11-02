@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npx convex dev\" \"next dev\"",
+    "dev": "concurrently \"npx convex dev\" \"next dev -p 5000 -H 0.0.0.0\"",
     "prebuild": "npx convex codegen",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 5000 -H 0.0.0.0",
     "lint": "next lint",
     "deploy": "npx convex deploy && vercel --prod"
   },
