@@ -37,3 +37,9 @@ next-env.d.ts
 # Convex
 .convex/
 _generated/
+
+# Replit
+.replit
+replit.nix
+.config/
+replit.md
