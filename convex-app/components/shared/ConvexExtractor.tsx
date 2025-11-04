@@ -55,7 +55,7 @@ export default function ConvexExtractor({ userId, communityId }: ConvexExtractor
   const [selectedRecipeForCookbook, setSelectedRecipeForCookbook] = useState<any>(null);
 
   // Mutations for saving recipes
-  const saveRecipe = useMutation(api.userRecipes.saveRecipeToUserCookbook);
+  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
   const [enrichResult, setEnrichResult] = useState<{
     total: number;
     successCount: number;

@@ -44,13 +44,13 @@ export function CookbookDetailSheet({
 
   // Fetch recipes for this cookbook
   const recipes = useQuery(
-    api.userRecipes.getUserRecipesByCookbook,
+    api.recipes.userRecipes.getUserRecipesByCookbook,
     isOpen && userId ? { userId, cookbookCategory: cookbookId } : "skip"
   );
 
   // Mutations
-  const toggleFavorite = useMutation(api.userRecipes.toggleRecipeFavorite);
-  const saveRecipe = useMutation(api.userRecipes.saveRecipeToUserCookbook);
+  const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
+  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
 
   const handleToggleFavorite = async (recipeId: string) => {
     if (!userId) return;

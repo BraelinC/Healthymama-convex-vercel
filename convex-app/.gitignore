@@ -37,3 +37,17 @@ next-env.d.ts
 # Convex
 .convex/
 _generated/
+
+# UI Preview Lab - Generated Components (Experimental)
+# AI-generated components stay here until explicitly approved for production.
+# Only commit when you move them to components/ directory.
+app/ui-preview/components/*.tsx
+app/ui-preview/components/*.ts
+app/ui-preview/components/*.jsx
+app/ui-preview/components/*.js
+app/ui-preview/pages/
+
+# Keep UI Preview infrastructure and docs
+!app/ui-preview/components/README.md
+!app/ui-preview/page.tsx
+!app/ui-preview/layout.tsx
