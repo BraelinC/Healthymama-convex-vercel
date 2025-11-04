@@ -64,7 +64,7 @@ export const retrieveMemoryContext = action({
       // Tier 1: Recent conversation messages (if requested)
       let recentMessages: any[] = [];
       if (includeRecent && args.sessionId) {
-        recentMessages = await ctx.runQuery(api.chat.communitychat.getSessionMessages, {
+        recentMessages = await ctx.runQuery(api.communitychat.getSessionMessages, {
           sessionId: args.sessionId,
           limit: 10,
         });
@@ -331,7 +331,7 @@ export const retrieveMemoryByIntent = action({
         // 2. Get recent session messages
         if (args.sessionId) {
           results.recentMessages = await ctx.runQuery(
-            api.chat.communitychat.getSessionMessages,
+            api.communitychat.getSessionMessages,
             {
               sessionId: args.sessionId,
               limit: 5,
@@ -402,7 +402,7 @@ export const retrieveMemoryByIntent = action({
         // 4. Recent messages (Tier 1) - immediate context
         if (args.sessionId) {
           results.recentMessages = await ctx.runQuery(
-            api.chat.communitychat.getSessionMessages,
+            api.communitychat.getSessionMessages,
             {
               sessionId: args.sessionId,
               limit: 5,

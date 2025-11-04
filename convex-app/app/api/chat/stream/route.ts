@@ -52,13 +52,13 @@ export async function POST(req: NextRequest) {
       // Save user message to Convex (skip for recipe selections)
       isRecipeSelection
         ? Promise.resolve(undefined) // Don't save message for recipe selections
-        : convex.mutation(api.chat.communitychat.addMessage, {
+        : convex.mutation(api.communitychat.addMessage, {
             sessionId: sessionId as Id<"chatSessions">,
             role: "user",
             content: message,
           }),
       // Get session messages for context
-      convex.query(api.chat.communitychat.getSessionMessages, {
+      convex.query(api.communitychat.getSessionMessages, {
         sessionId: sessionId as Id<"chatSessions">,
       }),
       // Load custom system prompt (if user has one saved)
@@ -776,7 +776,7 @@ export async function POST(req: NextRequest) {
 
               // Save complete assistant response to Convex with recipe metadata
               const assistantMessageId = await convex.mutation(
-                api.chat.communitychat.addMessage,
+                api.communitychat.addMessage,
                 {
                   sessionId: sessionId as Id<"chatSessions">,
                   role: "assistant",
@@ -795,7 +795,7 @@ export async function POST(req: NextRequest) {
               if (userMessageCount === 2) {
                 console.log("[AutoTitle] Triggering auto-naming after 2nd user message");
                 convex
-                  .action(api.chat.communitychat.generateSessionTitle, {
+                  .action(api.communitychat.generateSessionTitle, {
                     sessionId: sessionId as Id<"chatSessions">,
                   })
                   .then(() => {

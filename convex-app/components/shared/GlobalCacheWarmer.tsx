@@ -25,7 +25,7 @@ export function GlobalCacheWarmer() {
 
   // Get user's sessions (sorted by most recent)
   const sessions = useQuery(
-    api.chat.communitychat.listSessions,
+    api.communitychat.listSessions,
     userId && isSignedIn ? { userId, communityId: "community_1" } : "skip"
   );
 

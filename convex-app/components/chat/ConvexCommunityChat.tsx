@@ -61,11 +61,11 @@ export default function ConvexCommunityChat({
 
   // Convex hooks
   const sessions = useQuery(
-    api.chat.communitychat.listSessions,
+    api.communitychat.listSessions,
     userId ? { userId, communityId } : "skip"
   );
   const aiSettings = useQuery(
-    api.chat.communitychat.getAISettings,
+    api.communitychat.getAISettings,
     userId ? { userId } : "skip"
   );
   const customPrompt = useQuery(
@@ -73,11 +73,11 @@ export default function ConvexCommunityChat({
     userId ? { userId } : "skip"
   );
   const messages = useQuery(
-    api.chat.communitychat.getSessionMessages,
+    api.communitychat.getSessionMessages,
     selectedSessionId ? { sessionId: selectedSessionId } : "skip" // Skip for temp sessions
   );
 
-  const createSession = useMutation(api.chat.communitychat.createSession);
+  const createSession = useMutation(api.communitychat.createSession);
   const savePrompt = useMutation(api.systemPrompts.savePrompt);
   const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
   // COMMENTED OUT: const finalizeThread = useAction(api.memory.tieredProcessing.finalizeThreadOnExit);
