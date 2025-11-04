@@ -36,17 +36,17 @@ export function CookbooksView() {
 
   // Fetch real data from Convex
   const cookbookStats = useQuery(
-    api.recipes.userRecipes.getCookbookStats,
+    api.userRecipes.getCookbookStats,
     userId ? { userId } : "skip"
   );
   const favoriteRecipes = useQuery(
-    api.recipes.userRecipes.getFavoritedRecipes,
+    api.userRecipes.getFavoritedRecipes,
     userId ? { userId } : "skip"
   );
 
   // Mutations
-  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
-  const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
+  const saveRecipe = useMutation(api.userRecipes.saveRecipeToUserCookbook);
+  const toggleFavorite = useMutation(api.userRecipes.toggleRecipeFavorite);
 
   const handleCategoryClick = (categoryId: string) => {
     const category = cookbookStats?.find((c: any) => c.id === categoryId);

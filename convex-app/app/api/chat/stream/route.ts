@@ -493,7 +493,7 @@ export async function POST(req: NextRequest) {
 
                       // Call recipe search action (with userId for profile enhancement)
                       const recipes = await convex.action(
-                        api.recipes.recipeRetrieval.searchRecipesByQuery,
+                        api.recipeRetrieval.searchRecipesByQuery,
                         {
                           query: args.query,
                           communityId,

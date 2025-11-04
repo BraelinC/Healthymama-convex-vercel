@@ -79,7 +79,7 @@ export default function ConvexCommunityChat({
 
   const createSession = useMutation(api.communitychat.createSession);
   const savePrompt = useMutation(api.systemPrompts.savePrompt);
-  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
+  const saveRecipe = useMutation(api.userRecipes.saveRecipeToUserCookbook);
   // COMMENTED OUT: const finalizeThread = useAction(api.memory.tieredProcessing.finalizeThreadOnExit);
 
   const [isSending, setIsSending] = useState(false);

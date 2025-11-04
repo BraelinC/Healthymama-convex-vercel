@@ -43,13 +43,13 @@ export function MealPlanCookbookSelector({
 
   // Fetch cookbook stats (categories)
   const cookbookStats = useQuery(
-    api.recipes.userRecipes.getCookbookStats,
+    api.userRecipes.getCookbookStats,
     userId ? { userId } : "skip"
   );
 
   // Fetch recipes for selected cookbook
   const recipes = useQuery(
-    api.recipes.userRecipes.getUserRecipesByCookbook,
+    api.userRecipes.getUserRecipesByCookbook,
     selectedCookbook && userId
       ? { userId, cookbookCategory: selectedCookbook }
       : "skip"
