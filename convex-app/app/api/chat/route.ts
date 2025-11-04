@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
     const contextTime = Date.now() - contextStart;
 
     // Persist the user message (for future retrieval)
-    const saveUserResult = await convex.mutation(api.messages.saveMessage, {
+    const saveUserResult = await convex.mutation(api.chat.messages.saveMessage, {
       userId: body.userId,
       role: "user",
       content: trimmedQuery,
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
 
     if (saveUserResult.shouldEmbed && embedding) {
       // We already generated embedding for the query above; reuse it.
-      await convex.mutation(api.messages.updateMessageEmbedding, {
+      await convex.mutation(api.chat.messages.updateMessageEmbedding, {
         messageId: saveUserResult.messageId,
         embedding,
       });
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
     const grokTime = Date.now() - grokStart;
 
     // Save assistant response
-    const saveAssistantResult = await convex.mutation(api.messages.saveAssistantResponse, {
+    const saveAssistantResult = await convex.mutation(api.chat.messages.saveAssistantResponse, {
       userId: body.userId,
       content: assistantReply,
       intent: intentDecision.intent,

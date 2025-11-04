@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CookbooksView } from "@/components/CookbooksView";
-import { CommunityCard } from "@/components/CommunityCard";
+import { CookbooksView } from "@/components/cookbook/CookbooksView";
+import { CommunityCard } from "@/components/community/CommunityCard";
 import { BookMarked, Users } from "lucide-react";
 
 // Mock data for communities

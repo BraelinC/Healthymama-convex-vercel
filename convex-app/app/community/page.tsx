@@ -17,9 +17,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import ConvexCommunityChat from "@/components/ConvexCommunityChat";
-import ConvexExtractor from "@/components/ConvexExtractor";
-import ConvexDebugger from "@/components/ConvexDebugger";
+import ConvexCommunityChat from "@/components/chat/ConvexCommunityChat";
+import ConvexExtractor from "@/components/shared/ConvexExtractor";
+import ConvexDebugger from "@/components/shared/ConvexDebugger";
 import {
   Users,
   ChefHat,

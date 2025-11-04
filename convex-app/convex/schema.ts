@@ -125,6 +125,9 @@ export default defineSchema({
       timestamp: v.number(),
     }))),
 
+    // Retry tracking
+    retryCount: v.optional(v.number()),
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -169,7 +172,7 @@ export default defineSchema({
     // Recipe data
     title: v.string(),
     description: v.optional(v.string()),
-    image_url: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
     ingredients: v.array(v.string()),
     instructions: v.array(v.string()),
 
@@ -235,7 +238,7 @@ export default defineSchema({
     // Denormalized recipe data (for fast access)
     title: v.string(),
     description: v.optional(v.string()),
-    image_url: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
     ingredients: v.array(v.string()),
     instructions: v.array(v.string()),
 

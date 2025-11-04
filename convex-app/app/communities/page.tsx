@@ -1,6 +1,6 @@
 "use client";
 
-import { CommunityCard } from "@/components/CommunityCard";
+import { CommunityCard } from "@/components/community/CommunityCard";
 
 // Mock data for communities
 const communities = [

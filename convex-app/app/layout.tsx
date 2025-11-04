@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { RecipeAI_ConvexProvider } from "@/components/RecipeAI_ConvexProvider";
+import { HealthyMamaConvexProvider } from "@/components/shared/HealthyMamaConvexProvider";
 import { Toaster } from "@/components/ui/toaster";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
@@ -19,10 +19,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${inter.variable} antialiased`}>
-        <RecipeAI_ConvexProvider>
+        <HealthyMamaConvexProvider>
           {children}
           <Toaster />
-        </RecipeAI_ConvexProvider>
+        </HealthyMamaConvexProvider>
       </body>
     </html>
   );

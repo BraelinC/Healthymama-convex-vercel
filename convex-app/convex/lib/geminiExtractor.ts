@@ -29,7 +29,7 @@ JSON Schema:
   "description": "string (optional, short description)",
   "ingredients": ["ingredient 1 with quantity", "ingredient 2 with quantity", ...],
   "instructions": ["step 1", "step 2", "step 3", ...],
-  "image_url": "${imageUrl || ''}",
+  "imageUrl": "${imageUrl || ''}",
   "servings": "string (e.g., '4 servings')",
   "prep_time": "string (e.g., '15 mins')",
   "cook_time": "string (e.g., '30 mins')",
@@ -40,7 +40,7 @@ EXTRACTION RULES:
 1. Extract the main recipe title
 2. List ALL ingredients with their quantities (e.g., "2 cups flour", "1 tbsp salt")
 3. Break instructions into clear, sequential steps
-4. Use the provided image_url value
+4. Use the provided imageUrl value
 5. Extract prep time, cook time, servings if available
 6. If any field is missing, use empty string or empty array
 

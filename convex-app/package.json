@@ -1,9 +1,10 @@
 {
-  "name": "recipeai-convex-prototype",
+  "name": "healthymama",
   "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "concurrently \"npx convex dev\" \"next dev\"",
+    "prebuild": "npx convex codegen",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -32,7 +33,7 @@
     "convex": "^1.27.4",
     "embla-carousel-react": "^8.6.0",
     "lucide-react": "^0.453.0",
-    "next": "^14.2.25",
+    "next": "^16.0.0",
     "openai": "^4.104.0",
     "puppeteer-core": "^21.11.0",
     "react": "^19.2.0",
@@ -48,6 +49,7 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.2.1",
     "postcss": "^8.4.47",
+    "puppeteer": "^24.27.0",
     "typescript": "^5.6.3"
   }
 }

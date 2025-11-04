@@ -411,7 +411,9 @@ export const markChunkComplete = internalMutation({
     }
 
     const completedChunks = (job.completedChunks || 0) + 1;
-    console.log(`✅ [CHUNK TRACKING] Chunk ${args.chunkNumber} complete. Progress: ${completedChunks}/${job.totalChunks}`);
+    const failedChunksCount = (job.failedChunks || []).length;
+    const totalProcessed = completedChunks + failedChunksCount;
+    console.log(`✅ [CHUNK TRACKING] Chunk ${args.chunkNumber} complete. Progress: ${completedChunks}/${job.totalChunks} (${failedChunksCount} failed)`);
 
     // Update completion count
     await ctx.db.patch(args.jobId, {
@@ -419,9 +421,9 @@ export const markChunkComplete = internalMutation({
       updatedAt: Date.now(),
     });
 
-    // If all chunks are done, move to awaiting_confirmation
-    if (completedChunks >= (job.totalChunks || 0)) {
-      console.log(`🎉 [CHUNK TRACKING] All chunks complete! Moving to awaiting_confirmation`);
+    // If all chunks are done (completed OR failed), move to awaiting_confirmation
+    if (totalProcessed >= (job.totalChunks || 0)) {
+      console.log(`🎉 [CHUNK TRACKING] All chunks processed! ${completedChunks} succeeded, ${failedChunksCount} failed. Moving to awaiting_confirmation`);
 
       // Count total filtered URLs
       const urlBatches = await ctx.db
@@ -477,8 +479,40 @@ export const recordFailedChunk = internalMutation({
     const completedChunks = job.completedChunks || 0;
     const totalChunks = job.totalChunks || 1;
     const failureRate = failedChunks.length / totalChunks;
+    const totalProcessed = completedChunks + failedChunks.length;
 
-    if (failureRate > 0.5) {
+    console.log(`⚠️ [COMPLETION CHECK] After chunk ${args.chunkNumber} failure: ${totalProcessed}/${totalChunks} processed (${completedChunks} success, ${failedChunks.length} failed)`);
+
+    // Check if all chunks are done (completed + failed)
+    if (totalProcessed >= totalChunks) {
+      if (failureRate > 0.5) {
+        // Too many failures - mark as failed
+        console.error(`🚨 [CHUNK TRACKING] All chunks processed but too many failures (${failedChunks.length}/${totalChunks}), marking job as failed`);
+        await ctx.db.patch(args.jobId, {
+          status: "failed",
+          error: `Too many chunk failures: ${failedChunks.length} out of ${totalChunks} chunks failed`,
+          updatedAt: Date.now(),
+        });
+      } else {
+        // Some failures but acceptable - move to awaiting_confirmation
+        console.log(`🎉 [CHUNK TRACKING] All chunks processed! ${completedChunks} succeeded, ${failedChunks.length} failed (${Math.round(failureRate * 100)}% failure rate). Moving to awaiting_confirmation`);
+
+        // Count total filtered URLs from database
+        const urlBatches = await ctx.db
+          .query("extractedUrls")
+          .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+          .collect();
+
+        const totalFilteredUrls = urlBatches.flatMap((batch) => batch.urls).length;
+
+        await ctx.db.patch(args.jobId, {
+          status: "awaiting_confirmation",
+          totalUrls: totalFilteredUrls,
+          updatedAt: Date.now(),
+        });
+      }
+    } else if (failureRate > 0.5) {
+      // Not all chunks done yet, but already too many failures - mark as failed early
       console.error(`🚨 [CHUNK TRACKING] Too many failures (${failedChunks.length}/${totalChunks}), marking job as failed`);
       await ctx.db.patch(args.jobId, {
         status: "failed",
@@ -486,6 +520,169 @@ export const recordFailedChunk = internalMutation({
         updatedAt: Date.now(),
       });
     }
+  },
+});
+
+/**
+ * Retry all failed chunks for a job
+ */
+export const retryFailedChunks = mutation({
+  args: {
+    jobId: v.id("extractionJobs"),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+
+    const failedChunks = job.failedChunks || [];
+    if (failedChunks.length === 0) {
+      console.log(`⚠️ [RETRY] No failed chunks to retry for job ${args.jobId}`);
+      return { retriedCount: 0 };
+    }
+
+    // Check retry limit
+    const retryCount = (job.retryCount || 0) + 1;
+    if (retryCount > 3) {
+      console.error(`🚨 [RETRY] Max retry limit reached (3) for job ${args.jobId}`);
+      throw new Error("Maximum retry limit (3) reached for this job");
+    }
+
+    console.log(`🔄 [RETRY] Retrying ${failedChunks.length} failed chunks for job ${args.jobId} (retry ${retryCount}/3)`);
+
+    // Get the full URL list from the raw URLs table
+    const rawUrlBatches = await ctx.db
+      .query("rawExtractedUrls")
+      .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+      .collect();
+
+    const allRawUrls = rawUrlBatches.flatMap((batch) => batch.urls);
+
+    // Clear failed chunks array and increment retry count
+    await ctx.db.patch(args.jobId, {
+      failedChunks: [],
+      retryCount,
+      updatedAt: Date.now(),
+    });
+
+    // Schedule retry for each failed chunk
+    for (const failedChunk of failedChunks) {
+      const chunkUrls = allRawUrls.slice(failedChunk.startIndex, failedChunk.endIndex);
+
+      console.log(`🔄 [RETRY] Rescheduling chunk ${failedChunk.chunkNumber}: URLs ${failedChunk.startIndex}-${failedChunk.endIndex}`);
+
+      // Schedule the chunk for reprocessing
+      await ctx.scheduler.runAfter(0, internal.extractor.filterUrlsWithGrok, {
+        jobId: args.jobId,
+        urls: chunkUrls,
+        jobType: job.jobType as "profile" | "recipe",
+        chunkNumber: failedChunk.chunkNumber,
+        totalChunks: job.totalChunks || failedChunks.length,
+        startIndex: failedChunk.startIndex,
+        endIndex: failedChunk.endIndex,
+      });
+    }
+
+    console.log(`✅ [RETRY] Scheduled ${failedChunks.length} chunks for retry`);
+
+    return { retriedCount: failedChunks.length };
+  },
+});
+
+/**
+ * Retry a single failed chunk (for more granular control)
+ */
+export const retrySingleChunk = mutation({
+  args: {
+    jobId: v.id("extractionJobs"),
+    chunkNumber: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+
+    const failedChunks = job.failedChunks || [];
+    const chunkToRetry = failedChunks.find((c: any) => c.chunkNumber === args.chunkNumber);
+
+    if (!chunkToRetry) {
+      throw new Error(`Failed chunk ${args.chunkNumber} not found`);
+    }
+
+    console.log(`🔄 [RETRY] Retrying single chunk ${args.chunkNumber}: URLs ${chunkToRetry.startIndex}-${chunkToRetry.endIndex}`);
+
+    // Get the URL slice for this chunk
+    const rawUrlBatches = await ctx.db
+      .query("rawExtractedUrls")
+      .withIndex("by_job", (q) => q.eq("jobId", args.jobId))
+      .collect();
+
+    const allRawUrls = rawUrlBatches.flatMap((batch) => batch.urls);
+    const chunkUrls = allRawUrls.slice(chunkToRetry.startIndex, chunkToRetry.endIndex);
+
+    // Remove this chunk from failed chunks array
+    const updatedFailedChunks = failedChunks.filter((c: any) => c.chunkNumber !== args.chunkNumber);
+    await ctx.db.patch(args.jobId, {
+      failedChunks: updatedFailedChunks,
+      updatedAt: Date.now(),
+    });
+
+    // Schedule the chunk for reprocessing
+    await ctx.scheduler.runAfter(0, internal.extractor.filterUrlsWithGrok, {
+      jobId: args.jobId,
+      urls: chunkUrls,
+      jobType: job.jobType as "profile" | "recipe",
+      chunkNumber: chunkToRetry.chunkNumber,
+      totalChunks: job.totalChunks || failedChunks.length,
+      startIndex: chunkToRetry.startIndex,
+      endIndex: chunkToRetry.endIndex,
+    });
+
+    console.log(`✅ [RETRY] Scheduled chunk ${args.chunkNumber} for retry`);
+
+    return { success: true };
+  },
+});
+
+/**
+ * Get job completion status for debugging
+ */
+export const getJobCompletionStatus = query({
+  args: {
+    jobId: v.id("extractionJobs"),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) {
+      return null;
+    }
+
+    const completedChunks = job.completedChunks || 0;
+    const failedChunks = job.failedChunks || [];
+    const totalChunks = job.totalChunks || 0;
+    const totalProcessed = completedChunks + failedChunks.length;
+    const failureRate = totalChunks > 0 ? failedChunks.length / totalChunks : 0;
+
+    return {
+      jobId: args.jobId,
+      status: job.status,
+      completedChunks,
+      failedChunksCount: failedChunks.length,
+      failedChunks: failedChunks.map((chunk: any) => ({
+        chunkNumber: chunk.chunkNumber,
+        urlRange: `${chunk.startIndex}-${chunk.endIndex}`,
+        error: chunk.error,
+        timestamp: chunk.timestamp,
+      })),
+      totalChunks,
+      totalProcessed,
+      isComplete: totalProcessed >= totalChunks,
+      shouldTransition: totalProcessed >= totalChunks && job.status === "filtering",
+      failureRate: Math.round(failureRate * 100),
+      progressPercent: totalChunks > 0 ? Math.round((totalProcessed / totalChunks) * 100) : 0,
+    };
   },
 });
 
@@ -535,7 +732,7 @@ export const saveRecipe = internalMutation({
     url: v.string(),
     title: v.string(),
     description: v.optional(v.string()),
-    image_url: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
     ingredients: v.array(v.string()),
     instructions: v.array(v.string()),
     servings: v.optional(v.string()),
@@ -564,7 +761,7 @@ export const saveRecipe = internalMutation({
       url: args.url,
       title: args.title,
       description: args.description,
-      image_url: args.image_url,
+      imageUrl: args.imageUrl,
       ingredients: args.ingredients,
       instructions: args.instructions,
       servings: args.servings,
@@ -1005,19 +1202,81 @@ export const filterUrlsWithGrok = action({
     console.log(`🔍 [GPT-5 FILTER ${chunkInfo}] START - Filtering ${args.urls.length} URLs for ${args.jobType}s`);
     console.log(`📍 [GPT-5 FILTER ${chunkInfo}] URL range: ${args.startIndex}-${args.endIndex}`);
 
-    try {
+    // Retry configuration
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second
+    let lastError: any = null;
+
+    // Retry loop with exponential backoff
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 1) {
+          const delay = baseDelay * Math.pow(2, attempt - 2); // 1s, 2s, 4s
+          console.log(`🔄 [GPT-5 FILTER ${chunkInfo}] Retry attempt ${attempt}/${maxRetries} after ${delay}ms delay`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        // Main processing logic wrapped in try block
+        const result = await processChunk(ctx, args, chunkInfo);
+
+        // Success! Return the result
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Attempt ${attempt}/${maxRetries} failed:`, error.message);
+
+        // If this was the last attempt, break out to record the failure
+        if (attempt === maxRetries) {
+          break;
+        }
+
+        // Otherwise, continue to next retry attempt
+      }
+    }
+
+    // All retries exhausted - record the failure
+    const chunkDuration = Date.now() - startTime;
+    console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] FAILED after ${maxRetries} attempts (${chunkDuration}ms) - Error:`, lastError);
+
+    // Record failed chunk for debugging
+    if (args.chunkNumber) {
+      await ctx.runMutation(internal.extractor.recordFailedChunk, {
+        jobId: args.jobId,
+        chunkNumber: args.chunkNumber,
+        startIndex: args.startIndex || 0,
+        endIndex: args.endIndex || args.urls.length,
+        error: lastError.message,
+      });
+    } else {
+      // Legacy mode failure
+      await ctx.runMutation(internal.extractor.updateJobProgress, {
+        jobId: args.jobId,
+        status: "failed",
+        error: lastError.message,
+      });
+    }
+
+    throw lastError;
+  },
+});
+
+/**
+ * Helper function to process a chunk (extracted for retry logic)
+ */
+async function processChunk(ctx: any, args: any, chunkInfo: string) {
+      const startTime = Date.now();
       const apiKey = process.env.OPEN_ROUTER_API_KEY;
       if (!apiKey) {
         throw new Error("OPEN_ROUTER_API_KEY not set");
       }
 
-      // Process in batches of 50 URLs with high parallelization
-      const batchSize = 50;
-      const maxParallelBatches = 30; // Process 30 batches simultaneously for maximum speed
+      // Process in batches of 100 URLs with high parallelization
+      const batchSize = 100;
+      const maxParallelBatches = 50; // Process 50 batches simultaneously for maximum speed
       const allFilteredUrls: string[] = [];
       const totalBatches = Math.ceil(args.urls.length / batchSize);
 
-      console.log(`⚡ [GPT-5 FILTER] Processing ${totalBatches} batches with ${maxParallelBatches} parallel requests`);
+      console.log(`⚡ [gpt-oss-20b FILTER] Processing ${totalBatches} batches with ${maxParallelBatches} parallel requests`);
 
       // Helper function to process a single batch
       const processSingleBatch = async (batch: string[], batchNumber: number, batchStartIndex: number) => {
@@ -1025,57 +1284,22 @@ export const filterUrlsWithGrok = action({
         console.log(`📋 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber}/${totalBatches} START - ${batch.length} URLs (indices ${batchStartIndex}-${batchStartIndex + batch.length})`);
 
         const filterType = args.jobType === "profile" ? "creator profile" : "recipe";
-        const prompt = `You are a URL classifier. Analyze each URL and determine if it's a ${filterType} page.
+        const prompt = `Classify each URL as a ${filterType} page. Return TRUE only for standalone ${filterType} pages with actual content.
 
 URLs to classify (${batch.length} total):
 ${batch.map((url, idx) => `${idx + 1}. ${url}`).join("\n")}
 
-CRITICAL INSTRUCTIONS:
-- DO NOT SKIP ANY URLs - classify all ${batch.length} URLs
-- Return TRUE ONLY if the URL is DEFINITELY a standalone ${filterType} page
-- Return FALSE for:
-  * Blog posts, announcements, personal updates, life stories
-  * Numbered list articles ("24 groceries", "10 ways to")
-  * Category pages, tag pages, about pages, contact pages
-  * Monthly/yearly roundups, favorites lists
-  * Any URL that looks like editorial content rather than a recipe
-- When uncertain, return FALSE (be conservative)
+Rules:
+- Classify all ${batch.length} URLs
+- Return FALSE for: blog posts, numbered lists ("10-ways"), categories, tags, roundups, announcements, lifestyle/personal content
+${args.jobType === "recipe" ? `- Recipe URLs must be single food/dish names only (e.g., "lentil-soup", "chocolate-cookies")
+- Exclude: abstract concepts, temporal references ("in-october"), personal pronouns, lifestyle keywords` : ""}
+- When uncertain, return FALSE
 
-${args.jobType === "recipe" ? `
-RECIPE PAGE INDICATORS (must have ALL of these):
-- URL slug is a SINGLE dish/food name (e.g., "lentil-soup", "chocolate-cookies", "roasted-vegetables")
-- Simple, descriptive food/dish names (1-3 words max)
-- No personal pronouns or lifestyle keywords (our, my, meet, life, etc.)
-- Looks like it would have: ingredients list + cooking instructions + servings
+Output valid JSON only (no markdown):
+{"results": [{"url": "exact_url_here", "is${args.jobType === "profile" ? "Profile" : "Recipe"}": true}]}
 
-NON-RECIPE INDICATORS (immediately exclude if found):
-- Numbers at start ("24-", "10-", "5-ways-")
-- Personal/lifestyle words: introducing, weekend, update, announcement, meet, our-life, guess-what, lunch-date, vacation, blogging
-- Temporal references: "in-october", "september-", monthly/yearly patterns
-- Photo/picture posts: "-pictures", "-photos"
-- Abstract concepts: rhythm, bloom, evolution, thoughts, things, survival, guide, party (when not a food)
-- Compound emotional/lifestyle words: tiny-bloom, slow-fall-rhythm, its-the-little-things
-- Multi-word lifestyle phrases: holiday-survival-guide, the-evolution-of, thoughts-at-three-months
-- Generic blog topics that are NOT food items
-
-CRITICAL: Recipe URLs must be LITERAL FOOD/DISH NAMES ONLY, not:
-- Abstract concepts (rhythm, bloom, thoughts, survival, evolution)
-- Emotional phrases (little things, sad people)
-- Social activities (dinner club, party as an event)
-- Personal reflections or lifestyle content
-
-EXAMPLES:
-✅ TRUE: "lentil-soup", "chocolate-chip-cookies", "roasted-vegetables", "chicken-curry"
-❌ FALSE: "meet-our-office-manager", "sage-in-october", "the-hardest-times", "our-life-without-sugar", "september-lunch-date", "on-full-time-blogging", "slow-fall-rhythm", "tiny-bloom", "the-evolution-of-a-food-photo", "holiday-survival-guide-for-sad-people", "its-the-little-things", "thoughts-at-three-months", "partypartyparty", "dinner-club"
-` : ""}
-
-Output ONLY valid JSON in this exact format (no markdown):
-{"results": [
-  {"url": "exact_url_here", "is${args.jobType === "profile" ? "Profile" : "Recipe"}": true},
-  {"url": "exact_url_here", "is${args.jobType === "profile" ? "Profile" : "Recipe"}": false}
-]}
-
-The JSON must have exactly ${batch.length} entries.`;
+Must have exactly ${batch.length} entries.`;
 
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
@@ -1086,7 +1310,7 @@ The JSON must have exactly ${batch.length} entries.`;
             "X-Title": "HealthyMama Extractor",
           },
           body: JSON.stringify({
-            model: "openai/gpt-5-mini",
+            model: "openai/gpt-oss-20b",
             messages: [
               {
                 role: "system",
@@ -1103,7 +1327,7 @@ The JSON must have exactly ${batch.length} entries.`;
         });
 
         if (!response.ok) {
-          const error = `GPT-5 Mini API error for batch ${batchNumber}: ${response.statusText}`;
+          const error = `gpt-oss-20b API error for batch ${batchNumber}: ${response.statusText}`;
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} FAILED - API returned ${response.status}`);
           throw new Error(error);
         }
@@ -1124,8 +1348,8 @@ The JSON must have exactly ${batch.length} entries.`;
 
         // Validate JSON before parsing
         if (!jsonContent || jsonContent.length === 0) {
-          console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} FAILED - Empty response from GPT-5 Mini`);
-          throw new Error(`Empty response from GPT-5 Mini for batch ${batchNumber}`);
+          console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} FAILED - Empty response from gpt-oss-20b`);
+          throw new Error(`Empty response from gpt-oss-20b for batch ${batchNumber}`);
         }
 
         let parsed;
@@ -1135,7 +1359,22 @@ The JSON must have exactly ${batch.length} entries.`;
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} FAILED - JSON parse error`);
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Raw content preview:`, content.substring(0, 500));
           console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] Parse error:`, parseError.message);
-          throw new Error(`Failed to parse GPT-5 Mini response for batch ${batchNumber}: ${parseError.message}`);
+
+          // Attempt fallback: Extract JSON object from potentially truncated response
+          console.log(`🔄 [GPT-5 FILTER ${chunkInfo}] Attempting JSON recovery via regex extraction...`);
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              parsed = JSON.parse(jsonMatch[0]);
+              console.log(`✅ [GPT-5 FILTER ${chunkInfo}] Batch ${batchNumber} - Successfully recovered partial JSON`);
+            } catch (recoveryError: any) {
+              console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] JSON recovery also failed:`, recoveryError.message);
+              throw new Error(`Failed to parse gpt-oss-20b response for batch ${batchNumber}: ${parseError.message}. Recovery attempt also failed: ${recoveryError.message}`);
+            }
+          } else {
+            console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] No JSON object found in response`);
+            throw new Error(`Failed to parse gpt-oss-20b response for batch ${batchNumber}: ${parseError.message}. No JSON object found.`);
+          }
         }
 
         if (parsed.results && Array.isArray(parsed.results)) {
@@ -1231,32 +1470,7 @@ The JSON must have exactly ${batch.length} entries.`;
         filteredUrls: allFilteredUrls,
         count: allFilteredUrls.length,
       };
-    } catch (error: any) {
-      const chunkDuration = Date.now() - startTime;
-      console.error(`🚨 [GPT-5 FILTER ${chunkInfo}] FAILED after ${chunkDuration}ms - Error:`, error);
-
-      // Record failed chunk for debugging
-      if (args.chunkNumber) {
-        await ctx.runMutation(internal.extractor.recordFailedChunk, {
-          jobId: args.jobId,
-          chunkNumber: args.chunkNumber,
-          startIndex: args.startIndex || 0,
-          endIndex: args.endIndex || args.urls.length,
-          error: error.message,
-        });
-      } else {
-        // Legacy mode failure
-        await ctx.runMutation(internal.extractor.updateJobProgress, {
-          jobId: args.jobId,
-          status: "failed",
-          error: error.message,
-        });
-      }
-
-      throw error;
-    }
-  },
-});
+}
 
 /**
  * Step 3: Extract recipe data with 3-pronged approach
@@ -1436,7 +1650,7 @@ export const continueExtraction = action({
 
       // Filter out already-extracted URLs
       const extractedUrlsList = job.extractedUrlsList || [];
-      const remainingUrls = allUrls.filter(url => !extractedUrlsList.includes(url));
+      const remainingUrls = allUrls.filter((url: any) => !extractedUrlsList.includes(url));
 
       console.log(`📋 [CONTINUE EXTRACTION] Total URLs: ${allUrls.length}, Already extracted: ${extractedUrlsList.length}, Remaining: ${remainingUrls.length}`);
 
@@ -1469,7 +1683,7 @@ export const continueExtraction = action({
 
         // Process all recipes in this batch in parallel
         const batchResults = await Promise.allSettled(
-          batch.map(async (url) => {
+          batch.map(async (url: any) => {
             try {
               await ctx.runAction(api.extractor.extractRecipeFromUrl, {
                 jobId: args.jobId,
@@ -1499,7 +1713,7 @@ export const continueExtraction = action({
           extractedCount: (job.extractedCount || 0) + extractedCount,
         });
 
-        const successCount = batchResults.filter(r => r.status === 'fulfilled' && r.value.success).length;
+        const successCount = batchResults.filter((r: any) => r.status === 'fulfilled' && r.value.success).length;
         console.log(`✅ [CONTINUE EXTRACTION] Batch ${batchNumber} complete: ${successCount}/${batch.length} succeeded`);
       }
 

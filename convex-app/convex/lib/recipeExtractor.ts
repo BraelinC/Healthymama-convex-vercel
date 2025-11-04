@@ -109,7 +109,7 @@ export function transformJsonLdRecipe(jsonLdRecipe: any, mainImageUrl?: string |
   return {
     title: jsonLdRecipe.name || 'Untitled Recipe',
     description: jsonLdRecipe.description || '',
-    image_url: imageUrl || null,
+    imageUrl: imageUrl || null,
     ingredients: ingredients,
     instructions: instructionTexts,
     servings: jsonLdRecipe.recipeYield ? String(jsonLdRecipe.recipeYield) : undefined,
