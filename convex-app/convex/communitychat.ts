@@ -14,13 +14,17 @@ export const listSessions = query({
     communityId: v.string(),
   },
   handler: async (ctx, args) => {
-    const sessions = await ctx.db
+    // Use by_user_lastMessage index to enable ordering by lastMessageAt
+    const allSessions = await ctx.db
       .query("chatSessions")
-      .withIndex("by_user_community", (q) =>
-        q.eq("userId", args.userId).eq("communityId", args.communityId)
-      )
+      .withIndex("by_user_lastMessage", (q) => q.eq("userId", args.userId))
       .order("desc")
       .collect();
+
+    // Filter by communityId in memory (fast for typical session counts)
+    const sessions = allSessions.filter(
+      (session) => session.communityId === args.communityId
+    );
 
     return sessions;
   },
