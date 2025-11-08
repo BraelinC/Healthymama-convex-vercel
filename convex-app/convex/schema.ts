@@ -679,4 +679,39 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_key", ["key"]),
+
+  // ========== INSTAGRAM ACCOUNT ROTATION ==========
+
+  instagramAccounts: defineTable({
+    // Instagram credentials
+    username: v.string(), // Instagram username
+    password: v.string(), // Instagram password (stored securely in Convex)
+
+    // Account status and rotation
+    isActive: v.boolean(), // Whether account is available for use
+    lastUsedAt: v.optional(v.number()), // Timestamp of last use (for round-robin rotation)
+    usageCount: v.number(), // Total number of times used (for analytics)
+
+    // Account health tracking
+    status: v.union(
+      v.literal("active"),        // Account is healthy and ready
+      v.literal("rate_limited"),  // Instagram rate limit detected, skip temporarily
+      v.literal("banned"),        // Account banned/blocked by Instagram
+      v.literal("login_failed")   // Login credentials invalid
+    ),
+
+    // Optional proxy configuration (for scaling)
+    proxyUrl: v.optional(v.string()), // Format: "http://username:password@host:port"
+
+    // Metadata
+    notes: v.optional(v.string()), // Admin notes (e.g., "Main account", "Backup #3")
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_isActive", ["isActive"])
+    .index("by_status", ["status"])
+    .index("by_lastUsedAt", ["lastUsedAt"]) // For round-robin: get account with oldest lastUsedAt
+    .index("by_username", ["username"]), // For duplicate detection
 });

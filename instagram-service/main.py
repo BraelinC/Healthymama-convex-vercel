@@ -1,5 +1,5 @@
 """
-Instagram Recipe Extractor Service
+Instagram Recipe Extractor Service (with Convex Account Rotation)
 
 This Flask microservice extracts recipe data from Instagram reels using the instagrapi library.
 It fetches the reel's caption, comments, video URL, and thumbnail to be parsed by AI into a recipe.
@@ -7,13 +7,29 @@ It fetches the reel's caption, comments, video URL, and thumbnail to be parsed b
 Architecture:
 - Railway deployment (Python 3.10+)
 - Flask web server with CORS enabled
-- Instagram authentication via dedicated account
+- Instagram authentication via Convex account rotation (100+ videos/hour scaling)
+- Round-robin rotation: automatically switches between multiple Instagram accounts
 - Rate limiting built-in (1-2 second delays)
 
 Environment Variables Required:
-- IG_USERNAME: Instagram username for API access (use dedicated account, not personal)
-- IG_PASSWORD: Instagram password
+- CONVEX_URL: Convex deployment URL (e.g., https://your-deployment.convex.cloud)
 - PORT: Server port (set automatically by Railway)
+
+Removed Environment Variables (now managed in Convex):
+- IG_USERNAME: (deprecated) Use Convex instagramAccounts table instead
+- IG_PASSWORD: (deprecated) Use Convex instagramAccounts table instead
+
+Account Rotation Strategy:
+1. Before each Instagram request: call Convex to get next available account
+2. Use account credentials to login and fetch Instagram data
+3. After successful use: update account's lastUsedAt timestamp in Convex
+4. On errors: update account status (rate_limited/banned/login_failed) in Convex
+5. Convex automatically skips unhealthy accounts in future rotations
+
+Scaling Benefits:
+- With 1 account: ~50-100 videos/hour (safe)
+- With 5 accounts: ~250-500 videos/hour
+- With 10+ accounts: 500+ videos/hour
 
 API Endpoints:
 - GET /health: Health check for Railway monitoring
@@ -22,58 +38,247 @@ API Endpoints:
 
 import os
 import time
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from instagrapi import Client
-from instagrapi.exceptions import LoginRequired, ClientError
+from instagrapi.exceptions import LoginRequired, ClientError, ChallengeRequired, PleaseWaitFewMinutes
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for Next.js requests from any origin
 
-# Instagram client (singleton pattern)
-# We maintain a single authenticated Instagram session to avoid repeated logins
-# This improves performance and reduces the risk of rate limiting
-ig_client = None
+# Convex configuration
+CONVEX_URL = os.getenv('CONVEX_URL')
 
-def get_instagram_client():
+def convex_query(function_name, args=None):
     """
-    Get or create Instagram client with authentication
+    Call a Convex query function
 
-    Uses singleton pattern to maintain one authenticated session throughout
-    the application lifecycle. This prevents repeated login attempts which
-    could trigger Instagram's rate limiting or security checks.
+    Convex queries are read-only operations that fetch data from the database.
+    They use the HTTP GET method with function name and arguments in the URL.
+
+    Args:
+        function_name (str): Convex function name (e.g., "instagramAccounts:getNextAccount")
+        args (dict, optional): Query arguments (e.g., {"userId": "123"})
 
     Returns:
-        Client: Authenticated instagrapi Client instance
+        Any: The query result (usually a dict or list)
 
     Raises:
-        ValueError: If IG_USERNAME or IG_PASSWORD environment variables are missing
-        Exception: If Instagram login fails (wrong credentials, account locked, etc.)
-
-    Note:
-        Instagram may require email/SMS verification for new accounts or
-        flag accounts used for scraping. Use a dedicated account, not personal.
+        ValueError: If CONVEX_URL environment variable is missing
+        requests.HTTPError: If Convex API returns an error
     """
-    global ig_client
+    if not CONVEX_URL:
+        raise ValueError("CONVEX_URL environment variable is required")
 
-    if ig_client is None:
-        username = os.getenv('IG_USERNAME')
-        password = os.getenv('IG_PASSWORD')
+    url = f"{CONVEX_URL}/api/query"
+    payload = {
+        "path": function_name,
+        "args": args or {},
+        "format": "json"
+    }
 
-        if not username or not password:
-            raise ValueError("IG_USERNAME and IG_PASSWORD environment variables are required")
+    response = requests.post(url, json=payload)
+    response.raise_for_status()
 
-        ig_client = Client()
+    data = response.json()
+    return data.get("value")
 
-        try:
-            # Try to login
-            ig_client.login(username, password)
-            print(f"✅ Logged in as @{username}")
-        except Exception as e:
-            print(f"❌ Login failed: {str(e)}")
-            raise
+def convex_mutation(function_name, args):
+    """
+    Call a Convex mutation function
 
-    return ig_client
+    Convex mutations are write operations that modify data in the database.
+    They use the HTTP POST method with function name and arguments.
+
+    Args:
+        function_name (str): Convex function name (e.g., "instagramAccounts:updateLastUsed")
+        args (dict): Mutation arguments (e.g., {"accountId": "abc123"})
+
+    Returns:
+        Any: The mutation result
+
+    Raises:
+        ValueError: If CONVEX_URL environment variable is missing
+        requests.HTTPError: If Convex API returns an error
+    """
+    if not CONVEX_URL:
+        raise ValueError("CONVEX_URL environment variable is required")
+
+    url = f"{CONVEX_URL}/api/mutation"
+    payload = {
+        "path": function_name,
+        "args": args,
+        "format": "json"
+    }
+
+    response = requests.post(url, json=payload)
+    response.raise_for_status()
+
+    data = response.json()
+    return data.get("value")
+
+def get_instagram_account_from_convex():
+    """
+    Get next available Instagram account from Convex (Round-Robin Rotation)
+
+    This function calls Convex to get the least-recently-used active account.
+    Convex automatically skips unhealthy accounts (rate_limited, banned, login_failed).
+
+    Returns:
+        dict: Account info with keys: accountId, username, password, proxyUrl
+        None: If no accounts are available
+
+    Raises:
+        ValueError: If CONVEX_URL is not configured
+        Exception: If Convex API call fails
+
+    Flow:
+        1. Call Convex query: instagramAccounts:getNextAccount
+        2. Convex finds active account with oldest lastUsedAt
+        3. Return account credentials for Instagram login
+        4. Caller must call update_instagram_account_usage() after successful use
+    """
+    try:
+        account = convex_query("instagramAccounts:getNextAccount")
+
+        if not account:
+            print("⚠️ No Instagram accounts available in Convex")
+            return None
+
+        print(f"🔄 Using Instagram account: {account['username']}")
+        return account
+    except Exception as e:
+        print(f"❌ Failed to get Instagram account from Convex: {str(e)}")
+        raise
+
+def update_instagram_account_usage(account_id):
+    """
+    Update account usage after successful Instagram data fetch
+
+    This mutation updates the account's lastUsedAt timestamp and increments
+    the usageCount. This ensures proper round-robin rotation in future requests.
+
+    Args:
+        account_id (str): Convex account ID from get_instagram_account_from_convex()
+
+    Raises:
+        Exception: If Convex mutation fails
+    """
+    try:
+        convex_mutation("instagramAccounts:updateLastUsed", {
+            "accountId": account_id
+        })
+        print(f"✅ Updated usage for account {account_id}")
+    except Exception as e:
+        print(f"⚠️ Failed to update account usage: {str(e)}")
+        # Don't raise - this is not critical for the main flow
+
+def update_instagram_account_status(account_id, status, is_active=None):
+    """
+    Update account status when errors occur
+
+    This mutation marks accounts as unhealthy when they encounter errors.
+    Convex will automatically skip unhealthy accounts in future rotations.
+
+    Args:
+        account_id (str): Convex account ID
+        status (str): New status - "active", "rate_limited", "banned", "login_failed"
+        is_active (bool, optional): Set to False to completely disable account
+
+    Status Meanings:
+        - rate_limited: Instagram rate limit detected (PleaseWaitFewMinutes exception)
+        - banned: Account blocked by Instagram (ChallengeRequired exception)
+        - login_failed: Invalid credentials (LoginRequired exception)
+        - active: Account is healthy (use after fixing issues)
+
+    Raises:
+        Exception: If Convex mutation fails
+    """
+    try:
+        args = {
+            "accountId": account_id,
+            "status": status
+        }
+        if is_active is not None:
+            args["isActive"] = is_active
+
+        convex_mutation("instagramAccounts:updateAccountStatus", args)
+        print(f"🔧 Updated account {account_id} status: {status}")
+    except Exception as e:
+        print(f"⚠️ Failed to update account status: {str(e)}")
+        # Don't raise - this is not critical for error handling
+
+def get_instagram_client_with_rotation():
+    """
+    Get Instagram client using Convex account rotation
+
+    This function replaces the old singleton pattern with dynamic account rotation.
+    It fetches credentials from Convex, logs in to Instagram, and returns both
+    the authenticated client and the account ID (for later usage tracking).
+
+    Returns:
+        tuple: (Client, account_id) - Authenticated Instagram client and Convex account ID
+
+    Raises:
+        ValueError: If no accounts are available in Convex
+        LoginRequired: If Instagram login fails with provided credentials
+        Exception: If Convex API fails or Instagram authentication fails
+
+    Flow:
+        1. Get next account from Convex (round-robin)
+        2. Create new Instagram client
+        3. Login with account credentials
+        4. Configure proxy if account has proxyUrl
+        5. Return client + account_id for usage tracking
+
+    Error Handling:
+        - LoginRequired: Updates account status to "login_failed"
+        - ChallengeRequired: Updates account status to "banned"
+        - PleaseWaitFewMinutes: Updates account status to "rate_limited"
+        - All errors are re-raised after updating Convex
+    """
+    # Get next account from Convex
+    account = get_instagram_account_from_convex()
+
+    if not account:
+        raise ValueError("No Instagram accounts available. Please add accounts to Convex.")
+
+    account_id = account['accountId']
+    username = account['username']
+    password = account['password']
+    proxy_url = account.get('proxyUrl')
+
+    # Create new Instagram client
+    client = Client()
+
+    # Configure proxy if provided
+    if proxy_url:
+        client.set_proxy(proxy_url)
+        print(f"🌐 Using proxy: {proxy_url}")
+
+    try:
+        # Login to Instagram
+        client.login(username, password)
+        print(f"✅ Logged in as @{username}")
+
+        return client, account_id
+
+    except LoginRequired as e:
+        # Invalid credentials or account locked
+        print(f"❌ Login failed for @{username}: {str(e)}")
+        update_instagram_account_status(account_id, "login_failed", is_active=False)
+        raise
+
+    except ChallengeRequired as e:
+        # Account banned or challenge required (2FA, verify email, etc.)
+        print(f"❌ Account @{username} requires challenge or is banned: {str(e)}")
+        update_instagram_account_status(account_id, "banned", is_active=False)
+        raise
+
+    except Exception as e:
+        print(f"❌ Unexpected login error for @{username}: {str(e)}")
+        raise
 
 def extract_media_id_from_url(url: str) -> str:
     """
@@ -199,9 +404,22 @@ def extract_instagram():
         except ValueError as e:
             return jsonify({"error": str(e), "success": False}), 400
 
-        # Get Instagram client
+        # Get Instagram client with Convex account rotation
         try:
-            client = get_instagram_client()
+            client, account_id = get_instagram_client_with_rotation()
+        except ValueError as e:
+            # No accounts available in Convex
+            return jsonify({
+                "error": f"No Instagram accounts available: {str(e)}",
+                "success": False,
+                "hint": "Add Instagram accounts to Convex database using the instagramAccounts:addAccount mutation"
+            }), 503
+        except LoginRequired as e:
+            # Login failed (account status already updated to "login_failed")
+            return jsonify({"error": f"Instagram login failed: {str(e)}", "success": False}), 401
+        except ChallengeRequired as e:
+            # Account banned (account status already updated to "banned")
+            return jsonify({"error": f"Instagram account requires verification: {str(e)}", "success": False}), 403
         except Exception as e:
             return jsonify({"error": f"Instagram authentication failed: {str(e)}", "success": False}), 500
 
@@ -212,6 +430,15 @@ def extract_instagram():
             media = client.media_info(media_pk)
 
             print(f"📱 Fetched media: {media.code}")
+        except PleaseWaitFewMinutes as e:
+            # Rate limit detected - mark account as rate_limited
+            print(f"⏳ Rate limit detected for account {account_id}")
+            update_instagram_account_status(account_id, "rate_limited", is_active=False)
+            return jsonify({
+                "error": f"Instagram rate limit reached: {str(e)}",
+                "success": False,
+                "hint": "This account is rate limited. Rotation will automatically use a different account."
+            }), 429
         except ClientError as e:
             return jsonify({"error": f"Failed to fetch Instagram post: {str(e)}", "success": False}), 404
         except Exception as e:
@@ -255,6 +482,10 @@ def extract_instagram():
 
         # Step 8: Get post author username
         username = media.user.username if media.user else "unknown"
+
+        # Step 9: Update account usage in Convex (for round-robin rotation)
+        # This increments usageCount and updates lastUsedAt timestamp
+        update_instagram_account_usage(account_id)
 
         # Return extracted data
         return jsonify({
