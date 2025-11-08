@@ -249,6 +249,9 @@ def get_instagram_client_with_rotation():
     password = account['password']
     proxy_url = account.get('proxyUrl')
 
+    # Disable interactive prompts in Railway environment (prevents "EOF when reading a line" errors)
+    os.environ['INSTAGRAPI_SKIP_CHALLENGE'] = '1'
+
     # Create new Instagram client
     client = Client()
 
@@ -275,6 +278,18 @@ def get_instagram_client_with_rotation():
         print(f"❌ Account @{username} requires challenge or is banned: {str(e)}")
         update_instagram_account_status(account_id, "banned", is_active=False)
         raise
+
+    except EOFError as e:
+        # Interactive prompt attempted in non-interactive environment
+        error_msg = (
+            f"❌ Interactive authentication required for @{username}. "
+            "This account may require 2FA, email verification, or manual login. "
+            "Please login to this Instagram account manually first, disable 2FA, "
+            "or use a different account."
+        )
+        print(error_msg)
+        update_instagram_account_status(account_id, "requires_manual_login", is_active=False)
+        raise ValueError(error_msg) from e
 
     except Exception as e:
         print(f"❌ Unexpected login error for @{username}: {str(e)}")
