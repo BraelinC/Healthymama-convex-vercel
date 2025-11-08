@@ -2,6 +2,7 @@ import { action, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
+import { normalizeUnit, parseQuantity } from "../lib/instacart-units";
 
 /**
  * Sanitize and fix common JSON errors from AI responses
@@ -346,87 +347,6 @@ export const triggerGroceryListRegeneration = mutation({
 // ========== INSTACART API INTEGRATION ==========
 
 /**
- * Instacart-supported units (from official API docs)
- * https://docs.instacart.com/developer_platform_api/api/units_of_measurement/
- */
-const ALL_VALID_UNITS = [
-  // Volume
-  'cup', 'cups', 'c', 'fl oz', 'can', 'container', 'jar', 'pouch', 'ounce',
-  'gallon', 'gallons', 'gal', 'gals', 'milliliter', 'millilitre', 'milliliters',
-  'millilitres', 'ml', 'mls', 'liter', 'litre', 'liters', 'litres', 'l',
-  'pint', 'pints', 'pt', 'pts', 'quart', 'quarts', 'qt', 'qts',
-  'tablespoon', 'tablespoons', 'tb', 'tbs', 'teaspoon', 'teaspoons', 'ts', 'tsp', 'tspn',
-  // Weight
-  'gram', 'grams', 'g', 'gs', 'kilogram', 'kilograms', 'kg', 'kgs', 'lb', 'bag',
-  'per lb', 'ounce', 'ounces', 'oz', 'pound', 'pounds', 'lbs',
-  // Count
-  'bunch', 'bunches', 'cans', 'each', 'ears', 'head', 'heads',
-  'large', 'lrg', 'lge', 'lg', 'medium', 'med', 'md',
-  'package', 'packages', 'packet', 'small', 'sm', 'small ears',
-  'small head', 'small heads',
-];
-
-const UNIT_ALIASES: Record<string, string> = {
-  'tbsp': 'tablespoon', 'tbsps': 'tablespoons', 'T': 'tablespoon', 'Tbsp': 'tablespoon',
-  'tsps': 'teaspoons', 't': 'teaspoon', 'Tsp': 'teaspoon',
-  'Cup': 'cup', 'Cups': 'cups', 'oz.': 'oz', 'Oz': 'oz', 'ozs': 'ounces',
-  'Lb': 'lb', 'Lbs': 'lbs', 'LB': 'lb', 'LBS': 'lbs', 'Pound': 'pound',
-  'G': 'g', 'Gram': 'gram', 'Grams': 'grams',
-  'Kg': 'kg', 'KG': 'kg', 'Kilogram': 'kilogram', 'Kilograms': 'kilograms',
-  'L': 'l', 'Liter': 'liter', 'Liters': 'liters', 'Litre': 'litre', 'Litres': 'litres',
-  'ML': 'ml', 'Ml': 'ml', 'Milliliter': 'milliliter', 'Milliliters': 'milliliters',
-  'Gal': 'gal', 'Gallon': 'gallon', 'Gallons': 'gallons',
-  'Pint': 'pint', 'Pints': 'pints', 'Quart': 'quart', 'Quarts': 'quarts',
-  'piece': 'each', 'pieces': 'each', 'whole': 'each', 'item': 'each', 'items': 'each',
-  'bottle': 'container', 'bottles': 'container', 'box': 'container', 'boxes': 'container',
-  'carton': 'container', 'cartons': 'container',
-};
-
-/**
- * Normalize unit to Instacart-supported format
- */
-function normalizeUnit(unit: string | undefined): string {
-  if (!unit || unit.trim() === '') return 'each';
-
-  const trimmed = unit.trim();
-
-  // Already valid?
-  if (ALL_VALID_UNITS.includes(trimmed)) return trimmed;
-
-  // Check aliases
-  if (UNIT_ALIASES[trimmed]) return UNIT_ALIASES[trimmed];
-  if (UNIT_ALIASES[trimmed.toLowerCase()]) return UNIT_ALIASES[trimmed.toLowerCase()];
-
-  // Case-insensitive match
-  for (const validUnit of ALL_VALID_UNITS) {
-    if (trimmed.toLowerCase() === validUnit.toLowerCase()) return validUnit;
-  }
-
-  console.warn(`Unknown unit "${unit}", defaulting to "each"`);
-  return 'each';
-}
-
-/**
- * Parse quantity string (handles fractions like "1/2")
- */
-function parseQuantity(quantity: string | undefined): number {
-  if (!quantity || quantity.trim() === '') return 1;
-
-  const trimmed = quantity.trim();
-
-  // Handle fractions
-  if (trimmed.includes('/')) {
-    const [numerator, denominator] = trimmed.split('/').map(Number);
-    if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
-      return numerator / denominator;
-    }
-  }
-
-  const num = parseFloat(trimmed);
-  return (!isNaN(num) && num > 0) ? num : 1;
-}
-
-/**
  * Create Instacart shopping list via official API
  * Runs in Convex action where INSTACART_API_KEY environment variable is accessible
  */
@@ -456,7 +376,7 @@ export const createInstacartShoppingList = action({
         name: ing.name,
         display_text: ing.displayText,
         measurements: [{
-          quantity: parseQuantity(ing.quantity),
+          quantity: parseQuantity(ing.quantity) ?? 1,
           unit: normalizeUnit(ing.unit),
         }],
       }));
@@ -472,7 +392,7 @@ export const createInstacartShoppingList = action({
         },
         body: JSON.stringify({
           title: "Your Meal Plan Grocery List",
-          imageUrl: "",
+          image_url: "",
           link_type: "recipe",
           instructions: ["Shop for these ingredients for your meal plan."],
           ingredients: ingredients,

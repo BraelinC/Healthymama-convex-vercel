@@ -128,7 +128,7 @@ export function UnifiedRecipeCard({
               className="w-10 h-10 rounded-full bg-white/90 hover:bg-white shadow-md"
               onClick={onShare}
             >
-              <Share2 className="w-5 h-5 text-blue-600" />
+              <Share2 className="w-5 h-5 text-rose-600" />
             </Button>
           )}
 
@@ -174,7 +174,7 @@ export function UnifiedRecipeCard({
             </Badge>
           )}
           {recipe.cuisine && (
-            <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+            <Badge variant="secondary" className="bg-rose-100 text-rose-700">
               {recipe.cuisine}
             </Badge>
           )}
@@ -295,8 +295,8 @@ export function UnifiedRecipeCard({
                 </div>
               )}
               {recipe.nutrition_info.protein_g !== undefined && (
-                <div className="bg-blue-50 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-blue-600">
+                <div className="bg-rose-50 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-rose-600">
                     {recipe.nutrition_info.protein_g}g
                   </p>
                   <p className="text-sm text-gray-600 mt-1">Protein</p>

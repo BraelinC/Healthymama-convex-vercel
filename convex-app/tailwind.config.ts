@@ -12,7 +12,10 @@ const config: Config = {
       colors: {
         "recipeai-bg": "#0f172a",
         "recipeai-panel": "#1e293b",
-        "recipeai-accent": "#8b5cf6",
+        "recipeai-accent": "#dc2626",
+        "healthymama-red": "#dc2626",
+        "healthymama-pink": "#ec4899",
+        "healthymama-logo-pink": "#EC407A",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -53,7 +56,9 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       boxShadow: {
-        "glow": "0 8px 30px rgba(139, 92, 246, 0.35)"
+        "glow": "0 8px 30px rgba(220, 38, 38, 0.35)",
+        "red-glow": "0 8px 30px rgba(220, 38, 38, 0.35)",
+        "red-hover": "0 0 0 3px rgba(220, 38, 38, 0.1)"
       }
     },
   },

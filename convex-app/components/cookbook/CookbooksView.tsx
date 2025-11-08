@@ -11,14 +11,9 @@ import { FavoritesSheet } from "../recipe/FavoritesSheet";
 import { CookbookSelectionSheet } from "./CookbookSelectionSheet";
 import { CookbookDetailSheet } from "./CookbookDetailSheet";
 import { MealPlanView } from "../meal-plan/MealPlanView";
+import { InstagramImportModal } from "../instagram/InstagramImportModal";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Plus, HandPlatter, ChevronDown } from "lucide-react";
+import { Plus, HandPlatter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export function CookbooksView() {
@@ -31,6 +26,7 @@ export function CookbooksView() {
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
   const [isCookbookDetailOpen, setIsCookbookDetailOpen] = useState(false);
+  const [isInstagramImportOpen, setIsInstagramImportOpen] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<any>(null);
   const [selectedCookbook, setSelectedCookbook] = useState<{ id: string; name: string } | null>(null);
 
@@ -69,6 +65,11 @@ export function CookbooksView() {
   const handleViewFavorites = () => {
     console.log("View favorites");
     setIsFavoritesOpen(true);
+  };
+
+  const handleImportInstagram = () => {
+    console.log("Import from Instagram");
+    setIsInstagramImportOpen(true);
   };
 
   const handleToggleFavorite = async (recipeId: string) => {
@@ -152,37 +153,17 @@ export function CookbooksView() {
     <div className="min-h-screen bg-[#FAFAFA]">
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-6">
-          {/* Healthy Mama Branding Header */}
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full shadow-md">
-              <HandPlatter className="text-white h-6 w-6" />
-            </div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-              Healthy Mama
-            </h1>
-          </div>
-
           {/* Cookbooks/Meal Plan Section */}
           <div>
             <div className="flex items-center gap-2 mb-6">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 hover:opacity-70 transition-opacity">
-                    <h1 className="text-3xl font-bold text-gray-900">
-                      {viewMode === "cookbooks" ? "Cookbooks" : "Meal Plan"}
-                    </h1>
-                    <ChevronDown className="w-6 h-6 text-gray-400" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuItem onClick={() => setViewMode("cookbooks")}>
-                    <span className="mr-2">📚</span> Cookbooks
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setViewMode("meal-plan")}>
-                    <span className="mr-2">📅</span> Meal Plan
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <button
+                onClick={() => setViewMode(viewMode === "cookbooks" ? "meal-plan" : "cookbooks")}
+                className="hover:opacity-70 transition-opacity cursor-pointer"
+              >
+                <h1 className="text-3xl font-bold text-gray-900">
+                  {viewMode === "cookbooks" ? "Cookbooks" : "Meal Plan"}
+                </h1>
+              </button>
             </div>
 
             {/* Conditional Content: Cookbooks Grid or Meal Plan View */}
@@ -225,8 +206,9 @@ export function CookbooksView() {
 
       {/* Floating Add Button (bottom right) - Positioned above bottom nav */}
       <Button
+        variant={null}
         onClick={() => setIsMenuOpen(true)}
-        className="fixed bottom-24 right-8 w-16 h-16 rounded-full shadow-lg bg-orange-500 hover:bg-orange-600 text-white z-40"
+        className="fixed bottom-24 right-8 w-16 h-16 rounded-full shadow-lg bg-gradient-to-br from-[#dc2626] to-[#ec4899] hover:shadow-red-glow text-white z-40 transition-all inline-flex items-center justify-center whitespace-nowrap text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
         size="icon"
       >
         <Plus className="w-8 h-8" />
@@ -238,6 +220,7 @@ export function CookbooksView() {
         onClose={() => setIsMenuOpen(false)}
         onAddRecipe={handleAddRecipe}
         onViewFavorites={handleViewFavorites}
+        onImportInstagram={handleImportInstagram}
       />
 
       {/* Create Recipe Modal */}
@@ -266,6 +249,15 @@ export function CookbooksView() {
           onClose={() => setIsCookbookSelectionOpen(false)}
           recipe={selectedRecipe}
           onSelectCookbook={handleSelectCookbook}
+        />
+      )}
+
+      {/* Instagram Import Modal */}
+      {userId && (
+        <InstagramImportModal
+          isOpen={isInstagramImportOpen}
+          onClose={() => setIsInstagramImportOpen(false)}
+          userId={userId}
         />
       )}
 

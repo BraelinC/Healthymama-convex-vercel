@@ -777,7 +777,7 @@ export const saveRecipe = internalMutation({
     // ULTRA PIPELINE: Immediately trigger enrich+embed pipeline for this recipe
     // This creates a streaming pipeline where each recipe flows through the full process
     console.log(`🚀 [SAVE RECIPE] Scheduling ULTRA pipeline (enrich→embed) for "${args.title}"`);
-    ctx.scheduler.runAfter(0, internal.enrichmentWorkflow.pipelineEnrichAndEmbed, {
+    ctx.scheduler.runAfter(0, internal.recipes.enrichmentWorkflow.pipelineEnrichAndEmbed, {
       extractedRecipeId: recipeId,
     });
 

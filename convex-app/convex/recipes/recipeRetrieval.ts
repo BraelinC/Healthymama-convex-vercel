@@ -498,3 +498,106 @@ export const getRecipeByIdAction = action({
     };
   },
 });
+
+/**
+ * Action: Search recipes by ingredient using vector search on individual ingredient embeddings
+ */
+export const searchByIngredient = action({
+  args: {
+    query: v.string(),
+    community: v.string(),
+    ingredientType: v.optional(v.union(v.literal("main"), v.literal("other"))),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit || 10;
+
+    console.log(`🔍 [INGREDIENT SEARCH] Searching for ingredient: "${args.query}" in community ${args.community}`);
+
+    // Generate embedding for the ingredient query
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error("OPENAI_API_KEY not configured");
+    }
+
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: EMBEDDING_MODEL,
+        input: `Ingredient: ${args.query}`,
+        dimensions: EMBEDDING_DIMENSIONS,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const queryEmbedding = data.data[0].embedding;
+
+    // Search ingredient embeddings using vector search
+    const ingredientMatches = await ctx.vectorSearch(
+      "ingredientEmbeddings",
+      "by_embedding",
+      {
+        vector: queryEmbedding,
+        limit: limit * 3, // Get more ingredient matches to ensure enough unique recipes
+        filter: args.ingredientType
+          ? (q: any) => q.eq("ingredientType", args.ingredientType)
+          : undefined,
+      }
+    );
+
+    console.log(`🔍 [INGREDIENT SEARCH] Found ${ingredientMatches.length} ingredient matches`);
+
+    // Group by recipe and get unique recipes
+    const recipeMatches = new Map<string, { recipeId: any; ingredient: string; score: number; type: string }>();
+
+    for (const match of ingredientMatches) {
+      const recipeIdStr = match.recipeId.toString();
+
+      // Only keep the best match per recipe
+      if (!recipeMatches.has(recipeIdStr) || recipeMatches.get(recipeIdStr)!.score < match._score) {
+        recipeMatches.set(recipeIdStr, {
+          recipeId: match.recipeId,
+          ingredient: match.ingredient,
+          score: match._score,
+          type: match.ingredientType,
+        });
+      }
+    }
+
+    // Get recipe details and filter by community
+    const recipes = [];
+    for (const [_, match] of Array.from(recipeMatches.entries()).slice(0, limit)) {
+      const recipe = await ctx.runQuery(internal.recipeQueries.getRecipeById, {
+        recipeId: match.recipeId,
+      });
+
+      if (recipe && recipe.community === args.community) {
+        recipes.push({
+          id: recipe._id,
+          name: recipe.name,
+          description: recipe.description,
+          ingredients: recipe.ingredients,
+          steps: recipe.steps,
+          dietTags: recipe.dietTags,
+          imageUrl: recipe.imageUrl,
+          sourceUrl: recipe.sourceUrl,
+          matchedIngredient: match.ingredient,
+          ingredientType: match.type,
+          similarity: match.score,
+        });
+      }
+    }
+
+    console.log(`✅ [INGREDIENT SEARCH] Returning ${recipes.length} recipes for "${args.query}"`);
+
+    return recipes;
+  },
+});

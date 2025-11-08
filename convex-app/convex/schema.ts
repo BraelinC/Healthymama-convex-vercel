@@ -5,6 +5,8 @@ export default defineSchema({
   users: defineTable({
     userId: v.string(),
     email: v.string(),
+    isCreator: v.optional(v.boolean()), // Creators can create communities
+    stripeCustomerId: v.optional(v.string()), // Stripe customer ID for payments
     prefs: v.object({
       diet: v.optional(v.string()),
       favorites: v.array(v.string()),
@@ -14,11 +16,52 @@ export default defineSchema({
       goals: v.optional(v.array(v.string())),
       preferences: v.optional(v.array(v.string())),
       culturalBackground: v.optional(v.array(v.string())),
+      lastVisitedCommunityId: v.optional(v.id("communities")),
+      lastVisitedAt: v.optional(v.number()),
     }),
     updatedAt: v.number(),
   })
     .index("by_userId", ["userId"])
-    .index("by_email", ["email"]),
+    .index("by_email", ["email"])
+    .index("by_isCreator", ["isCreator"])
+    .index("by_stripeCustomerId", ["stripeCustomerId"]),
+
+  communities: defineTable({
+    name: v.string(),
+    description: v.string(),
+    category: v.string(),
+    memberCount: v.number(),
+    isPublic: v.boolean(),
+    coverImage: v.optional(v.string()), // Legacy: URL-based images
+    coverImageStorageId: v.optional(v.id("_storage")), // New: UploadStuff storage ID
+    rating: v.optional(v.number()),
+    recipeCount: v.number(),
+    nationalities: v.array(v.string()),
+    creator: v.object({
+      name: v.string(),
+      avatar: v.optional(v.string()),
+    }),
+    creatorId: v.optional(v.string()), // Clerk user ID of the creator
+
+    // Multi-tier pricing - Creator can enable any combination
+    stripeProductId: v.optional(v.string()), // One product per community
+
+    monthlyPrice: v.optional(v.number()), // Price in cents (e.g., 999 = $9.99)
+    monthlyStripePriceId: v.optional(v.string()),
+
+    yearlyPrice: v.optional(v.number()), // Price in cents
+    yearlyStripePriceId: v.optional(v.string()),
+
+    lifetimePrice: v.optional(v.number()), // Price in cents
+    lifetimeStripePaymentLinkId: v.optional(v.string()),
+
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_category", ["category"])
+    .index("by_isPublic", ["isPublic"])
+    .index("by_createdAt", ["createdAt"])
+    .index("by_creatorId", ["creatorId"]),
 
   recipes: defineTable({
     name: v.string(),
@@ -39,6 +82,22 @@ export default defineSchema({
       vectorField: "embedding",
       dimensions: 1536,
       filterFields: ["community"], // Combined: can filter by community or search all
+    }),
+
+  ingredientEmbeddings: defineTable({
+    recipeId: v.id("recipes"),
+    ingredient: v.string(),
+    ingredientType: v.union(v.literal("main"), v.literal("other")),
+    embedding: v.array(v.float64()),
+    embeddingModel: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_recipe", ["recipeId"])
+    .index("by_ingredient_type", ["ingredientType"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["recipeId", "ingredientType"],
     }),
 
   chatSessions: defineTable({
@@ -196,12 +255,9 @@ export default defineSchema({
       difficulty: v.optional(v.string()),
       timeCommitment: v.optional(v.string()),
       flavorProfile: v.array(v.string()),
-      texture: v.array(v.string()),
       mainIngredients: v.array(v.string()),
-      equipment: v.array(v.string()),
       makeAhead: v.boolean(),
       mealPrepFriendly: v.boolean(),
-      confidence: v.number(),
       model: v.string(),
       enrichedAt: v.number(),
     })),
@@ -501,4 +557,126 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"]),
+
+  // ========== STRIPE SUBSCRIPTIONS & PAYMENTS ==========
+
+  subscriptions: defineTable({
+    // User and community
+    userId: v.string(), // Clerk user ID
+    communityId: v.id("communities"),
+
+    // Stripe references
+    stripeSubscriptionId: v.string(), // Stripe subscription ID
+    stripeCustomerId: v.string(), // Stripe customer ID (denormalized)
+    stripePriceId: v.string(), // Stripe price ID
+
+    // Status tracking
+    status: v.union(
+      v.literal("active"),
+      v.literal("canceled"),
+      v.literal("past_due"),
+      v.literal("incomplete"),
+      v.literal("incomplete_expired"),
+      v.literal("trialing"),
+      v.literal("unpaid")
+    ),
+
+    // Billing details
+    currentPeriodStart: v.number(), // Unix timestamp
+    currentPeriodEnd: v.number(), // Unix timestamp
+    cancelAtPeriodEnd: v.boolean(),
+    canceledAt: v.optional(v.number()),
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_community", ["communityId"])
+    .index("by_user_community", ["userId", "communityId"])
+    .index("by_stripe_subscription", ["stripeSubscriptionId"])
+    .index("by_status", ["status"]),
+
+  purchases: defineTable({
+    // User and community
+    userId: v.string(), // Clerk user ID
+    communityId: v.id("communities"),
+
+    // Stripe references
+    stripePaymentIntentId: v.string(), // Stripe Payment Intent ID
+    stripeCustomerId: v.string(), // Stripe customer ID (denormalized)
+
+    // Purchase details
+    amount: v.number(), // Amount in cents
+    status: v.union(
+      v.literal("succeeded"),
+      v.literal("pending"),
+      v.literal("failed"),
+      v.literal("canceled")
+    ),
+
+    // Timestamps
+    purchasedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_community", ["communityId"])
+    .index("by_user_community", ["userId", "communityId"])
+    .index("by_payment_intent", ["stripePaymentIntentId"])
+    .index("by_status", ["status"]),
+
+  creatorStripeAccounts: defineTable({
+    // Creator identity
+    creatorId: v.string(), // Clerk user ID
+
+    // Stripe Connect account
+    stripeAccountId: v.string(), // Stripe Connect account ID
+    accountStatus: v.union(
+      v.literal("pending"), // Onboarding not complete
+      v.literal("active"), // Ready to receive payouts
+      v.literal("disabled") // Disabled by platform or Stripe
+    ),
+
+    // Onboarding
+    onboardingComplete: v.boolean(),
+    detailsSubmitted: v.boolean(),
+    chargesEnabled: v.boolean(),
+    payoutsEnabled: v.boolean(),
+
+    // Account metadata
+    country: v.optional(v.string()),
+    currency: v.optional(v.string()),
+    email: v.optional(v.string()),
+
+    // Platform fee customization
+    customPlatformFeePercent: v.optional(v.number()), // Override default fee (e.g., 15 instead of 25)
+    feeType: v.union(
+      v.literal("default"), // Uses PLATFORM_FEE_PERCENT from env
+      v.literal("custom")   // Uses customPlatformFeePercent
+    ),
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_creator", ["creatorId"])
+    .index("by_stripe_account", ["stripeAccountId"])
+    .index("by_status", ["accountStatus"]),
+
+  platformSettings: defineTable({
+    // Setting key (only one row expected with key "default")
+    key: v.string(),
+
+    // Platform fee configuration
+    platformFeePercent: v.number(), // e.g., 25 for 25%
+
+    // Stripe keys (stored in env vars, this is just for reference)
+    // We won't store actual keys here, just metadata
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_key", ["key"]),
 });

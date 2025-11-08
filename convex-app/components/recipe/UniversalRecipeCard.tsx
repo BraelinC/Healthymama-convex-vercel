@@ -96,7 +96,7 @@ export function UniversalRecipeCard({
             className="w-10 h-10 rounded-full bg-white/90 hover:bg-white shadow-md"
             onClick={onShare}
           >
-            <Share2 className="w-5 h-5 text-blue-600" />
+            <Share2 className="w-5 h-5 text-rose-600" />
           </Button>
 
           {/* Heart Button - Favorite */}
@@ -134,7 +134,7 @@ export function UniversalRecipeCard({
             </Badge>
           )}
           {recipe.cuisine && (
-            <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+            <Badge variant="secondary" className="bg-rose-100 text-rose-700">
               {recipe.cuisine}
             </Badge>
           )}

@@ -497,8 +497,8 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogOverlay className="z-[100000]" />
-      <DialogContent 
-        className="max-w-3xl w-[95vw] max-h-[85vh] p-0 mx-auto z-[100001]"
+      <DialogContent
+        className="max-w-3xl w-[95vw] max-h-[85vh] p-0 mx-auto z-[100001] bg-white"
         style={{ touchAction: 'auto', height: '85vh', display: 'flex', flexDirection: 'column' }}
       >
         <div className="flex flex-col h-full min-h-0">
@@ -526,15 +526,15 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
             }}
           >
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid grid-cols-3 mb-6">
-                <TabsTrigger value="basics">Recipe Basics</TabsTrigger>
-                <TabsTrigger value="ingredients">Ingredients</TabsTrigger>
-                <TabsTrigger value="instructions">Instructions</TabsTrigger>
+              <TabsList className="grid grid-cols-3 mb-6 bg-gray-100">
+                <TabsTrigger value="basics" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-healthymama-red data-[state=active]:to-healthymama-pink data-[state=active]:text-white">Recipe Basics</TabsTrigger>
+                <TabsTrigger value="ingredients" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-healthymama-red data-[state=active]:to-healthymama-pink data-[state=active]:text-white">Ingredients</TabsTrigger>
+                <TabsTrigger value="instructions" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-healthymama-red data-[state=active]:to-healthymama-pink data-[state=active]:text-white">Instructions</TabsTrigger>
               </TabsList>
 
               {/* Recipe Basics Tab */}
               <TabsContent value="basics" className="space-y-6">
-                <Card>
+                <Card className="bg-white border-gray-200">
                   <CardContent className="p-6">
                     <div className="space-y-4">
                       <div>
@@ -545,7 +545,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                           placeholder="Enter recipe name..."
                           value={recipeName}
                           onChange={(e) => setRecipeName(e.target.value)}
-                          className="text-lg"
+                          className="text-lg bg-white text-gray-900 border-gray-300"
                         />
                       </div>
 
@@ -554,7 +554,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                           Meal Type *
                         </label>
                         <Select value={mealType} onValueChange={setMealType}>
-                          <SelectTrigger>
+                          <SelectTrigger className="bg-white text-gray-900 border-gray-300">
                             <SelectValue placeholder="Select meal type..." />
                           </SelectTrigger>
                           <SelectContent className="z-[100002]">
@@ -600,7 +600,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                                   type="button"
                                   variant="outline"
                                   size="sm"
-                                  className="text-emerald-600 border-emerald-600 hover:bg-emerald-50"
+                                  className="text-healthymama-pink border-healthymama-pink hover:bg-pink-50"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     document.getElementById('recipe-image-input')?.click();
@@ -613,7 +613,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                                   type="button"
                                   variant="outline"
                                   size="sm"
-                                  className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                                  className="text-healthymama-red border-healthymama-red hover:bg-red-50"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleTakePicture();
@@ -681,6 +681,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                           value={description}
                           onChange={(e) => setDescription(e.target.value)}
                           rows={3}
+                          className="bg-white text-gray-900 border-gray-300"
                         />
                       </div>
 
@@ -695,6 +696,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                             placeholder="15"
                             value={prepTime}
                             onChange={(e) => setPrepTime(e.target.value)}
+                            className="bg-white text-gray-900 border-gray-300"
                           />
                         </div>
                         
@@ -708,6 +710,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                             placeholder="30"
                             value={cookTime}
                             onChange={(e) => setCookTime(e.target.value)}
+                            className="bg-white text-gray-900 border-gray-300"
                           />
                         </div>
 
@@ -720,6 +723,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                             type="number"
                             value={servings}
                             onChange={(e) => setServings(e.target.value)}
+                            className="bg-white text-gray-900 border-gray-300"
                           />
                         </div>
                       </div>
@@ -733,12 +737,13 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                             placeholder="e.g., Italian, Mexican, Asian..."
                             value={cuisine}
                             onChange={(e) => setCuisine(e.target.value)}
+                            className="bg-white text-gray-900 border-gray-300"
                           />
                         </div>
 
                         <div>
                           <label className="text-sm font-medium text-gray-700 mb-2 block">
-                            <Star className="h-4 w-4 inline mr-1" />
+                            <Star className="h-4 w-4 inline mr-1 text-healthymama-red" />
                             Difficulty (1-5)
                           </label>
                           <div className="flex gap-2">
@@ -748,7 +753,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                                 variant={difficulty >= level ? "default" : "outline"}
                                 size="sm"
                                 onClick={() => setDifficulty(level)}
-                                className="w-10 h-10 p-0"
+                                className={`w-10 h-10 p-0 ${difficulty >= level ? 'bg-gradient-to-r from-healthymama-red to-healthymama-pink text-white hover:opacity-90' : 'border-gray-300 hover:bg-red-50'}`}
                               >
                                 {level}
                               </Button>
@@ -763,7 +768,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
 
               {/* Ingredients Tab */}
               <TabsContent value="ingredients" className="space-y-6">
-                <Card>
+                <Card className="bg-white border-gray-200">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold text-gray-900">Ingredients</h3>
@@ -781,6 +786,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                               placeholder="Ingredient name"
                               value={ingredient.name}
                               onChange={(e) => updateIngredient(ingredient.id, 'name', e.target.value)}
+                              className="bg-white text-gray-900 border-gray-300"
                             />
                           </div>
                           <div className="w-12">
@@ -788,6 +794,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                               placeholder="1"
                               value={ingredient.amount}
                               onChange={(e) => updateIngredient(ingredient.id, 'amount', e.target.value)}
+                              className="bg-white text-gray-900 border-gray-300"
                             />
                           </div>
                           <div className="w-20 relative">
@@ -796,6 +803,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                               value={ingredient.unit}
                               onChange={(e) => updateIngredient(ingredient.id, 'unit', e.target.value)}
                               list={`units-${ingredient.id}`}
+                              className="bg-white text-gray-900 border-gray-300"
                             />
                             <datalist id={`units-${ingredient.id}`}>
                               {getUnitSuggestions(ingredient.name).map((unit) => (
@@ -812,7 +820,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
 
               {/* Instructions Tab */}
               <TabsContent value="instructions" className="space-y-6">
-                <Card>
+                <Card className="bg-white border-gray-200">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold text-gray-900">Instructions</h3>
@@ -834,6 +842,7 @@ export function CreateRecipe({ isOpen, onClose, saveAsMealPlan = false }: Create
                               value={instruction.text}
                               onChange={(e) => updateInstruction(instruction.id, e.target.value)}
                               rows={2}
+                              className="bg-white text-gray-900 border-gray-300"
                             />
                           </div>
                         </div>
