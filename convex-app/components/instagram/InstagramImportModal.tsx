@@ -1,3 +1,43 @@
+/**
+ * Instagram Import Modal Component
+ *
+ * A multi-step modal/sheet for importing recipes from Instagram reels.
+ * Guides users through URL input → extraction → preview → save workflow.
+ *
+ * User Flow:
+ * 1. Input: User pastes Instagram reel URL
+ * 2. Extracting: Shows loading spinner while fetching + parsing
+ * 3. Preview: Displays parsed recipe for review (ingredients, instructions, metadata)
+ * 4. Saving: Shows loading spinner while saving to Convex
+ * 5. Success: Shows checkmark, auto-closes modal after 1.5 seconds
+ * 6. Error: Shows error message with "Try Again" button
+ *
+ * Technical Flow:
+ * 1. User pastes URL → Frontend validation
+ * 2. Call /api/instagram/import (Next.js API route)
+ * 3. API route calls Railway service + OpenRouter AI
+ * 4. Return formatted recipe JSON
+ * 5. Display preview in modal
+ * 6. User clicks "Save" → Call Convex mutation (importInstagramRecipe)
+ * 7. Recipe saved to "Instagram" cookbook
+ * 8. Success toast + modal closes
+ *
+ * Component Architecture:
+ * - Uses shadcn/ui Sheet component (bottom drawer on mobile)
+ * - State-driven step transitions (input → extracting → preview → saving → success/error)
+ * - Toast notifications for user feedback
+ * - Responsive design (mobile-first)
+ *
+ * Props:
+ * @param isOpen - Controls modal visibility
+ * @param onClose - Callback to close modal and reset state
+ * @param userId - Clerk user ID (required for Convex mutation)
+ *
+ * Dependencies:
+ * - Convex: importInstagramRecipe mutation
+ * - API Route: /api/instagram/import
+ * - UI Components: Sheet, Button, Input, Loader, Icons
+ */
 "use client";
 
 import { useState } from "react";
@@ -62,7 +102,31 @@ export function InstagramImportModal({
     onClose();
   };
 
-  // Step 1: Extract recipe from Instagram
+  /**
+   * Step 1: Extract Recipe from Instagram
+   *
+   * Calls the Next.js API route to orchestrate:
+   * - Railway service (Instagram data extraction)
+   * - OpenRouter AI (recipe parsing)
+   *
+   * Process:
+   * 1. Validate Instagram URL (must contain "instagram.com")
+   * 2. Set step to "extracting" (shows loading UI)
+   * 3. Call /api/instagram/import with URL
+   * 4. Parse response and store extracted recipe
+   * 5. Transition to "preview" step
+   * 6. Show success toast
+   *
+   * Error Handling:
+   * - Invalid URL: Toast error, don't call API
+   * - API error: Set step to "error", show error message
+   * - Network error: Caught and displayed in error step
+   *
+   * Expected Duration: 5-15 seconds
+   * - Railway fetch: 2-5 seconds
+   * - AI parsing: 2-5 seconds
+   * - Network latency: 1-5 seconds
+   */
   const handleExtract = async () => {
     if (!instagramUrl.trim()) {
       toast({
@@ -123,7 +187,36 @@ export function InstagramImportModal({
     }
   };
 
-  // Step 2: Save recipe to Convex
+  /**
+   * Step 2: Save Recipe to Convex Database
+   *
+   * Calls the Convex mutation to save the extracted recipe to the user's cookbook.
+   * The recipe is automatically saved to the "Instagram" cookbook category.
+   *
+   * Process:
+   * 1. Validate extractedRecipe exists
+   * 2. Set step to "saving" (shows loading UI)
+   * 3. Call importInstagramRecipe mutation with all recipe data
+   * 4. Handle response (success or duplicate error)
+   * 5. Transition to "success" step
+   * 6. Auto-close modal after 1.5 seconds
+   *
+   * Error Handling:
+   * - Duplicate recipe: Mutation returns {success: false, error: "already imported"}
+   * - Database error: Caught and displayed in error step
+   * - Network error: Caught and displayed in error step
+   *
+   * Convex Mutation:
+   * - Function: api.instagram.importInstagramRecipe
+   * - Result: {success: boolean, recipeId?: string, error?: string}
+   * - Auto-creates "Instagram" cookbook if doesn't exist
+   *
+   * Post-Success:
+   * - Shows success step with checkmark
+   * - Displays success toast
+   * - Auto-closes modal after 1.5 seconds
+   * - User can view recipe in Instagram cookbook
+   */
   const handleSave = async () => {
     if (!extractedRecipe) return;
 
