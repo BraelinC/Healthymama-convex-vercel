@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useQuery } from "convex-helpers/react/cache/hooks";
@@ -119,7 +119,7 @@ const communities = [
   },
 ];
 
-export default function HomePage() {
+function HomePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoaded, isSignedIn } = useUser();
@@ -409,5 +409,13 @@ export default function HomePage() {
         />
       )}
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#FAFAFA]" />}>
+      <HomePageContent />
+    </Suspense>
   );
 }
