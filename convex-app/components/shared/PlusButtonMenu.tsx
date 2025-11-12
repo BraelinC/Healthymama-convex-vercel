@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import { Heart, BookOpen, X, Instagram } from "lucide-react";
+import { Heart, BookOpen, X, Video } from "lucide-react";
 
 interface PlusButtonMenuProps {
   isOpen: boolean;
   onClose: () => void;
   onAddRecipe: () => void;
   onViewFavorites: () => void;
-  onImportInstagram: () => void;
+  onImportVideo: () => void;
 }
 
 interface MenuItem {
@@ -23,15 +23,15 @@ export function PlusButtonMenu({
   onClose,
   onAddRecipe,
   onViewFavorites,
-  onImportInstagram,
+  onImportVideo,
 }: PlusButtonMenuProps) {
   const menuItems: MenuItem[] = [
     {
-      icon: <Instagram className="w-5 h-5" />,
-      title: "Import from Instagram",
-      description: "Extract recipes from reels",
+      icon: <Video className="w-5 h-5" />,
+      title: "Import from Anywhere",
+      description: "YouTube, Instagram, TikTok & more",
       onClick: () => {
-        onImportInstagram();
+        onImportVideo();
         onClose();
       },
     },

@@ -12,6 +12,7 @@ import { CookbookSelectionSheet } from "./CookbookSelectionSheet";
 import { CookbookDetailSheet } from "./CookbookDetailSheet";
 import { MealPlanView } from "../meal-plan/MealPlanView";
 import { InstagramImportModal } from "../instagram/InstagramImportModal";
+import { UniversalVideoImportModal } from "../video/UniversalVideoImportModal";
 import { Button } from "@/components/ui/button";
 import { Plus, HandPlatter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +28,7 @@ export function CookbooksView() {
   const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
   const [isCookbookDetailOpen, setIsCookbookDetailOpen] = useState(false);
   const [isInstagramImportOpen, setIsInstagramImportOpen] = useState(false);
+  const [isVideoImportOpen, setIsVideoImportOpen] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<any>(null);
   const [selectedCookbook, setSelectedCookbook] = useState<{ id: string; name: string } | null>(null);
 
@@ -70,6 +72,11 @@ export function CookbooksView() {
   const handleImportInstagram = () => {
     console.log("Import from Instagram");
     setIsInstagramImportOpen(true);
+  };
+
+  const handleImportVideo = () => {
+    console.log("Import from video");
+    setIsVideoImportOpen(true);
   };
 
   const handleToggleFavorite = async (recipeId: string) => {
@@ -220,7 +227,7 @@ export function CookbooksView() {
         onClose={() => setIsMenuOpen(false)}
         onAddRecipe={handleAddRecipe}
         onViewFavorites={handleViewFavorites}
-        onImportInstagram={handleImportInstagram}
+        onImportVideo={handleImportVideo}
       />
 
       {/* Create Recipe Modal */}
@@ -257,6 +264,15 @@ export function CookbooksView() {
         <InstagramImportModal
           isOpen={isInstagramImportOpen}
           onClose={() => setIsInstagramImportOpen(false)}
+          userId={userId}
+        />
+      )}
+
+      {/* Universal Video Import Modal */}
+      {userId && (
+        <UniversalVideoImportModal
+          isOpen={isVideoImportOpen}
+          onClose={() => setIsVideoImportOpen(false)}
           userId={userId}
         />
       )}

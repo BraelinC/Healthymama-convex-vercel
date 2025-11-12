@@ -275,6 +275,91 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_url", ["url"]),
 
+  // ========== VIDEO RECIPES (YouTube, Instagram, TikTok imports) ==========
+
+  videoRecipes: defineTable({
+    userId: v.string(),
+
+    // Source platform info
+    sourcePlatform: v.union(
+      v.literal("youtube"),
+      v.literal("instagram"),
+      v.literal("tiktok"),
+      v.literal("other")
+    ),
+    sourceUrl: v.string(),
+    videoId: v.optional(v.string()), // Platform-specific video ID
+
+    // Mux storage data
+    muxAssetId: v.string(),
+    muxPlaybackId: v.string(),
+    muxUploadId: v.string(),
+    muxThumbnailUrl: v.string(),
+
+    // Recipe data (extracted by Gemini)
+    title: v.string(),
+    description: v.optional(v.string()),
+    ingredients: v.array(v.object({
+      name: v.string(),
+      quantity: v.optional(v.string()),
+      unit: v.optional(v.string()),
+    })),
+    instructions: v.array(v.object({
+      step: v.number(),
+      description: v.string(),
+      timestamp: v.optional(v.string()), // MM:SS format
+      keyActions: v.optional(v.array(v.string())), // e.g., ["chop", "sauté", "simmer"]
+    })),
+
+    // Metadata
+    servings: v.optional(v.string()),
+    prep_time: v.optional(v.string()),
+    cook_time: v.optional(v.string()),
+    cuisine: v.optional(v.string()),
+    difficulty: v.optional(v.union(
+      v.literal("easy"),
+      v.literal("medium"),
+      v.literal("hard")
+    )),
+
+    // Key frames for timeline scrubbing
+    keyFrames: v.optional(v.array(v.object({
+      timestamp: v.string(), // MM:SS format
+      description: v.string(),
+      thumbnailUrl: v.string(), // Mux thumbnail URL
+      actionType: v.union(
+        v.literal("ingredient_prep"),
+        v.literal("cooking_technique"),
+        v.literal("final_plating"),
+        v.literal("other")
+      ),
+    }))),
+
+    // Processing status
+    extractionStatus: v.union(
+      v.literal("downloading"),
+      v.literal("uploading_to_mux"),
+      v.literal("analyzing_with_ai"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+    extractionError: v.optional(v.string()),
+
+    // Video metadata
+    videoDuration: v.optional(v.number()), // seconds
+    videoResolution: v.optional(v.string()), // e.g., "1280x720"
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_status", ["extractionStatus"])
+    .index("by_user_created", ["userId", "createdAt"])
+    .index("by_source_url", ["sourceUrl"])
+    .index("by_mux_asset", ["muxAssetId"])
+    .index("by_platform", ["sourcePlatform"]),
+
   // ========== USER RECIPES (Saved to Cookbooks) ==========
 
   userRecipes: defineTable({
