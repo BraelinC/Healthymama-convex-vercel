@@ -162,11 +162,11 @@ export const getUnreadShareCount = query({
     userId: v.string(),
   },
   handler: async (ctx, args) => {
+    // Use simple index and filter to avoid compound index issues during deployment
     const unreadShares = await ctx.db
       .query("sharedRecipes")
-      .withIndex("by_receiver_status", (q) =>
-        q.eq("toUserId", args.userId).eq("status", "unread")
-      )
+      .withIndex("by_receiver", (q) => q.eq("toUserId", args.userId))
+      .filter((q) => q.eq(q.field("status"), "unread"))
       .collect();
 
     return unreadShares.length;
