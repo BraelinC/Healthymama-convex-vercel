@@ -27,7 +27,8 @@
  */
 
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { action, mutation, query } from "./_generated/server";
+import { api } from "./_generated/api";
 
 /**
  * Import an Instagram Recipe to User's Cookbook
@@ -67,11 +68,10 @@ import { mutation, query } from "./_generated/server";
  * - Duplicate recipe: Returns {success: false, error: "already imported", recipeId}
  * - Database error: Throws exception (handled by Convex)
  */
-export const importInstagramRecipe = mutation({
+export const importInstagramRecipe = action({
   args: {
-    userId: v.string(),
-
-    // Recipe data (parsed from Instagram caption/comments)
+    // SECURITY: userId removed from args - retrieved from authenticated context instead
+    // Recipe data (parsed from video or description)
     title: v.string(),
     description: v.optional(v.string()),
     ingredients: v.array(v.string()),
@@ -83,15 +83,41 @@ export const importInstagramRecipe = mutation({
     cook_time: v.optional(v.string()),
     cuisine: v.optional(v.string()),
 
+    // Source platform
+    source: v.optional(v.union(v.literal("instagram"), v.literal("youtube"))),
+
     // Instagram-specific data
-    instagramUrl: v.string(),
+    instagramUrl: v.optional(v.string()),
     instagramVideoUrl: v.optional(v.string()),
     instagramThumbnailUrl: v.optional(v.string()),
     instagramUsername: v.optional(v.string()),
+
+    // YouTube-specific data
+    youtubeUrl: v.optional(v.string()),
+    youtubeVideoId: v.optional(v.string()),
+    youtubeThumbnailUrl: v.optional(v.string()),
+
+    // Mux video hosting (both platforms)
+    muxPlaybackId: v.optional(v.string()),
+    muxAssetId: v.optional(v.string()),
+
+    // AI-analyzed video segments for step-by-step cooking mode
+    videoSegments: v.optional(v.array(v.object({
+      stepNumber: v.number(),
+      instruction: v.string(),
+      startTime: v.number(),
+      endTime: v.number(),
+    }))),
   },
   handler: async (ctx, args) => {
+    // SECURITY: Get authenticated userId from Convex auth context
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized - must be logged in to import recipes");
+    }
+    const userId = identity.subject;
+
     const {
-      userId,
       title,
       description,
       ingredients,
@@ -100,28 +126,32 @@ export const importInstagramRecipe = mutation({
       prep_time,
       cook_time,
       cuisine,
+      source,
       instagramUrl,
       instagramVideoUrl,
       instagramThumbnailUrl,
       instagramUsername,
+      youtubeUrl,
+      youtubeVideoId,
+      youtubeThumbnailUrl,
+      muxPlaybackId,
+      muxAssetId,
+      videoSegments,
     } = args;
 
-    // Duplicate Detection: Check if recipe already exists
-    // We check by title + instagram cookbook to prevent re-importing the same recipe
-    // Note: This allows importing the same recipe from different sources (community, custom)
-    const existingRecipe = await ctx.db
-      .query("userRecipes")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("userId"), userId),
-          q.eq(q.field("title"), title),
-          q.eq(q.field("cookbookCategory"), "instagram")
-        )
-      )
-      .first();
+    // Determine cookbook category and image URL based on source
+    const isYouTube = source === "youtube";
+    const cookbookCategory = isYouTube ? "youtube" : "instagram";
+    const imageUrl = isYouTube ? youtubeThumbnailUrl : (instagramThumbnailUrl || instagramVideoUrl);
 
-    if (existingRecipe) {
-      console.log(`[Instagram] Recipe "${title}" already imported for user ${userId}`);
+    // Duplicate Detection: Check if recipe already exists in same cookbook
+    const existingRecipe = await ctx.runQuery(api.recipes.userRecipes.getUserRecipeByTitle, {
+      userId,
+      title,
+    });
+
+    if (existingRecipe && existingRecipe.cookbookCategory === cookbookCategory) {
+      console.log(`[${source || 'Video Import'}] Recipe "${title}" already imported for user ${userId}`);
       return {
         success: false,
         error: "This recipe has already been imported",
@@ -129,22 +159,19 @@ export const importInstagramRecipe = mutation({
       };
     }
 
-    // Save Recipe to Database
-    // Insert into userRecipes table with instagram cookbook category
-    const recipeId = await ctx.db.insert("userRecipes", {
+    // Save Recipe with PRE-PARSED INGREDIENTS for instant grocery lists
+    // This parses ingredients ONCE with AI during import
+    const recipeId = await ctx.runAction(api.recipes.userRecipes.saveRecipeWithParsedIngredients, {
       userId,
-
-      // Recipe type: using "community" since Instagram imports are external
-      recipeType: "community",
+      recipeType: "community", // Video imports are external recipes
+      cookbookCategory,
 
       // Recipe data
       title,
-      description: description || `Recipe from @${instagramUsername || 'Instagram'}`,
+      description: description || (isYouTube ? `Recipe from YouTube` : `Recipe from @${instagramUsername || 'Instagram'}`),
+      imageUrl,
       ingredients,
       instructions,
-
-      // Use Instagram thumbnail as image
-      imageUrl: instagramThumbnailUrl || instagramVideoUrl,
 
       // Optional metadata
       servings,
@@ -152,19 +179,30 @@ export const importInstagramRecipe = mutation({
       cook_time,
       cuisine,
 
-      // Cookbook organization - use "instagram" category
-      cookbookCategory: "instagram",
-
-      // User metadata
-      notes: `Imported from Instagram: ${instagramUrl}`,
+      // User preferences
       isFavorited: false,
 
-      // Timestamps
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      // Source platform
+      source,
+
+      // Mux video hosting
+      muxPlaybackId,
+      muxAssetId,
+
+      // Instagram fields
+      instagramVideoUrl,
+      instagramUsername,
+
+      // YouTube fields
+      youtubeUrl,
+      youtubeVideoId,
+      youtubeThumbnailUrl,
+
+      // AI-analyzed video segments
+      videoSegments,
     });
 
-    console.log(`[Instagram] ✅ Imported recipe "${title}" for user ${userId}`);
+    console.log(`[${source || 'Video Import'}] ✅ Imported recipe "${title}" with pre-parsed ingredients for user ${userId}`);
 
     return {
       success: true,

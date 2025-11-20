@@ -7,7 +7,17 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImageWithFallback } from "../shared/ImageWithFallback";
-import { Plus, Share2, Heart, Clock, ShoppingCart } from "lucide-react";
+import { Plus, Share2, Heart, Clock, ShoppingCart, ChefHat } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import MuxPlayer from "@mux/mux-player-react";
+import { StepByStepCookingView } from "./StepByStepCookingView";
+
+interface VideoSegment {
+  stepNumber: number;
+  instruction: string;
+  startTime: number;
+  endTime: number;
+}
 
 interface UniversalRecipeCardProps {
   recipe: {
@@ -20,6 +30,9 @@ interface UniversalRecipeCardProps {
     time_minutes?: number;
     category?: string;
     cuisine?: string;
+    muxPlaybackId?: string;
+    instagramUsername?: string;
+    videoSegments?: VideoSegment[];
   };
   isFavorited?: boolean;
   onToggleFavorite?: () => void;
@@ -35,6 +48,9 @@ export function UniversalRecipeCard({
   onShare,
 }: UniversalRecipeCardProps) {
   const [checkedIngredients, setCheckedIngredients] = useState<Set<number>>(new Set());
+  const [isShoppingLoading, setIsShoppingLoading] = useState(false);
+  const [isCookingMode, setIsCookingMode] = useState(false);
+  const { toast } = useToast();
 
   const toggleIngredient = (index: number) => {
     const newChecked = new Set(checkedIngredients);
@@ -46,17 +62,92 @@ export function UniversalRecipeCard({
     setCheckedIngredients(newChecked);
   };
 
-  const handleShopIngredients = () => {
-    // TODO: Implement Instacart integration
-    console.log("Shop ingredients");
+  const handleShopIngredients = async () => {
+    setIsShoppingLoading(true);
+
+    try {
+      const response = await fetch("/api/instacart/create-recipe-link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: recipe.title,
+          ingredients: recipe.ingredients,
+          imageUrl: recipe.imageUrl,
+          instructions: recipe.instructions,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create Instacart link");
+      }
+
+      const data = await response.json();
+
+      if (data.instacartUrl) {
+        console.log("[INSTACART] Received URL:", data.instacartUrl);
+
+        // Open Instacart in new tab - use multiple approaches for reliability
+        const newWindow = window.open(data.instacartUrl, "_blank", "noopener,noreferrer");
+
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
+          // Popup was blocked - try alternative method
+          console.warn("[INSTACART] Popup blocked, using anchor click method");
+          const link = document.createElement("a");
+          link.href = data.instacartUrl;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+
+        toast({
+          title: "Opening Instacart",
+          description: "Your shopping list is ready!",
+        });
+      } else {
+        throw new Error("No Instacart URL returned");
+      }
+    } catch (error) {
+      console.error("Error creating Instacart link:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create shopping link. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsShoppingLoading(false);
+    }
   };
+
+  // Show cooking mode if enabled and video segments are available
+  if (isCookingMode && recipe.muxPlaybackId && recipe.videoSegments) {
+    return (
+      <StepByStepCookingView
+        muxPlaybackId={recipe.muxPlaybackId}
+        instructions={recipe.instructions}
+        videoSegments={recipe.videoSegments}
+        onClose={() => setIsCookingMode(false)}
+      />
+    );
+  }
 
   return (
     <Card className="overflow-hidden shadow-lg max-w-2xl mx-auto bg-white">
-      {/* Image Section with Action Buttons Overlay */}
+      {/* Image/Video Section with Action Buttons Overlay */}
       <div className="relative">
         <div className="relative h-64 w-full bg-gray-200">
-          {recipe.imageUrl ? (
+          {recipe.muxPlaybackId ? (
+            <MuxPlayer
+              playbackId={recipe.muxPlaybackId}
+              className="w-full h-full object-cover"
+              streamType="on-demand"
+              muted={false}
+              autoPlay={false}
+            />
+          ) : recipe.imageUrl ? (
             <ImageWithFallback
               src={recipe.imageUrl}
               alt={recipe.title}
@@ -138,6 +229,11 @@ export function UniversalRecipeCard({
               {recipe.cuisine}
             </Badge>
           )}
+          {recipe.instagramUsername && (
+            <Badge variant="secondary" className="bg-gradient-to-r from-purple-600 to-pink-600 text-white">
+              @{recipe.instagramUsername}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -185,22 +281,36 @@ export function UniversalRecipeCard({
           <Button
             className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
             onClick={handleShopIngredients}
+            disabled={isShoppingLoading}
           >
             <ShoppingCart className="w-4 h-4 mr-2" />
-            Shop Ingredients
+            {isShoppingLoading ? "Creating Shopping List..." : "Shop Ingredients"}
           </Button>
         </TabsContent>
 
         {/* Instructions Tab */}
         <TabsContent value="instructions" className="p-6 space-y-4">
-          {recipe.instructions.map((instruction, index) => (
-            <div key={index} className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-semibold">
-                {index + 1}
+          <div className="space-y-4 mb-6">
+            {recipe.instructions.map((instruction, index) => (
+              <div key={index} className="flex gap-4">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-semibold">
+                  {index + 1}
+                </div>
+                <p className="flex-1 text-gray-700 pt-1">{instruction}</p>
               </div>
-              <p className="flex-1 text-gray-700 pt-1">{instruction}</p>
-            </div>
-          ))}
+            ))}
+          </div>
+
+          {/* Start Cooking Button - Only show if video segments are available */}
+          {recipe.muxPlaybackId && recipe.videoSegments && recipe.videoSegments.length > 0 && (
+            <Button
+              className="w-full bg-gradient-to-br from-[#dc2626] to-[#ec4899] hover:shadow-red-glow text-white"
+              onClick={() => setIsCookingMode(true)}
+            >
+              <ChefHat className="w-4 h-4 mr-2" />
+              Start Step-by-Step Cooking
+            </Button>
+          )}
         </TabsContent>
       </Tabs>
     </Card>

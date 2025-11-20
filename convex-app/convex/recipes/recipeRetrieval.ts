@@ -338,7 +338,7 @@ export const searchRecipesByQuery = action({
       const enhancedQuery = await enhanceQueryWithProfile(ctx, args.query, args.userId, false); // includeCuisine=false
       const embedding = await generateQueryEmbedding(enhancedQuery);
 
-      const results = await ctx.runAction(internal.recipeQueries.vectorSearchRecipes, {
+      const results = await ctx.runAction(internal["recipes/recipeQueries"].vectorSearchRecipes, {
         embedding,
         communityId: args.communityId,
         limit: args.limit || 4,
@@ -369,7 +369,7 @@ export const searchRecipesByQuery = action({
       console.log(`📝 [ENHANCED QUERY] "${enhancedQuery}"`);
 
       const embedding = await generateQueryEmbedding(enhancedQuery);
-      const results = await ctx.runAction(internal.recipeQueries.vectorSearchRecipes, {
+      const results = await ctx.runAction(internal["recipes/recipeQueries"].vectorSearchRecipes, {
         embedding,
         communityId: args.communityId,
         limit: args.limit || 4,
@@ -406,7 +406,7 @@ export const searchRecipesByQuery = action({
           console.log(`📝 [SEARCH 1 - PERSONALIZED] Enhanced: "${expandedQuery}"`);
 
           const embedding = await generateQueryEmbedding(expandedQuery);
-          return ctx.runAction(internal.recipeQueries.vectorSearchRecipes, {
+          return ctx.runAction(internal["recipes/recipeQueries"].vectorSearchRecipes, {
             embedding,
             communityId: args.communityId,
             limit: 2, // Get 2 personalized results
@@ -422,7 +422,7 @@ export const searchRecipesByQuery = action({
           console.log(`📝 [SEARCH 2 - DIVERSE] Enhanced: "${expandedQuery}"`);
 
           const embedding = await generateQueryEmbedding(expandedQuery);
-          return ctx.runAction(internal.recipeQueries.vectorSearchRecipes, {
+          return ctx.runAction(internal["recipes/recipeQueries"].vectorSearchRecipes, {
             embedding,
             communityId: args.communityId,
             limit: 2, // Get 2 diverse results
@@ -477,7 +477,7 @@ export const getRecipeByIdAction = action({
     recipeId: v.id("recipes"),
   },
   handler: async (ctx, args) => {
-    const recipe = await ctx.runQuery(internal.recipeQueries.getRecipeById, {
+    const recipe = await ctx.runQuery(internal["recipes/recipeQueries"].getRecipeById, {
       recipeId: args.recipeId,
     });
 
@@ -575,7 +575,7 @@ export const searchByIngredient = action({
     // Get recipe details and filter by community
     const recipes = [];
     for (const [_, match] of Array.from(recipeMatches.entries()).slice(0, limit)) {
-      const recipe = await ctx.runQuery(internal.recipeQueries.getRecipeById, {
+      const recipe = await ctx.runQuery(internal["recipes/recipeQueries"].getRecipeById, {
         recipeId: match.recipeId,
       });
 

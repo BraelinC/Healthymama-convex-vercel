@@ -71,11 +71,7 @@ export function CookbookCategoryCard({
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               />
             ) : (
-              <div className={`w-full h-full ${placeholder.bgColor} flex items-center justify-center`}>
-                <IconComponent
-                  className={`w-16 h-16 ${placeholder.iconColor} opacity-60`}
-                  strokeWidth={1.5}
-                />
+              <div className={`w-full h-full ${placeholder.bgColor}`}>
               </div>
             )}
           </div>

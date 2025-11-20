@@ -8,12 +8,87 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImageWithFallback } from "@/components/shared/ImageWithFallback";
 import { Plus, Share2, Heart, Clock, ShoppingCart } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { ShareRecipeSheet } from "@/components/shared/ShareRecipeSheet";
+import { Id } from "@/convex/_generated/dataModel";
+
+// Helper function to select priority tags (max 2: 1 meal type + 1 diet type)
+function selectPriorityTags(
+  recipe: {
+    dietTags?: string[];
+    enrichedMetadata?: {
+      dietTags?: string[];
+      mealTypes?: string[];
+    };
+  },
+  activeFilter?: string
+): { tag: string; type: "meal" | "diet" }[] {
+  // Meal type keywords
+  const mealKeywords = ["breakfast", "lunch", "dinner", "snack", "brunch"];
+
+  // Collect all tags and categorize them
+  const allDietTags = [
+    ...(recipe.dietTags || []),
+    ...(recipe.enrichedMetadata?.dietTags || []),
+  ].filter((tag) => tag.toLowerCase() !== "gemini");
+
+  const allMealTypes = (recipe.enrichedMetadata?.mealTypes || []).filter(
+    (tag) => tag.toLowerCase() !== "gemini"
+  );
+
+  // Separate meal types from diet types in dietTags
+  const mealTypesFromDietTags = allDietTags.filter((tag) =>
+    mealKeywords.some((keyword) => tag.toLowerCase().includes(keyword))
+  );
+
+  const pureDietTags = allDietTags.filter(
+    (tag) => !mealKeywords.some((keyword) => tag.toLowerCase().includes(keyword))
+  );
+
+  // Combine all meal types
+  const allMealTypesSet = new Set([...allMealTypes, ...mealTypesFromDietTags]);
+  const mealTypes = Array.from(allMealTypesSet);
+
+  // Sort meal types: active filter first
+  const sortedMealTypes = mealTypes.sort((a, b) => {
+    if (!activeFilter) return 0;
+    const aMatches = a.toLowerCase().includes(activeFilter.toLowerCase());
+    const bMatches = b.toLowerCase().includes(activeFilter.toLowerCase());
+    if (aMatches && !bMatches) return -1;
+    if (!aMatches && bMatches) return 1;
+    return 0;
+  });
+
+  // Sort diet types: active filter first
+  const sortedDietTypes = pureDietTags.sort((a, b) => {
+    if (!activeFilter) return 0;
+    const aMatches = a.toLowerCase().includes(activeFilter.toLowerCase());
+    const bMatches = b.toLowerCase().includes(activeFilter.toLowerCase());
+    if (aMatches && !bMatches) return -1;
+    if (!aMatches && bMatches) return 1;
+    return 0;
+  });
+
+  // Select max 2 tags: 1 meal type + 1 diet type
+  const selectedTags: { tag: string; type: "meal" | "diet" }[] = [];
+
+  if (sortedMealTypes.length > 0) {
+    selectedTags.push({ tag: sortedMealTypes[0], type: "meal" });
+  }
+
+  if (sortedDietTypes.length > 0) {
+    selectedTags.push({ tag: sortedDietTypes[0], type: "diet" });
+  }
+
+  return selectedTags;
+}
 
 interface UnifiedRecipeCardProps {
   recipe: {
     id?: string;
     _id?: string;
-    title: string;
+    title?: string;
+    name?: string;
     description?: string;
     imageUrl?: string;
     ingredients: string[];
@@ -26,6 +101,12 @@ interface UnifiedRecipeCardProps {
     cuisine?: string;
     diet?: string;
     method?: string;
+    dietTags?: string[];
+    enrichedMetadata?: {
+      dietTags?: string[];
+      mealTypes?: string[];
+      cuisine?: string;
+    };
     nutrition_info?: {
       calories?: number;
       protein_g?: number;
@@ -39,6 +120,8 @@ interface UnifiedRecipeCardProps {
   onToggleFavorite?: () => void;
   onAddToCookbook?: () => void;
   onShare?: () => void;
+  userId?: string; // For sharing functionality
+  activeFilter?: string;
 }
 
 export function UnifiedRecipeCard({
@@ -47,8 +130,13 @@ export function UnifiedRecipeCard({
   onToggleFavorite,
   onAddToCookbook,
   onShare,
+  userId,
+  activeFilter,
 }: UnifiedRecipeCardProps) {
   const [checkedIngredients, setCheckedIngredients] = useState<Set<number>>(new Set());
+  const [isShoppingLoading, setIsShoppingLoading] = useState(false);
+  const [isShareSheetOpen, setIsShareSheetOpen] = useState(false);
+  const { toast } = useToast();
 
   const toggleIngredient = (index: number) => {
     const newChecked = new Set(checkedIngredients);
@@ -60,9 +148,65 @@ export function UnifiedRecipeCard({
     setCheckedIngredients(newChecked);
   };
 
-  const handleShopIngredients = () => {
-    // TODO: Implement Instacart integration
-    console.log("Shop ingredients");
+  const handleShopIngredients = async () => {
+    setIsShoppingLoading(true);
+
+    try {
+      const response = await fetch("/api/instacart/create-recipe-link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: recipe.name || recipe.title || "Recipe",
+          ingredients: recipe.ingredients,
+          imageUrl: recipe.imageUrl,
+          servings: recipe.servings,
+          instructions: recipe.instructions,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create Instacart link");
+      }
+
+      const data = await response.json();
+
+      if (data.instacartUrl) {
+        console.log("[INSTACART] Received URL:", data.instacartUrl);
+
+        // Open Instacart in new tab - use multiple approaches for reliability
+        const newWindow = window.open(data.instacartUrl, "_blank", "noopener,noreferrer");
+
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
+          // Popup was blocked - try alternative method
+          console.warn("[INSTACART] Popup blocked, using anchor click method");
+          const link = document.createElement("a");
+          link.href = data.instacartUrl;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+
+        toast({
+          title: "Opening Instacart",
+          description: "Your shopping list is ready!",
+        });
+      } else {
+        throw new Error("No Instacart URL returned");
+      }
+    } catch (error) {
+      console.error("Error creating Instacart link:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create shopping link. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsShoppingLoading(false);
+    }
   };
 
   // Parse time to get total minutes
@@ -80,7 +224,11 @@ export function UnifiedRecipeCard({
   const cookMinutes = parseTime(recipe.cook_time);
   const totalMinutes = recipe.time_minutes || (prepMinutes || 0) + (cookMinutes || 0);
 
+  // Get priority tags (max 2: 1 meal type + 1 diet type)
+  const priorityTags = selectPriorityTags(recipe, activeFilter);
+
   return (
+    <>
     <Card className="overflow-hidden shadow-lg max-w-2xl mx-auto bg-white">
       {/* Image Section with Action Buttons Overlay */}
       <div className="relative">
@@ -88,7 +236,7 @@ export function UnifiedRecipeCard({
           {recipe.imageUrl ? (
             <ImageWithFallback
               src={recipe.imageUrl}
-              alt={recipe.title}
+              alt={recipe.name || recipe.title || "Recipe"}
               className="w-full h-full object-cover"
             />
           ) : (
@@ -121,12 +269,12 @@ export function UnifiedRecipeCard({
           )}
 
           {/* Share Button */}
-          {onShare && (
+          {(onShare || userId) && (
             <Button
               size="icon"
               variant="secondary"
               className="w-10 h-10 rounded-full bg-white/90 hover:bg-white shadow-md"
-              onClick={onShare}
+              onClick={() => userId ? setIsShareSheetOpen(true) : onShare?.()}
             >
               <Share2 className="w-5 h-5 text-rose-600" />
             </Button>
@@ -158,27 +306,27 @@ export function UnifiedRecipeCard({
 
       {/* Recipe Header */}
       <div className="p-6 border-b">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">{recipe.title}</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">{recipe.name || recipe.title}</h2>
         {recipe.description && (
           <p className="text-gray-600 text-sm leading-relaxed">{recipe.description}</p>
         )}
         <div className="flex flex-wrap gap-2 mt-3">
-          {recipe.method && (
-            <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+          {recipe.method && recipe.method.toLowerCase() !== 'gemini' && (
+            <Badge variant="secondary" className="bg-pink-100 text-pink-700">
               {recipe.method.replace('-', ' ')}
             </Badge>
           )}
-          {recipe.category && (
-            <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+          {recipe.category && recipe.category.toLowerCase() !== 'gemini' && (
+            <Badge variant="secondary" className="bg-pink-100 text-pink-700">
               {recipe.category}
             </Badge>
           )}
-          {recipe.cuisine && (
+          {recipe.cuisine && recipe.cuisine.toLowerCase() !== 'gemini' && (
             <Badge variant="secondary" className="bg-rose-100 text-rose-700">
               {recipe.cuisine}
             </Badge>
           )}
-          {recipe.diet && (
+          {recipe.diet && recipe.diet.toLowerCase() !== 'gemini' && (
             <Badge variant="outline" className="border-gray-300 text-gray-600">
               {recipe.diet}
             </Badge>
@@ -198,6 +346,20 @@ export function UnifiedRecipeCard({
               Servings: {recipe.servings}
             </Badge>
           )}
+          {/* Priority Tags (Max 2: 1 meal type + 1 diet type) */}
+          {priorityTags.map((tagObj, idx) => (
+            <Badge
+              key={`priority-${idx}`}
+              variant={tagObj.type === "meal" ? "outline" : "secondary"}
+              className={
+                tagObj.type === "meal"
+                  ? "border-blue-300 text-blue-700"
+                  : "bg-purple-100 text-purple-700"
+              }
+            >
+              {tagObj.tag}
+            </Badge>
+          ))}
         </div>
       </div>
 
@@ -206,26 +368,26 @@ export function UnifiedRecipeCard({
         <TabsList className="w-full grid grid-cols-3 rounded-none bg-gray-50">
           <TabsTrigger
             value="ingredients"
-            className="data-[state=active]:bg-white data-[state=active]:text-purple-600"
+            className="data-[state=active]:bg-white data-[state=active]:text-pink-600"
           >
             Ingredients
           </TabsTrigger>
           <TabsTrigger
             value="instructions"
-            className="data-[state=active]:bg-white data-[state=active]:text-purple-600"
+            className="data-[state=active]:bg-white data-[state=active]:text-pink-600"
           >
             Instructions
           </TabsTrigger>
           <TabsTrigger
             value="nutrition"
-            className="data-[state=active]:bg-white data-[state=active]:text-purple-600"
+            className="data-[state=active]:bg-white data-[state=active]:text-pink-600"
           >
             Nutrition
           </TabsTrigger>
         </TabsList>
 
         {/* Ingredients Tab */}
-        <TabsContent value="ingredients" className="p-6 space-y-4">
+        <TabsContent value="ingredients" className="p-6 space-y-4 max-h-[32rem] overflow-y-auto">
           <div className="space-y-3">
             {recipe.ingredients && recipe.ingredients.length > 0 ? (
               recipe.ingredients.map((ingredient, index) => (
@@ -255,18 +417,19 @@ export function UnifiedRecipeCard({
           <Button
             className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
             onClick={handleShopIngredients}
+            disabled={isShoppingLoading}
           >
             <ShoppingCart className="w-4 h-4 mr-2" />
-            Shop Ingredients
+            {isShoppingLoading ? "Creating Shopping List..." : "Shop Ingredients"}
           </Button>
         </TabsContent>
 
         {/* Instructions Tab */}
-        <TabsContent value="instructions" className="p-6 space-y-4">
+        <TabsContent value="instructions" className="p-6 space-y-4 max-h-[32rem] overflow-y-auto">
           {recipe.instructions && recipe.instructions.length > 0 ? (
             recipe.instructions.map((instruction, index) => (
               <div key={index} className="flex gap-4">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-semibold">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-pink-600 text-white flex items-center justify-center font-semibold">
                   {index + 1}
                 </div>
                 <p className="flex-1 text-gray-700 pt-1">{instruction}</p>
@@ -287,8 +450,8 @@ export function UnifiedRecipeCard({
           ) ? (
             <div className="grid grid-cols-2 gap-4">
               {recipe.nutrition_info.calories !== undefined && (
-                <div className="bg-purple-50 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-purple-600">
+                <div className="bg-pink-50 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-pink-600">
                     {recipe.nutrition_info.calories}
                   </p>
                   <p className="text-sm text-gray-600 mt-1">Calories</p>
@@ -346,5 +509,17 @@ export function UnifiedRecipeCard({
         </TabsContent>
       </Tabs>
     </Card>
+
+    {/* Share Recipe Sheet */}
+    {userId && (recipe._id || recipe.id) && (
+      <ShareRecipeSheet
+        isOpen={isShareSheetOpen}
+        onClose={() => setIsShareSheetOpen(false)}
+        recipeId={(recipe._id || recipe.id) as Id<"userRecipes">}
+        recipeTitle={recipe.title || recipe.name || "Recipe"}
+        userId={userId}
+      />
+    )}
+    </>
   );
 }

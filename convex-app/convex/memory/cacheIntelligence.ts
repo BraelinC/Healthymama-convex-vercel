@@ -71,16 +71,30 @@ export const getContextWithCache = action({
       };
     }
 
-    // ========== CACHE MISS: Build profile-only context (fast!) ==========
-    console.log(`[CacheRouter] 🔄 Cache miss (${cacheCheck.reason}), rebuilding profile-only cache...`);
+    // ========== CACHE MISS: Build Tier 1 + Tier 2 context (fast!) ==========
+    console.log(`[CacheRouter] 🔄 Cache miss (${cacheCheck.reason}), rebuilding Tier 1 + 2 cache...`);
 
-    // Load ONLY user profile (no AI memories - those come via tool calls)
-    const profile = await ctx.runQuery(api.users.getUserProfile, {
+    // Load Tier 1: User Profile (static onboarding data)
+    const userProfile = await ctx.runQuery(api.userProfile.getUserProfile, {
       userId: args.userId,
     });
 
-    // Format profile-only context
-    const profileContext = profile ? formatProfileOnly(profile) : "";
+    // Load Tier 2: Top 10 Learned Preferences (dynamic AI-learned data)
+    const learnedPrefs = await ctx.runQuery(api.memory.learnedPreferences.getTopPreferences, {
+      userId: args.userId,
+      agentId: undefined, // Global preferences across all communities
+      limit: 10,
+    });
+
+    // Load Tier 2.5: Recent Meals (last 7 days, max 10 recipes)
+    const recentMeals = await ctx.runQuery(api.memory.recentMeals.getRecentMeals, {
+      userId: args.userId,
+      limit: 10,
+      days: 7,
+    });
+
+    // Format combined context (Tier 1 + Tier 2 + Tier 2.5)
+    const profileContext = formatMultiTierContext(userProfile, learnedPrefs, recentMeals);
 
     // Update cache for next request (async, non-blocking - don't wait!)
     // Skip cache update if no message was saved (e.g., recipe selections)
@@ -99,17 +113,19 @@ export const getContextWithCache = action({
 
     const latency = Date.now() - startTime;
 
-    console.log(`[CacheRouter] ✅ Rebuilt profile cache (${latency}ms) - AI memories available via tool`);
+    console.log(`[CacheRouter] ✅ Rebuilt Tier 1+2 cache (${latency}ms) - Tier 3 available via tool`);
 
     return {
       mergedContext: profileContext,
-      source: "cache_miss_rebuilt_profile_only",
+      source: "cache_miss_rebuilt_tier1_tier2",
       stats: {
         totalLatencyMs: latency,
         reason: cacheCheck.reason,
         cached: false,
-        hasProfile: !!profile,
-        keywordCount: 0, // AI memories now retrieved via tool
+        hasProfile: !!userProfile,
+        hasLearnedPrefs: learnedPrefs.length > 0,
+        learnedPrefsCount: learnedPrefs.length,
+        keywordCount: 0, // Tier 3 memories retrieved via tool
         recentCount: 0,
         vectorCount: 0,
         threadCount: 0,
@@ -176,4 +192,104 @@ function formatProfileOnly(profile: any): string {
   }
 
   return context;
+}
+
+/**
+ * Format multi-tier context (Tier 1 + Tier 2 + Tier 2.5) for AI
+ * FORMATTED AS BACKGROUND KNOWLEDGE - NOT TO BE RECITED TO USER
+ */
+function formatMultiTierContext(userProfile: any, learnedPrefs: any[], recentMeals: any[]): string {
+  const sections: string[] = [];
+
+  // ============ TIER 1: USER PROFILE (Static Onboarding Data) ============
+  if (userProfile) {
+    const profileParts: string[] = [];
+
+    if (userProfile.name) {
+      profileParts.push(`Name: ${userProfile.name}`);
+    }
+    if (userProfile.familySize) {
+      profileParts.push(`Family Size: ${userProfile.familySize} people`);
+    }
+    if (userProfile.cookingSkillLevel) {
+      profileParts.push(`Skill Level: ${userProfile.cookingSkillLevel}`);
+    }
+    if (userProfile.defaultServings) {
+      profileParts.push(`Default Servings: ${userProfile.defaultServings}`);
+    }
+
+    // Optional fields
+    if (userProfile.preferredCuisines?.length > 0) {
+      profileParts.push(`Preferred Cuisines: ${userProfile.preferredCuisines.join(", ")}`);
+    }
+    if (userProfile.kitchenEquipment?.length > 0) {
+      profileParts.push(`Equipment: ${userProfile.kitchenEquipment.join(", ")}`);
+    }
+
+    if (profileParts.length > 0) {
+      sections.push(`[USER PROFILE]\n${profileParts.join(" | ")}`);
+    }
+
+    // Allergens are CRITICAL - keep them prominent (life-threatening)
+    if (userProfile.allergens?.length > 0) {
+      sections.push(`⚠️ ALLERGENS (MUST AVOID - LIFE-THREATENING): ${userProfile.allergens.join(", ")}`);
+    }
+
+    // Dietary preferences are important but not life-threatening
+    if (userProfile.dietaryPreferences?.length > 0) {
+      sections.push(`🍽️ DIETARY PREFERENCES (Lifestyle Choices): ${userProfile.dietaryPreferences.join(", ")}`);
+    }
+  }
+
+  // ============ TIER 2: LEARNED PREFERENCES (AI-Discovered Patterns) ============
+  if (learnedPrefs && learnedPrefs.length > 0) {
+    // Group by preference type
+    const grouped: Record<string, string[]> = {
+      food_love: [],
+      food_dislike: [],
+      cooking_habit: [],
+      time_constraint: [],
+      lifestyle_context: [],
+    };
+
+    learnedPrefs.forEach((pref) => {
+      grouped[pref.preferenceType].push(
+        `${pref.summary} (confidence: ${(pref.confidence * 100).toFixed(0)}%)`
+      );
+    });
+
+    const prefLines: string[] = [];
+    if (grouped.food_love.length > 0) {
+      prefLines.push(`Loves: ${grouped.food_love.join(", ")}`);
+    }
+    if (grouped.food_dislike.length > 0) {
+      prefLines.push(`Dislikes: ${grouped.food_dislike.join(", ")}`);
+    }
+    if (grouped.cooking_habit.length > 0) {
+      prefLines.push(`Cooking Habits: ${grouped.cooking_habit.join("; ")}`);
+    }
+    if (grouped.time_constraint.length > 0) {
+      prefLines.push(`Time Constraints: ${grouped.time_constraint.join("; ")}`);
+    }
+    if (grouped.lifestyle_context.length > 0) {
+      prefLines.push(`Lifestyle: ${grouped.lifestyle_context.join("; ")}`);
+    }
+
+    if (prefLines.length > 0) {
+      sections.push(`[LEARNED PREFERENCES]\n${prefLines.join("\n")}`);
+    }
+  }
+
+  // ============ TIER 2.5: RECENT MEALS (Last 7 Days) ============
+  if (recentMeals && recentMeals.length > 0) {
+    const mealsList = recentMeals.map((meal) => {
+      const daysAgo = Math.floor((Date.now() - meal.discussedAt) / (1000 * 60 * 60 * 24));
+      const timeAgo = daysAgo === 0 ? "today" : daysAgo === 1 ? "yesterday" : `${daysAgo} days ago`;
+      return `${meal.recipeName} (${timeAgo})`;
+    }).join(", ");
+
+    sections.push(`[RECENT MEALS]\n${mealsList}`);
+  }
+
+  return sections.join("\n\n");
 }

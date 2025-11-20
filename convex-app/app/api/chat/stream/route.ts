@@ -152,7 +152,13 @@ export async function POST(req: NextRequest) {
 
       // User context (if available)
       if (userContext) {
-        prompt += `## User Profile\n${userContext}\n\n`;
+        prompt += `## User Profile\n`;
+
+        // Context awareness: Tell AI it already has top 10 learned preferences
+        prompt += `📌 CONTEXT: The profile below includes your top 10 most relevant learned preferences from past conversations. `;
+        prompt += `Use the search_memory tool ONLY if you need more detailed information, additional preferences beyond these 10, or specific past conversations from a certain time period.\n\n`;
+
+        prompt += `${userContext}\n\n`;
       }
 
       // Selected Recipe Context (if user clicked a recipe)
@@ -321,12 +327,9 @@ export async function POST(req: NextRequest) {
       throw new Error("OPEN_ROUTER_API_KEY not configured");
     }
 
-    const modelName =
-      model === "grok-4-fast" ? "x-ai/grok-4-fast" :
-      model === "claude-haiku-4.5" ? "anthropic/claude-haiku-4.5" :
-      model === "gpt-4o-mini" ? "openai/gpt-4o-mini" :
-      model === "gpt-4.1-mini" ? "openai/gpt-4.1-mini" :
-      "openai/gpt-5-mini";
+    // Primary model: gpt-4o-mini, fallback: gpt-4.1-mini
+    let modelName = "openai/gpt-4o-mini";
+    let usedFallback = false;
 
     // TOOLS ENABLED - Recipe search + memory retrieval (with explicit negative examples to prevent over-calling)
     const tools = [
@@ -385,6 +388,37 @@ export async function POST(req: NextRequest) {
           },
         },
       },
+      {
+        type: "function" as const,
+        function: {
+          name: "search_memory",
+          description:
+            "Search user's EXISTING learned preferences and past conversations.\n\n⚠️ IMPORTANT: The User Profile section in the system prompt ALREADY contains the top 10 most relevant learned preferences. CHECK THAT FIRST before calling this tool.\n\nUSE ONLY when:\n- User asks about preferences NOT found in the profile above\n- User asks about SPECIFIC past conversations by time ('last week', 'yesterday')\n- User needs preferences BEYOND the top 10 already shown\n\n✅ WHEN TO USE:\n1. 'What did I eat last week?' - Time-specific past conversation recall\n2. 'Did I mention any other allergies?' - Asking for MORE than what's in profile\n3. 'What recipes did we discuss yesterday?' - Specific conversation by date\n4. 'What did we talk about on Monday?' - Time-specific conversation recall\n\n❌ DO NOT use when:\n- Asking about general preferences likely in the top 10 ('Do I like chicken?')\n- Answer is probably in the User Profile already shown\n- NEW statements/declarations ('I love chicken', 'I want dinner')\n- Recipe requests ('suggest a meal'), greetings ('hello'), general questions ('how to cook rice')",
+          parameters: {
+            type: "object" as const,
+            properties: {
+              query: {
+                type: "string" as const,
+                description:
+                  "The question about past information (e.g., 'Do I like chicken?', 'That sauce from last week', 'What are my time constraints?'). Must be a QUESTION, not a statement.",
+              },
+              timeRange: {
+                type: "string" as const,
+                description:
+                  "Optional time range for searching past conversations: 'today', 'this_week', 'last_week', 'last_month'",
+                enum: ["today", "this_week", "last_week", "last_month"],
+              },
+              memoryType: {
+                type: "string" as const,
+                description:
+                  "Optional hint about what type of memory to search: 'preference', 'conversation', 'recipe'",
+                enum: ["preference", "conversation", "recipe"],
+              },
+            },
+            required: ["query"],
+          },
+        },
+      },
     ];
 
     // DEBUG: Log the API request details
@@ -402,36 +436,58 @@ export async function POST(req: NextRequest) {
     const apiCallStartTime = Date.now();
     console.log(`⏱️ [TIMING] API call initiated to ${modelName} at ${new Date(apiCallStartTime).toISOString()}`);
 
-    // Create streaming response (tools disabled for now)
-    const apiResponse = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://healthymama.app",
-          "X-Title": "HealthyMama Community Chat",
+    // Helper function to make API call
+    const makeApiCall = async (model: string) => {
+      return await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+            "HTTP-Referer": "https://healthymama.app",
+            "X-Title": "HealthyMama Community Chat",
+          },
+          body: JSON.stringify({
+            model,
+            messages: apiMessages,
+            temperature: aiSettings.temperature,
+            max_tokens: 2000,
+            stream: true,
+            reasoning_effort: "low",
+            tools,
+            tool_choice: "auto",
+          }),
         },
-        body: JSON.stringify({
-          model: modelName,
-          messages: apiMessages,
-          temperature: aiSettings.temperature,
-          max_tokens: 2000,
-          stream: true, // Enable streaming
-          reasoning_effort: "low", // Reduce thinking time for faster responses (GPT-5 parameter)
-          // TOOLS ENABLED
-          tools, // Always provide tools - AI decides when to use them based on system prompt
-          tool_choice: "auto",
-        }),
-      },
-    );
-
-    if (!apiResponse.ok) {
-      const errorText = await apiResponse.text();
-      throw new Error(
-        `OpenRouter API error: ${apiResponse.status} - ${errorText}`,
       );
+    };
+
+    // Try primary model with fallback to gpt-4.1-mini
+    let apiResponse;
+    try {
+      console.log(`[CHAT] Attempting primary model: ${modelName}`);
+      apiResponse = await makeApiCall(modelName);
+
+      if (!apiResponse.ok) {
+        throw new Error(`Primary model failed: ${apiResponse.status}`);
+      }
+      console.log(`[CHAT] ✅ Primary model successful: ${modelName}`);
+    } catch (primaryError) {
+      console.warn(`[CHAT] ⚠️ Primary model failed, trying fallback...`, primaryError);
+      modelName = "openai/gpt-4.1-mini";
+      usedFallback = true;
+
+      try {
+        apiResponse = await makeApiCall(modelName);
+        if (!apiResponse.ok) {
+          const errorText = await apiResponse.text();
+          throw new Error(`Fallback model failed: ${apiResponse.status} - ${errorText}`);
+        }
+        console.log(`[CHAT] ✅ Fallback model successful: ${modelName}`);
+      } catch (fallbackError) {
+        console.error(`[CHAT] ❌ Both models failed`);
+        throw fallbackError;
+      }
     }
 
     // Create a TransformStream to process the streaming response
@@ -552,6 +608,201 @@ export async function POST(req: NextRequest) {
                           `data: ${JSON.stringify({ content: errorMsg })}\n\n`,
                         ),
                       );
+                    }
+                  } else if (toolCall.function.name === "search_memory") {
+                    try {
+                      const args = JSON.parse(toolCall.function.arguments);
+                      const searchQuery = args.query || message;
+                      const timeRange = args.timeRange; // Optional: "today", "this_week", etc.
+                      const memoryType = args.memoryType; // Optional: "preference", "conversation", "recipe"
+
+                      console.log(
+                        `[TOOL CALLS] NEW memory search: "${searchQuery}" (type: ${memoryType || 'auto'}, time: ${timeRange || 'all'})`
+                      );
+
+                      // Send status update to user
+                      controller.enqueue(
+                        encoder.encode(
+                          `data: ${JSON.stringify({ content: `\n\n🔍 Searching memories...\n\n` })}\n\n`
+                        )
+                      );
+
+                      // Call unified memory router (searches Tier 2 + Tier 3)
+                      const memoryResults = await convex.action(
+                        api.memory.smartMemoryRouter.searchMemory,
+                        {
+                          userId,
+                          communityId,
+                          query: searchQuery,
+                          timeRange,
+                          memoryType,
+                        }
+                      );
+
+                      // Format results for AI
+                      let memoryContext = "";
+
+                      if (memoryResults.preferences && memoryResults.preferences.length > 0) {
+                        memoryContext += "## Learned Preferences:\n";
+                        memoryResults.preferences.forEach((pref: any, idx: number) => {
+                          memoryContext += `${idx + 1}. ${pref.summary} (confidence: ${(pref.confidence * 100).toFixed(0)}%)\n`;
+                        });
+                        memoryContext += "\n";
+                      }
+
+                      if (memoryResults.conversations && memoryResults.conversations.length > 0) {
+                        memoryContext += "## Past Conversations:\n";
+                        memoryResults.conversations.forEach((conv: any, idx: number) => {
+                          const timeInfo = conv.timeRange
+                            ? `from ${new Date(conv.timeRange.startTime).toLocaleDateString()}`
+                            : "";
+                          memoryContext += `${idx + 1}. ${conv.summary} ${timeInfo}\n`;
+                          if (conv.recipesDiscussed && conv.recipesDiscussed.length > 0) {
+                            memoryContext += `   Recipes: ${conv.recipesDiscussed.join(", ")}\n`;
+                          }
+                        });
+                      }
+
+                      console.log(
+                        `[TOOL CALLS] Found ${memoryResults.preferences?.length || 0} preferences, ${memoryResults.conversations?.length || 0} conversations`
+                      );
+
+                      // TWO-PHASE FLOW: Make second API call with memory context
+                      console.log("[TOOL CALLS] Phase 2: Sending memories to AI for final response");
+
+                      const enrichedMessages = [
+                        {
+                          role: "system" as const,
+                          content: systemPrompt,
+                        },
+                        ...messages
+                          .filter((msg: any) => {
+                            const hasXML =
+                              msg.content &&
+                              (msg.content.includes("<function_call") ||
+                                msg.content.includes("</function_call>"));
+                            return !hasXML;
+                          })
+                          .map((msg: any) => ({
+                            role: msg.role as "user" | "assistant",
+                            content: msg.content,
+                          })),
+                        {
+                          role: "user" as const,
+                          content: message,
+                        },
+                        {
+                          role: "assistant" as const,
+                          content: null as any,
+                          tool_calls: [
+                            {
+                              id: toolCall.id,
+                              type: "function" as const,
+                              function: {
+                                name: "search_memory",
+                                arguments: toolCall.function.arguments,
+                              },
+                            },
+                          ],
+                        },
+                        {
+                          role: "tool" as const,
+                          tool_call_id: toolCall.id,
+                          content: memoryContext || "No memories found for this query.",
+                        },
+                      ];
+
+                      // Make second API call
+                      const secondApiResponse = await fetch(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${apiKey}`,
+                            "HTTP-Referer": "https://healthymama.app",
+                            "X-Title": "HealthyMama Community Chat",
+                          },
+                          body: JSON.stringify({
+                            model: modelName,
+                            messages: enrichedMessages,
+                            temperature: aiSettings.temperature,
+                            max_tokens: 2000,
+                            stream: true,
+                            reasoning_effort: "low",
+                          }),
+                        }
+                      );
+
+                      if (!secondApiResponse.ok) {
+                        throw new Error(`Second API call failed: ${secondApiResponse.status}`);
+                      }
+
+                      // Stream the AI's final response
+                      const secondReader = secondApiResponse.body?.getReader();
+                      if (!secondReader) {
+                        throw new Error("No response body from second API call");
+                      }
+
+                      let secondBuffer = "";
+                      let finalResponse = "";
+
+                      while (true) {
+                        const { done: secondDone, value: secondValue } = await secondReader.read();
+
+                        if (secondDone) {
+                          console.log(
+                            `[TOOL CALLS] Phase 2 complete: AI generated ${finalResponse.length} char response using memories`
+                          );
+                          toolResults += finalResponse;
+                          break;
+                        }
+
+                        secondBuffer += decoder.decode(secondValue, { stream: true });
+                        const secondSegments = secondBuffer.split("\n");
+                        secondBuffer = secondSegments.pop() ?? "";
+
+                        const secondLines = secondSegments
+                          .map((line) => line.trim())
+                          .filter((line) => line.length > 0);
+
+                        for (const line of secondLines) {
+                          if (line.startsWith("data: ")) {
+                            const data = line.slice(6);
+
+                            if (data === "[DONE]") {
+                              continue;
+                            }
+
+                            try {
+                              const parsed = JSON.parse(data);
+                              const delta = parsed.choices?.[0]?.delta;
+                              const content = delta?.content || "";
+
+                              if (content) {
+                                finalResponse += content;
+                                controller.enqueue(
+                                  encoder.encode(
+                                    `data: ${JSON.stringify({ content })}\n\n`
+                                  )
+                                );
+                              }
+                            } catch (e) {
+                              console.error("Failed to parse second API response chunk:", e);
+                            }
+                          }
+                        }
+                      }
+                    } catch (error: any) {
+                      console.error("[TOOL CALLS] New memory search failed:", error);
+                      const errorMsg =
+                        "Sorry, I encountered an error searching your memories. Please try again.\n\n";
+                      controller.enqueue(
+                        encoder.encode(
+                          `data: ${JSON.stringify({ content: errorMsg })}\n\n`
+                        )
+                      );
+                      toolResults += errorMsg;
                     }
                   } else if (
                     toolCall.function.name === "retrieve_user_memories"
@@ -807,10 +1058,10 @@ export async function POST(req: NextRequest) {
                   });
               }
 
-              // Trigger NEW tiered memory processing (GPT-5 Nano + GPT-5 Mini)
-              // This replaces the old aggressive DELETE system
+              // Trigger OLD tiered memory processing (GPT-5 Nano + Gemini Flash Lite)
+              // Saves to userMemories table for keyword/vector search
               console.log(
-                `[STREAM] Triggering memory processing for message: "${message.substring(0, 50)}..."`,
+                `[STREAM] Triggering old memory processing for message: "${message.substring(0, 50)}..."`,
               );
               convex
                 .action(api.memory.tieredProcessing.processMessageMemory, {
@@ -823,11 +1074,35 @@ export async function POST(req: NextRequest) {
                 })
                 .then(() => {
                   console.log(
-                    "[STREAM] Memory processing triggered successfully",
+                    "[STREAM] Old memory processing triggered successfully",
                   );
                 })
                 .catch((error) => {
-                  console.error("[STREAM] Memory processing failed:", error);
+                  console.error("[STREAM] Old memory processing failed:", error);
+                  // Don't throw - memory processing failures shouldn't break chat
+                });
+
+              // Trigger NEW multi-tier memory system
+              // - Every 5 messages: Extract learned preferences (Tier 2)
+              // - Every 20 messages: Generate conversation summary (Tier 3)
+              const totalMessageCount = messages.length + 1; // +1 for current message
+              console.log(
+                `[STREAM] Triggering NEW memory system (message count: ${totalMessageCount})`,
+              );
+              convex
+                .action(api.memory.memoryTriggers.autoProcessMemories, {
+                  userId,
+                  sessionId: sessionId as Id<"chatSessions">,
+                  communityId,
+                  messageCount: totalMessageCount,
+                })
+                .then(() => {
+                  console.log(
+                    "[STREAM] NEW memory system triggered successfully",
+                  );
+                })
+                .catch((error) => {
+                  console.error("[STREAM] NEW memory system failed:", error);
                   // Don't throw - memory processing failures shouldn't break chat
                 });
 

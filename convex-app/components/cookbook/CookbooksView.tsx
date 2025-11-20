@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@clerk/nextjs";
 import { CookbookCategoryCard, NewCookbookCard } from "./CookbookCategoryCard";
@@ -10,10 +10,12 @@ import { CreateRecipe } from "../recipe/CreateRecipe";
 import { FavoritesSheet } from "../recipe/FavoritesSheet";
 import { CookbookSelectionSheet } from "./CookbookSelectionSheet";
 import { CookbookDetailSheet } from "./CookbookDetailSheet";
+import { CreateCookbookDialog } from "./CreateCookbookDialog";
 import { MealPlanView } from "../meal-plan/MealPlanView";
 import { InstagramImportModal } from "../instagram/InstagramImportModal";
+import { GroceryListPanel } from "@/components/grocery/GroceryListPanel";
 import { Button } from "@/components/ui/button";
-import { Plus, HandPlatter } from "lucide-react";
+import { Plus, ShoppingCart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export function CookbooksView() {
@@ -26,7 +28,9 @@ export function CookbooksView() {
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
   const [isCookbookDetailOpen, setIsCookbookDetailOpen] = useState(false);
+  const [isCreateCookbookOpen, setIsCreateCookbookOpen] = useState(false);
   const [isInstagramImportOpen, setIsInstagramImportOpen] = useState(false);
+  const [isGroceryPanelOpen, setIsGroceryPanelOpen] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<any>(null);
   const [selectedCookbook, setSelectedCookbook] = useState<{ id: string; name: string } | null>(null);
 
@@ -40,8 +44,8 @@ export function CookbooksView() {
     userId ? { userId } : "skip"
   );
 
-  // Mutations
-  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
+  // Mutations and actions
+  const saveRecipe = useAction(api.recipes.userRecipes.saveRecipeWithParsedIngredients);
   const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
 
   const handleCategoryClick = (categoryId: string) => {
@@ -53,8 +57,19 @@ export function CookbooksView() {
   };
 
   const handleNewCookbook = () => {
-    console.log("Create new cookbook");
-    // TODO: Open dialog to create new cookbook/category
+    setIsCreateCookbookOpen(true);
+  };
+
+  const handleCreateCookbook = (name: string) => {
+    // Create cookbook by setting up the category and navigating to it
+    const cookbookId = name.toLowerCase().replace(/\s+/g, "-");
+    setSelectedCookbook({ id: cookbookId, name });
+    setIsCookbookDetailOpen(true);
+
+    toast({
+      title: "Cookbook created!",
+      description: `"${name}" has been created. Add recipes to get started.`,
+    });
   };
 
   const handleAddRecipe = () => {
@@ -155,7 +170,7 @@ export function CookbooksView() {
         <div className="space-y-6">
           {/* Cookbooks/Meal Plan Section */}
           <div>
-            <div className="flex items-center gap-2 mb-6">
+            <div className="flex items-center justify-between mb-6">
               <button
                 onClick={() => setViewMode(viewMode === "cookbooks" ? "meal-plan" : "cookbooks")}
                 className="hover:opacity-70 transition-opacity cursor-pointer"
@@ -164,6 +179,18 @@ export function CookbooksView() {
                   {viewMode === "cookbooks" ? "Cookbooks" : "Meal Plan"}
                 </h1>
               </button>
+
+              {/* Grocery List Button - Only show in meal plan view */}
+              {viewMode === "meal-plan" && userId && (
+                <Button
+                  onClick={() => setIsGroceryPanelOpen(true)}
+                  size="icon"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  aria-label="Grocery List"
+                >
+                  <ShoppingCart className="w-5 h-5" />
+                </Button>
+              )}
             </div>
 
             {/* Conditional Content: Cookbooks Grid or Meal Plan View */}
@@ -268,6 +295,22 @@ export function CookbooksView() {
           onClose={() => setIsCookbookDetailOpen(false)}
           cookbookId={selectedCookbook.id}
           cookbookName={selectedCookbook.name}
+          userId={userId}
+        />
+      )}
+
+      {/* Create Cookbook Dialog */}
+      <CreateCookbookDialog
+        open={isCreateCookbookOpen}
+        onOpenChange={setIsCreateCookbookOpen}
+        onCreateCookbook={handleCreateCookbook}
+      />
+
+      {/* Grocery List Panel */}
+      {userId && (
+        <GroceryListPanel
+          isOpen={isGroceryPanelOpen}
+          onClose={() => setIsGroceryPanelOpen(false)}
           userId={userId}
         />
       )}

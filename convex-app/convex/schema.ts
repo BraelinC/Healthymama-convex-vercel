@@ -284,19 +284,56 @@ export default defineSchema({
     recipeType: v.union(
       v.literal("extracted"),    // From extractor
       v.literal("community"),    // From AI chat/community recipes
-      v.literal("custom")        // User-created (DIY)
+      v.literal("custom"),       // User-created (DIY)
+      v.literal("ai_generated")  // AI chat generated (no source table)
     ),
 
-    // Reference to source recipe
+    // NEW: Universal source reference (replaces extractedRecipeId/communityRecipeId)
+    sourceRecipeId: v.optional(v.union(
+      v.id("recipes"),           // Community recipes
+      v.id("extractedRecipes")   // Extracted recipes
+    )),
+    sourceRecipeType: v.optional(v.union(
+      v.literal("community"),
+      v.literal("extracted")
+    )),
+
+    // OLD: Legacy reference fields (keep for migration, will be removed)
     extractedRecipeId: v.optional(v.id("extractedRecipes")),
     communityRecipeId: v.optional(v.id("recipes")),
 
-    // Denormalized recipe data (for fast access)
-    title: v.string(),
+    // NEW: Custom recipe data (only populated for custom/ai_generated recipes)
+    customRecipeData: v.optional(v.object({
+      title: v.string(),
+      description: v.optional(v.string()),
+      imageUrl: v.optional(v.string()),
+      ingredients: v.array(v.string()),
+      instructions: v.array(v.string()),
+      servings: v.optional(v.string()),
+      prep_time: v.optional(v.string()),
+      cook_time: v.optional(v.string()),
+      time_minutes: v.optional(v.number()),
+      cuisine: v.optional(v.string()),
+      diet: v.optional(v.string()),
+      category: v.optional(v.string()),
+    })),
+
+    // OLD: Denormalized recipe data (keep optional for migration)
+    title: v.optional(v.string()),
     description: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
-    ingredients: v.array(v.string()),
-    instructions: v.array(v.string()),
+    ingredients: v.optional(v.array(v.string())),
+    instructions: v.optional(v.array(v.string())),
+
+    // Pre-parsed ingredients for instant grocery list generation
+    parsedIngredients: v.optional(v.array(v.object({
+      name: v.string(),           // Simple product name: "flour"
+      display_text: v.string(),   // Full text: "2 cups all-purpose flour"
+      measurements: v.array(v.object({
+        quantity: v.number(),     // Numeric quantity: 2
+        unit: v.string(),         // Measurement unit: "cup"
+      })),
+    }))),
 
     // Optional metadata
     servings: v.optional(v.string()),
@@ -310,17 +347,50 @@ export default defineSchema({
     // Cookbook organization
     cookbookCategory: v.string(), // "breakfast", "lunch", "dinner", "dessert", "snacks", "uncategorized"
 
+    // NEW: Cached data for fallback (when source recipe is deleted)
+    cachedTitle: v.optional(v.string()),      // Fallback title if source deleted
+    cachedImageUrl: v.optional(v.string()),   // Fallback image if source deleted
+
+    // NEW: Modification tracking
+    isModified: v.optional(v.boolean()),      // True if user edited a referenced recipe
+
     // User-specific metadata
     notes: v.optional(v.string()),
     isFavorited: v.boolean(),
     lastAccessedAt: v.optional(v.number()),
+
+    // Video import source (Instagram or YouTube)
+    source: v.optional(v.union(v.literal("instagram"), v.literal("youtube"))),
+
+    // Mux video hosting (for Instagram & YouTube imports)
+    muxPlaybackId: v.optional(v.string()),    // Mux playback ID for video player
+    muxAssetId: v.optional(v.string()),       // Mux asset ID for management
+
+    // Instagram-specific fields
+    instagramVideoUrl: v.optional(v.string()), // Original Instagram video URL (fallback)
+    instagramUsername: v.optional(v.string()), // Creator username for attribution
+
+    // YouTube-specific fields
+    youtubeVideoId: v.optional(v.string()),    // YouTube video ID (e.g., "dQw4w9WgXcQ")
+    youtubeUrl: v.optional(v.string()),        // Full YouTube URL
+    youtubeThumbnailUrl: v.optional(v.string()), // YouTube thumbnail URL
+
+    // AI-analyzed video segments for step-by-step cooking mode (both platforms)
+    videoSegments: v.optional(v.array(v.object({
+      stepNumber: v.number(),      // Which instruction step (1-based)
+      instruction: v.string(),     // The instruction text
+      startTime: v.number(),       // Start time in seconds
+      endTime: v.number(),         // End time in seconds
+    }))),
 
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"])
     .index("by_user_cookbook", ["userId", "cookbookCategory"])
-    .index("by_user_favorited", ["userId", "isFavorited"]),
+    .index("by_user_favorited", ["userId", "isFavorited"])
+    .index("by_mux_asset", ["muxAssetId"]), // For finding recipes by Mux asset
+
 
   // ========== MEAL PLAN (Day-based Planning) ==========
 
@@ -680,38 +750,265 @@ export default defineSchema({
   })
     .index("by_key", ["key"]),
 
-  // ========== INSTAGRAM ACCOUNT ROTATION ==========
+  // ==================== SOCIAL FEATURES ====================
 
-  instagramAccounts: defineTable({
-    // Instagram credentials
-    username: v.string(), // Instagram username
-    password: v.string(), // Instagram password (stored securely in Convex)
+  // Meal Sharing: Track recipes shared between users
+  sharedRecipes: defineTable({
+    fromUserId: v.string(),        // User who shared the recipe
+    toUserId: v.string(),          // User receiving the recipe
+    recipeId: v.id("userRecipes"), // Recipe being shared
+    recipeTitle: v.string(),       // Denormalized for quick display
+    recipeImageUrl: v.optional(v.string()),
 
-    // Account status and rotation
-    isActive: v.boolean(), // Whether account is available for use
-    lastUsedAt: v.optional(v.number()), // Timestamp of last use (for round-robin rotation)
-    usageCount: v.number(), // Total number of times used (for analytics)
-
-    // Account health tracking
+    message: v.optional(v.string()), // Optional sharing message
     status: v.union(
-      v.literal("active"),        // Account is healthy and ready
-      v.literal("rate_limited"),  // Instagram rate limit detected, skip temporarily
-      v.literal("banned"),        // Account banned/blocked by Instagram
-      v.literal("login_failed")   // Login credentials invalid
+      v.literal("unread"),   // Not yet viewed by recipient
+      v.literal("viewed"),   // Recipient viewed it
+      v.literal("saved")     // Recipient saved to their cookbook
     ),
 
-    // Optional proxy configuration (for scaling)
-    proxyUrl: v.optional(v.string()), // Format: "http://username:password@host:port"
+    createdAt: v.number(),
+    viewedAt: v.optional(v.number()),
+    savedAt: v.optional(v.number()),
+  })
+    .index("by_sender", ["fromUserId"])
+    .index("by_receiver", ["toUserId"])
+    .index("by_receiver_status", ["toUserId", "status"]) // For notification counts
+    .index("by_recipe", ["recipeId"]), // See who you've shared a recipe with
 
-    // Metadata
-    notes: v.optional(v.string()), // Admin notes (e.g., "Main account", "Backup #3")
+  // Friendships: Basic mutual friend connections
+  friendships: defineTable({
+    userId1: v.string(),  // First user (alphabetically sorted)
+    userId2: v.string(),  // Second user (alphabetically sorted)
+    status: v.union(
+      v.literal("pending"),   // Friend request sent
+      v.literal("accepted"),  // Mutual friends
+      v.literal("declined")   // Request declined
+    ),
+    requestedBy: v.string(), // Who initiated the friend request
+
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user1", ["userId1"])
+    .index("by_user2", ["userId2"])
+    .index("by_user1_status", ["userId1", "status"]) // Get all friends for a user
+    .index("by_user2_status", ["userId2", "status"])
+    .index("by_requested_by", ["requestedBy", "status"]), // Get pending requests sent by user
+
+  // ========== MULTI-TIERED MEMORY SYSTEM ==========
+
+  // Tier 1: Basic User Profile (Static - Onboarding Data)
+  userProfiles: defineTable({
+    userId: v.string(), // Clerk user ID
+
+    // Basic information
+    name: v.optional(v.string()),
+    country: v.optional(v.string()), // User's country/nationality
+    familySize: v.optional(v.number()), // Number of people cooking for
+    cookingSkillLevel: v.optional(v.union(
+      v.literal("beginner"),
+      v.literal("intermediate"),
+      v.literal("advanced")
+    )),
+
+    // Allergens (MUST avoid - life-threatening allergies)
+    allergens: v.array(v.string()), // ["peanuts", "shellfish", "tree nuts"]
+
+    // Dietary preferences (lifestyle choices, not allergies)
+    dietaryPreferences: v.array(v.string()), // ["vegan", "keto", "paleo", "gluten-free"]
+
+    // Preferences set during onboarding
+    preferredCuisines: v.optional(v.array(v.string())), // ["Italian", "Mexican"]
+    goal: v.optional(v.string()), // "lose-weight", "gain-weight", "maintain", "try-more-foods"
+
+    // Legacy fields (deprecated)
+    kitchenEquipment: v.optional(v.array(v.string())), // ["air fryer", "instant pot"]
+    defaultServings: v.optional(v.number()), // Default number of servings
 
     // Timestamps
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_isActive", ["isActive"])
-    .index("by_status", ["status"])
-    .index("by_lastUsedAt", ["lastUsedAt"]) // For round-robin: get account with oldest lastUsedAt
-    .index("by_username", ["username"]), // For duplicate detection
+    .index("by_user", ["userId"]),
+
+  // Tier 2: Learned Preferences (Dynamic - AI-Extracted from Conversations)
+  learnedPreferences: defineTable({
+    userId: v.string(), // Clerk user ID
+    agentId: v.optional(v.string()), // Community/agent-specific learning
+
+    // Preference details
+    preferenceType: v.union(
+      v.literal("food_love"),        // "loves chicken"
+      v.literal("food_dislike"),     // "dislikes broccoli"
+      v.literal("cooking_habit"),    // "meal preps on Sundays"
+      v.literal("time_constraint"),  // "needs 30-min meals"
+      v.literal("lifestyle_context") // "picky kids", "works night shifts"
+    ),
+    summary: v.string(), // Human-readable summary
+
+    // Confidence & repetition tracking
+    confidence: v.number(), // 0-1 scale, increases with repetition
+    sourceCount: v.number(), // How many conversations confirmed this
+    lastMentionedAt: v.number(), // Unix timestamp
+
+    // Semantic search
+    embedding: v.array(v.float64()), // Vector embedding (1536 dimensions)
+    embeddingModel: v.string(), // "text-embedding-3-small"
+
+    // Source tracking
+    extractedFrom: v.object({
+      sessionIds: v.array(v.string()),
+      messageIds: v.array(v.id("chatMessages")),
+    }),
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_type", ["userId", "preferenceType"])
+    .index("by_user_agent", ["userId", "agentId"])
+    .index("by_confidence", ["userId", "confidence"]) // For top-N queries
+    .index("by_lastMentioned", ["userId", "lastMentionedAt"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["userId", "agentId"],
+    }),
+
+  // Tier 3: Conversation Summaries (Contextual - Time-Based Retrieval)
+  conversationSummaries: defineTable({
+    sessionId: v.string(), // Chat session ID
+    userId: v.string(), // Clerk user ID
+    communityId: v.string(), // Community ID
+
+    // Summary content
+    summary: v.string(), // AI-generated summary of key discussion points
+    topics: v.array(v.string()), // Main topics discussed
+    recipesDiscussed: v.optional(v.array(v.object({
+      recipeId: v.string(),
+      recipeName: v.string(),
+      recipeType: v.string(), // "community", "extracted", "user", "ai_generated"
+    }))),
+    decisionsMade: v.optional(v.array(v.string())), // Decisions/plans made
+
+    // Time range of conversation
+    timeRange: v.object({
+      startTime: v.number(), // First message timestamp
+      endTime: v.number(),   // Last message timestamp
+    }),
+    messageCount: v.number(), // Number of messages in conversation
+
+    // Semantic search
+    embedding: v.array(v.float64()), // Vector embedding (1536 dimensions)
+    embeddingModel: v.string(), // "text-embedding-3-small"
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_session", ["sessionId"])
+    .index("by_user", ["userId"])
+    .index("by_user_time", ["userId", "timeRange.startTime"])
+    .index("by_community", ["communityId"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["userId", "communityId"],
+    }),
+
+  // Tier 2.5: Recent Meals (Recipe Discussion Tracking)
+  recentMeals: defineTable({
+    userId: v.string(), // Clerk user ID
+
+    // Recipe reference
+    recipeId: v.string(), // Can be from recipes, extractedRecipes, or userRecipes
+    recipeName: v.string(), // Name for display
+    recipeType: v.union(
+      v.literal("community"),     // From community recipes
+      v.literal("extracted"),     // From extractedRecipes (Instagram)
+      v.literal("user"),          // From userRecipes
+      v.literal("ai_generated")   // AI-generated recipes
+    ),
+
+    // Context where discussed
+    discussedInSession: v.id("chatSessions"),
+    discussedInMessage: v.id("chatMessages"),
+
+    // Optional meal context
+    mealType: v.optional(v.union(
+      v.literal("breakfast"),
+      v.literal("lunch"),
+      v.literal("dinner"),
+      v.literal("snack")
+    )),
+
+    // Timestamps
+    discussedAt: v.number(), // When user discussed this recipe
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_time", ["userId", "discussedAt"])
+    .index("by_user_recipe", ["userId", "recipeId"])
+    .index("by_session", ["discussedInSession"]),
+
+  // Recipe Interactions (Global tracking across all app features)
+  recipeInteractions: defineTable({
+    userId: v.string(), // Clerk user ID
+
+    // Recipe reference
+    recipeId: v.string(), // Can be from recipes, extractedRecipes, or userRecipes
+    recipeName: v.string(), // Name for display
+    recipeType: v.union(
+      v.literal("community"),
+      v.literal("extracted"),
+      v.literal("user"),
+      v.literal("ai_generated")
+    ),
+
+    // Type of interaction
+    interactionType: v.union(
+      v.literal("viewed"),              // User viewed recipe details
+      v.literal("discussed"),           // Discussed in chat
+      v.literal("saved_to_cookbook"),   // Saved to cookbook
+      v.literal("cooked"),              // Marked as cooked
+      v.literal("shared"),              // Shared recipe
+      v.literal("imported")             // Imported from Instagram
+    ),
+
+    // Optional context (depends on interaction type)
+    contextId: v.optional(v.string()),     // cookbookId, sessionId, etc.
+    contextType: v.optional(v.string()),   // "cookbook", "chat_session", etc.
+
+    // Timestamps
+    timestamp: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_time", ["userId", "timestamp"])
+    .index("by_user_recipe", ["userId", "recipeId"])
+    .index("by_user_recipe_time", ["userId", "recipeId", "timestamp"])
+    .index("by_interaction_type", ["userId", "interactionType", "timestamp"]),
+
+  // AI-Generated User Suggestions (Voice Interface)
+  userSuggestions: defineTable({
+    userId: v.string(), // Clerk user ID
+
+    // Generated suggestions (20 contextual meal suggestions)
+    suggestions: v.array(v.string()), // ["Quick breakfast", "Healthy lunch", "Easy dinner", ...]
+
+    // Generation metadata
+    generatedAt: v.number(),
+    expiresAt: v.number(), // Refresh after expiry (e.g., 24 hours)
+
+    // Context used for generation (for debugging/tracking)
+    contextSnapshot: v.optional(v.string()), // Brief summary of user context used
+
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_expires", ["userId", "expiresAt"]),
 });
+
