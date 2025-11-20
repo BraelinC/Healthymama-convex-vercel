@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useQuery } from "convex-helpers/react/cache/hooks";
@@ -16,6 +16,16 @@ import ConvexCommunityChat from "@/components/chat/ConvexCommunityChat";
 import ConvexExtractor from "@/components/shared/ConvexExtractor";
 import ConvexDebugger from "@/components/shared/ConvexDebugger";
 import { CommunitySwitcher } from "@/components/community/CommunitySwitcher";
+import { CookbookSelectionSheet } from "@/components/cookbook/CookbookSelectionSheet";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel";
+import { UnifiedRecipeCard } from "@/components/recipe/UnifiedRecipeCard";
 import {
   Users,
   ChefHat,
@@ -42,15 +52,56 @@ export default function CommunityPage({ params }: CommunityPageProps) {
 
   const router = useRouter();
   const { user, isLoaded, isSignedIn } = useUser();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("meals");
   const [postContent, setPostContent] = useState("");
-  const [activeFilter, setActiveFilter] = useState("all");
+  const [activeFilter, setActiveFilter] = useState("recent");
+  const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
+  const [selectedRecipeForCookbook, setSelectedRecipeForCookbook] = useState<any>(null);
+
+  // Mutations
+  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
+  const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
 
   // Fetch community data from Convex
   const community = useQuery(
     api.communities.getCommunityById,
     communityId ? { communityId: communityId as Id<"communities"> } : "skip"
   );
+
+  // Fetch community recipes (reduced limit to save bandwidth - was 200)
+  const communityRecipes = useQuery(
+    api.recipes.recipeQueries.listCommunityRecipes,
+    communityId ? { communityId: communityId, limit: 20 } : "skip"
+  );
+
+  // Filter recipes based on activeFilter
+  const filteredRecipes = useMemo(() => {
+    if (!communityRecipes) return [];
+
+    if (activeFilter === "all" || activeFilter === "recent") {
+      return communityRecipes;  // Show all (sorted by recent)
+    }
+
+    // Map filter names to dietTags
+    const filterTagMap: Record<string, string[]> = {
+      breakfast: ["breakfast"],
+      lunch: ["lunch"],
+      dinner: ["dinner"],
+      baking: ["baking", "baked goods", "baked"],
+      sweets: ["dessert", "candy", "sweet", "sweets"],
+    };
+
+    const targetTags = filterTagMap[activeFilter] || [];
+
+    return communityRecipes.filter(recipe =>
+      recipe.dietTags?.some(tag =>
+        targetTags.some(filterTag =>
+          tag.toLowerCase().includes(filterTag.toLowerCase())
+        )
+      )
+    );
+  }, [communityRecipes, activeFilter]);
 
   // Check if user has access to this community
   const isFree = community
@@ -96,6 +147,100 @@ export default function CommunityPage({ params }: CommunityPageProps) {
       });
     }
   }, [user?.id, communityId, community, isFree, isCreator, accessCheck, updateLastVisited]);
+
+  // Recipe action handlers
+  const handleAddToCookbook = (recipe: any) => {
+    setSelectedRecipeForCookbook(recipe);
+    setIsCookbookSelectionOpen(true);
+  };
+
+  const handleSelectCookbook = async (cookbookId: string, cookbookName: string) => {
+    if (!user?.id || !selectedRecipeForCookbook) return;
+
+    try {
+      await saveRecipe({
+        userId: user.id,
+        recipeType: "community",
+        cookbookCategory: cookbookId,
+        title: selectedRecipeForCookbook.name,
+        description: selectedRecipeForCookbook.description,
+        imageUrl: selectedRecipeForCookbook.imageUrl,
+        ingredients: selectedRecipeForCookbook.ingredients || [],
+        instructions: selectedRecipeForCookbook.steps || [],
+        servings: selectedRecipeForCookbook.servings,
+        prep_time: selectedRecipeForCookbook.prep_time,
+        cook_time: selectedRecipeForCookbook.cook_time,
+        time_minutes: selectedRecipeForCookbook.time_minutes,
+        cuisine: selectedRecipeForCookbook.cuisine,
+        diet: selectedRecipeForCookbook.diet,
+        category: selectedRecipeForCookbook.category,
+        communityRecipeId: selectedRecipeForCookbook._id,
+        isFavorited: false,
+      });
+
+      toast({
+        title: "Saved!",
+        description: `Recipe added to ${cookbookName}`,
+      });
+
+      setIsCookbookSelectionOpen(false);
+      setSelectedRecipeForCookbook(null);
+    } catch (error) {
+      console.error("Save recipe error:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save recipe",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleShare = (recipe: any) => {
+    navigator.clipboard.writeText(recipe.name || recipe.title);
+    toast({
+      title: "Copied!",
+      description: "Recipe name copied to clipboard",
+    });
+  };
+
+  const handleToggleFavorite = async (recipe: any) => {
+    if (!user?.id) return;
+
+    try {
+      // Save the recipe to "Favorites" cookbook and mark as favorited
+      const userRecipeId = await saveRecipe({
+        userId: user.id,
+        recipeType: "community",
+        cookbookCategory: "favorites",
+        title: recipe.name,
+        description: recipe.description,
+        imageUrl: recipe.imageUrl,
+        ingredients: recipe.ingredients || [],
+        instructions: recipe.steps || [],
+        servings: recipe.servings,
+        prep_time: recipe.prep_time,
+        cook_time: recipe.cook_time,
+        time_minutes: recipe.time_minutes,
+        cuisine: recipe.cuisine,
+        diet: recipe.diet,
+        category: recipe.category,
+        communityRecipeId: recipe._id,
+        isFavorited: true, // Mark as favorited
+      });
+
+      toast({
+        title: "Favorited!",
+        description: "Recipe added to your Favorites",
+      });
+    } catch (error) {
+      console.error("Toggle favorite error:", error);
+      toast({
+        title: "Error",
+        description: "Failed to favorite recipe",
+        variant: "destructive",
+      });
+    }
+  };
 
   // ============ DEBUGGING: User State ============
   console.log("=== [COMMUNITY PAGE] Render ===");
@@ -177,7 +322,7 @@ export default function CommunityPage({ params }: CommunityPageProps) {
   console.log("📌 [COMMUNITY] Loading community:", community.name);
 
   return (
-    <div className="h-screen flex flex-col bg-[#FAFAFA] overflow-hidden">
+    <div className="h-screen flex flex-col bg-pink-50/30 overflow-hidden">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex-shrink-0">
         <div className="max-w-7xl mx-auto flex items-center gap-3">
@@ -207,7 +352,7 @@ export default function CommunityPage({ params }: CommunityPageProps) {
             value="meals"
             className="rounded-none bg-white text-gray-600 hover:bg-pink-50 hover:text-healthymama-logo-pink transition-colors data-[state=active]:bg-white data-[state=active]:text-healthymama-logo-pink data-[state=active]:border-b-2 data-[state=active]:border-healthymama-logo-pink"
           >
-            Meal Plans
+            Recipes
           </TabsTrigger>
           <TabsTrigger
             value="ai-chat"
@@ -225,47 +370,108 @@ export default function CommunityPage({ params }: CommunityPageProps) {
           )}
         </TabsList>
 
-        {/* Meal Plans Tab Content */}
-        <TabsContent value="meals" className="flex-1 overflow-y-auto p-4 bg-[#FAFAFA]">
+        {/* Cookbook Selection Sheet */}
+        {selectedRecipeForCookbook && user?.id && (
+          <CookbookSelectionSheet
+            isOpen={isCookbookSelectionOpen}
+            onClose={() => {
+              setIsCookbookSelectionOpen(false);
+              setSelectedRecipeForCookbook(null);
+            }}
+            recipe={selectedRecipeForCookbook}
+            onSelectCookbook={handleSelectCookbook}
+          />
+        )}
+
+        {/* Recipes Tab Content */}
+        <TabsContent value="meals" className="flex-1 overflow-y-auto p-4 bg-pink-50/30 self-start w-full">
           <div className="max-w-7xl mx-auto">
             {/* Filter Pills */}
-            <div className="flex gap-2 flex-wrap mb-6">
+            <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
               {["recent", "breakfast", "lunch", "dinner", "baking", "sweets"].map((filter) => (
                 <Button
                   key={filter}
-                  variant={filter === "recent" ? "default" : "outline"}
+                  variant={activeFilter === filter ? "default" : "outline"}
                   size="sm"
-                  className={
-                    filter === "recent"
+                  onClick={() => setActiveFilter(filter)}
+                  className={`flex-shrink-0 ${
+                    activeFilter === filter
                       ? "bg-healthymama-logo-pink text-white hover:bg-[#D81B60]"
                       : "bg-white text-gray-700 border-gray-300 hover:bg-pink-50 hover:text-healthymama-logo-pink"
-                  }
+                  }`}
                 >
                   {filter.charAt(0).toUpperCase() + filter.slice(1)}
                 </Button>
               ))}
             </div>
 
-            {/* Empty State */}
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <ChefHat className="w-16 h-16 text-gray-400 mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">No Recipes Yet</h3>
-              <p className="text-gray-600 mb-6">Create your first recipe to get started!</p>
-              <Button className="bg-healthymama-logo-pink text-white hover:bg-[#D81B60]">
-                <Plus className="w-4 h-4 mr-2" />
-                Create Recipe
-              </Button>
-            </div>
-
-            {/* Course Cards Grid (when not empty) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 hidden">
-              {/* These will be populated dynamically */}
-            </div>
+            {/* Recipes Display */}
+            {filteredRecipes && filteredRecipes.length > 0 ? (
+              <Card className="bg-white border-gray-200">
+                <CardHeader>
+                  <CardTitle className="text-gray-900 text-lg flex items-center justify-between">
+                    <span>Community Recipes ({filteredRecipes.length})</span>
+                    <Badge className="bg-healthymama-logo-pink">Available Now</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-12 space-y-6">
+                  <Carousel
+                    opts={{
+                      align: "start",
+                      loop: false,
+                    }}
+                    className="w-full"
+                  >
+                    <CarouselContent className="-ml-4">
+                      {filteredRecipes.map((recipe: any) => (
+                        <CarouselItem key={recipe._id} className="pl-4 md:basis-1/2 lg:basis-1/3">
+                          <UnifiedRecipeCard
+                            recipe={{
+                              ...recipe,
+                              id: recipe._id,
+                              title: recipe.name,
+                              instructions: recipe.steps,
+                              dietTags: recipe.dietTags,
+                            }}
+                            onAddToCookbook={() => handleAddToCookbook(recipe)}
+                            onShare={() => handleShare(recipe)}
+                            onToggleFavorite={() => handleToggleFavorite(recipe)}
+                            activeFilter={activeFilter}
+                          />
+                        </CarouselItem>
+                      ))}
+                    </CarouselContent>
+                    <CarouselPrevious className="text-gray-900 border-gray-300 hover:bg-gray-100" />
+                    <CarouselNext className="text-gray-900 border-gray-300 hover:bg-gray-100" />
+                  </Carousel>
+                </CardContent>
+              </Card>
+            ) : (
+              /* Empty State */
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <ChefHat className="w-16 h-16 text-gray-400 mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">No Recipes Yet</h3>
+                <p className="text-gray-600 mb-6">
+                  {isCreator
+                    ? "Extract recipes from Instagram using the Extractor tab, then import them here!"
+                    : "The community creator hasn't added any recipes yet. Check back soon!"}
+                </p>
+                {isCreator && (
+                  <Button
+                    className="bg-healthymama-logo-pink text-white hover:bg-[#D81B60]"
+                    onClick={() => setActiveTab("extractor")}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Go to Extractor
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </TabsContent>
 
         {/* AI Chat Tab Content */}
-        <TabsContent value="ai-chat" className="flex-1 overflow-hidden bg-[#FAFAFA]">
+        <TabsContent value="ai-chat" className="flex-1 overflow-hidden bg-pink-50/30">
           <ConvexCommunityChat
             userId={user.id}
             communityId={communityId}
@@ -274,7 +480,7 @@ export default function CommunityPage({ params }: CommunityPageProps) {
 
         {/* Extractor Tab Content - Only visible to creators */}
         {isCreator && (
-          <TabsContent value="extractor" className="flex-1 overflow-y-auto p-4 bg-[#FAFAFA]">
+          <TabsContent value="extractor" className="flex-1 overflow-y-auto p-4 bg-pink-50/30 self-start w-full">
             <ConvexExtractor
               userId={user.id}
               communityId={communityId}

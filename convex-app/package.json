@@ -11,10 +11,15 @@
     "deploy": "npx convex deploy && vercel --prod"
   },
   "dependencies": {
-    "@clerk/nextjs": "^5.7.1",
-    "@google/generative-ai": "^0.21.0",
+    "@clerk/nextjs": "^6.35.2",
+    "@elevenlabs/client": "^0.10.0",
+    "@elevenlabs/react": "^0.10.0",
+    "@google/generative-ai": "^0.24.1",
     "@headlessui/react": "^2.1.7",
     "@heroicons/react": "^2.1.5",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@mux/mux-node": "^12.8.0",
+    "@mux/mux-player-react": "^3.8.0",
     "@radix-ui/react-alert-dialog": "^1.0.5",
     "@radix-ui/react-avatar": "^1.0.4",
     "@radix-ui/react-checkbox": "^1.0.4",
@@ -29,6 +34,7 @@
     "@sparticuz/chromium": "^119.0.0",
     "@tanstack/react-query": "^5.90.5",
     "@xixixao/uploadstuff": "^0.0.5",
+    "axios": "^1.7.9",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "convex": "^1.27.4",
@@ -42,9 +48,12 @@
     "react-dom": "^19.2.0",
     "react-dropzone": "^14.3.8",
     "react-markdown": "^10.1.0",
+    "react-world-flags": "^1.6.0",
     "stripe": "^19.3.0",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "yt-dlp-wrap": "^2.3.12",
+    "ytdl-core": "^4.11.5"
   },
   "devDependencies": {
     "@types/node": "^20.16.11",

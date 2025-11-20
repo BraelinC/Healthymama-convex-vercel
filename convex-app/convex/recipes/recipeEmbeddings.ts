@@ -347,7 +347,7 @@ export const embedExtractedRecipe = action({
   },
   handler: async (ctx, args) => {
     // Get the extracted recipe
-    const extractedRecipe = await ctx.runQuery(internal.recipeQueries.getExtractedRecipeById, {
+    const extractedRecipe = await ctx.runQuery(internal["recipes/recipeQueries"].getExtractedRecipeById, {
       recipeId: args.extractedRecipeId,
     });
 
@@ -374,7 +374,11 @@ export const embedExtractedRecipe = action({
         enrichedMetadata: extractedRecipe.enrichedMetadata,
       });
 
-      dietTags = extractedRecipe.enrichedMetadata.dietTags;
+      // Merge dietTags and mealTypes for filtering (e.g., "vegan", "breakfast", "lunch")
+      dietTags = [
+        ...extractedRecipe.enrichedMetadata.dietTags,
+        ...extractedRecipe.enrichedMetadata.mealTypes,
+      ];
     } else {
       console.log(`⚙️ [RECIPE EMBEDDING] Using keyword inference for "${extractedRecipe.title}"`);
 
@@ -401,7 +405,7 @@ export const embedExtractedRecipe = action({
     console.log(`✅ [RECIPE EMBEDDING] Generated embedding for "${extractedRecipe.title}" (${embedding.length} dims)`);
 
     // Store in recipes table
-    const recipeId = await ctx.runMutation(internal.recipeMutations.storeRecipeWithEmbedding, {
+    const recipeId = await ctx.runMutation(internal["recipes/recipeMutations"].storeRecipeWithEmbedding, {
       name: extractedRecipe.title,
       description: extractedRecipe.description || "",
       ingredients: extractedRecipe.ingredients,
@@ -429,7 +433,7 @@ export const embedExtractedRecipe = action({
         console.log(`✅ [INGREDIENT EMBEDDING] Generated ${ingredientEmbeddings.length} ingredient embeddings (${extractedRecipe.enrichedMetadata.mainIngredients.length} main + others)`);
 
         // Store ingredient embeddings
-        await ctx.runMutation(internal.recipeMutations.storeIngredientEmbeddings, {
+        await ctx.runMutation(internal["recipes/recipeMutations"].storeIngredientEmbeddings, {
           recipeId,
           ingredientEmbeddings,
         });
@@ -461,8 +465,8 @@ export const batchEmbedExtractedRecipes = action({
     let successCount = 0;
     let failureCount = 0;
 
-    // Process embeddings in parallel batches for maximum speed
-    const concurrency = 50; // ULTRA mode: Generate 50 embeddings simultaneously
+    // Process embeddings in parallel batches (reduced to avoid rate limits)
+    const concurrency = 5; // Process 5 embeddings simultaneously to avoid OpenAI rate limits
     console.log(`⚡ [BATCH EMBEDDING] Processing ${args.extractedRecipeIds.length} recipes with concurrency ${concurrency}...`);
 
     for (let i = 0; i < args.extractedRecipeIds.length; i += concurrency) {
@@ -476,7 +480,7 @@ export const batchEmbedExtractedRecipes = action({
       const batchResults = await Promise.allSettled(
         batch.map(async (recipeId) => {
           try {
-            const result = await ctx.runAction(internal.recipeEmbeddings.embedExtractedRecipe, {
+            const result = await ctx.runAction(internal["recipes/recipeEmbeddings"].embedExtractedRecipe, {
               extractedRecipeId: recipeId,
             });
             return { recipeId, success: true, result };
@@ -528,7 +532,7 @@ export const embedJobRecipes = action({
     console.log(`🔄 [JOB EMBEDDING] Embedding all recipes from job: ${args.jobId}`);
 
     // Get all extracted recipes for this job
-    const extractedRecipes = await ctx.runQuery(internal.recipeQueries.listExtractedRecipesByJob, {
+    const extractedRecipes = await ctx.runQuery(internal["recipes/recipeQueries"].listExtractedRecipesByJob, {
       jobId: args.jobId,
     });
 
@@ -545,7 +549,7 @@ export const embedJobRecipes = action({
 
     // Batch embed all recipes
     const recipeIds = extractedRecipes.map((r) => r._id);
-    const result = await ctx.runAction(internal.recipeEmbeddings.batchEmbedExtractedRecipes, {
+    const result = await ctx.runAction(internal["recipes/recipeEmbeddings"].batchEmbedExtractedRecipes, {
       extractedRecipeIds: recipeIds,
     });
 

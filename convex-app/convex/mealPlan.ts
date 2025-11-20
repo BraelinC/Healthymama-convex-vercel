@@ -21,26 +21,12 @@ export const addMealToPlan = mutation({
   handler: async (ctx, args) => {
     const now = Date.now();
 
-    // Check if a meal already exists for this slot
-    const existing = await ctx.db
-      .query("mealPlan")
-      .withIndex("by_user_day_mealtype", (q) =>
-        q
-          .eq("userId", args.userId)
-          .eq("dayNumber", args.dayNumber)
-          .eq("mealType", args.mealType)
-      )
-      .first();
-
-    // If exists, update it; otherwise create new
+    // For snacks, always create a new entry (allow multiple)
+    // For other meal types, check if one already exists and update it
     let result;
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        userRecipeId: args.userRecipeId,
-        updatedAt: now,
-      });
-      result = existing._id;
-    } else {
+
+    if (args.mealType === "snack") {
+      // Always create new snack entry
       const mealPlanId = await ctx.db.insert("mealPlan", {
         userId: args.userId,
         userRecipeId: args.userRecipeId,
@@ -50,6 +36,35 @@ export const addMealToPlan = mutation({
         updatedAt: now,
       });
       result = mealPlanId;
+    } else {
+      // For breakfast, lunch, dinner: check if exists and update, or create new
+      const existing = await ctx.db
+        .query("mealPlan")
+        .withIndex("by_user_day_mealtype", (q) =>
+          q
+            .eq("userId", args.userId)
+            .eq("dayNumber", args.dayNumber)
+            .eq("mealType", args.mealType)
+        )
+        .first();
+
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          userRecipeId: args.userRecipeId,
+          updatedAt: now,
+        });
+        result = existing._id;
+      } else {
+        const mealPlanId = await ctx.db.insert("mealPlan", {
+          userId: args.userId,
+          userRecipeId: args.userRecipeId,
+          dayNumber: args.dayNumber,
+          mealType: args.mealType,
+          createdAt: now,
+          updatedAt: now,
+        });
+        result = mealPlanId;
+      }
     }
 
     // Trigger grocery list regeneration
@@ -98,10 +113,12 @@ export const getMealPlanByUser = query({
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .collect();
 
-    // Fetch recipe details for each entry
+    // Fetch enriched recipe details for each entry (with JOIN to source recipes)
     const mealPlanWithRecipes = await Promise.all(
       mealPlanEntries.map(async (entry) => {
-        const recipe = await ctx.db.get(entry.userRecipeId);
+        const recipe = await ctx.runQuery(api.recipes.userRecipes.getUserRecipeById, {
+          recipeId: entry.userRecipeId,
+        });
         return {
           ...entry,
           recipe,
@@ -130,10 +147,12 @@ export const getMealPlanByDay = query({
       )
       .collect();
 
-    // Fetch recipe details
+    // Fetch enriched recipe details (with JOIN to source recipes)
     const mealPlanWithRecipes = await Promise.all(
       mealPlanEntries.map(async (entry) => {
-        const recipe = await ctx.db.get(entry.userRecipeId);
+        const recipe = await ctx.runQuery(api.recipes.userRecipes.getUserRecipeById, {
+          recipeId: entry.userRecipeId,
+        });
         return {
           ...entry,
           recipe,

@@ -4,6 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import { HealthyMamaConvexProvider } from "@/components/shared/HealthyMamaConvexProvider";
 import { Toaster } from "@/components/ui/toaster";
+import { CustomFeedbackButton } from "@/components/shared/CustomFeedbackButton";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -20,15 +21,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased`}>
-        {/* UserJot Feedback Widget */}
+        {/* UserJot Feedback SDK - Using custom trigger */}
         <Script id="userjot-widget" strategy="afterInteractive">
           {`
             window.$ujq=window.$ujq||[];
             window.uj=window.uj||new Proxy({},{get:(_,p)=>(...a)=>window.$ujq.push([p,...a])});
 
-            // Initialize UserJot with project ID
+            // Initialize UserJot with custom trigger (hides default button)
             window.uj.init('cmhpazugj026g14ny89le8o78', {
               widget: true,
+              trigger: 'custom',  // Official way to hide default button
               position: 'right',
               theme: 'auto'
             });
@@ -44,6 +46,7 @@ export default function RootLayout({
         <HealthyMamaConvexProvider>
           {children}
           <Toaster />
+          <CustomFeedbackButton />
         </HealthyMamaConvexProvider>
       </body>
     </html>

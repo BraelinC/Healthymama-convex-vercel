@@ -23,7 +23,7 @@ export const enrichAllExtractedRecipes = action({
     console.log(`🔍 [ENRICH EXISTING] Finding extracted recipes for community: ${args.communityId}`);
 
     // Get all extraction jobs for this community
-    const jobs = await ctx.runQuery(internal.recipeQueries.listExtractedRecipesByJob, {
+    const jobs = await ctx.runQuery(internal["recipes/recipeQueries"].listExtractedRecipesByJob, {
       jobId: args.communityId as any, // We need a different query
     });
 
@@ -61,7 +61,7 @@ export const enrichRecipesByJobId = action({
       if (enrichResult.successCount > 0) {
         console.log(`🔄 [ENRICH EXISTING] Triggering embedding for ${enrichResult.successCount} enriched recipes`);
 
-        await ctx.runAction(internal.recipeEmbeddings.embedJobRecipes, {
+        await ctx.runAction(internal["recipes/recipeEmbeddings"].embedJobRecipes, {
           jobId: args.jobId,
         });
 

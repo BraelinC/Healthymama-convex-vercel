@@ -37,7 +37,7 @@ export const autoEnrichAfterExtraction = action({
       if (result.successCount > 0) {
         console.log(`🔄 [WORKFLOW] Triggering embedding for ${result.successCount} enriched recipes`);
 
-        await ctx.runAction(internal.recipeEmbeddings.embedJobRecipes, {
+        await ctx.runAction(internal["recipes/recipeEmbeddings"].embedJobRecipes, {
           jobId: args.jobId,
         });
 
@@ -77,7 +77,7 @@ export const backfillEnrichment = action({
     console.log(`   Batch size: ${batchSize}, Concurrency: ${concurrency}`);
 
     // Get all recipes in the community that need enrichment
-    const allRecipes = await ctx.runQuery(internal.recipeQueries.listExtractedRecipesByJob, {
+    const allRecipes = await ctx.runQuery(internal["recipes/recipeQueries"].listExtractedRecipesByJob, {
       jobId: args.communityId as any, // This will need a proper query to get all community recipes
     });
 
@@ -172,7 +172,7 @@ export const reEnrichWithModel = action({
     }
 
     // Get all recipes from the job
-    const recipes = await ctx.runQuery(internal.recipeQueries.listExtractedRecipesByJob, {
+    const recipes = await ctx.runQuery(internal["recipes/recipeQueries"].listExtractedRecipesByJob, {
       jobId: args.jobId,
     });
 
@@ -200,7 +200,7 @@ export const reEnrichWithModel = action({
     if (result.successCount > 0) {
       console.log(`🔄 [RE-ENRICH] Triggering re-embedding for ${result.successCount} recipes`);
 
-      await ctx.runAction(internal.recipeEmbeddings.embedJobRecipes, {
+      await ctx.runAction(internal["recipes/recipeEmbeddings"].embedJobRecipes, {
         jobId: args.jobId,
       });
 
@@ -239,7 +239,7 @@ export const pipelineEnrichAndEmbed = action({
 
       // Step 2: Immediately embed the recipe
       console.log(`🔢 [PIPELINE] Embedding recipe ${args.extractedRecipeId}...`);
-      const embedResult = await ctx.runAction(internal.recipeEmbeddings.embedExtractedRecipe, {
+      const embedResult = await ctx.runAction(internal["recipes/recipeEmbeddings"].embedExtractedRecipe, {
         extractedRecipeId: args.extractedRecipeId,
       });
 

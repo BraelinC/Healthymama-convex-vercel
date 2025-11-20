@@ -5,10 +5,11 @@ import { mutation, query } from "./_generated/server";
 export const getAllCommunities = query({
   args: {},
   handler: async (ctx) => {
+    // Reduced from .collect() to .take(50) to save bandwidth
     const communities = await ctx.db
       .query("communities")
       .order("desc")
-      .collect();
+      .take(50);
 
     // Add coverImage URL from storage if storageId exists
     return await Promise.all(
@@ -126,10 +127,10 @@ export const updateLastVisitedCommunity = mutation({
 export const getUserAccessibleCommunities = query({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
-    // Get all communities
-    const allCommunities = await ctx.db.query("communities").collect();
+    // Get all communities (reduced from .collect() to .take(50) to save bandwidth)
+    const allCommunities = await ctx.db.query("communities").take(50);
 
-    // Get user's active subscriptions
+    // Get user's active subscriptions (reduced from .collect() to .take(20))
     const subscriptions = await ctx.db
       .query("subscriptions")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
@@ -139,18 +140,18 @@ export const getUserAccessibleCommunities = query({
           q.eq(q.field("status"), "trialing")
         )
       )
-      .collect();
+      .take(20);
 
     const subscribedCommunityIds = new Set(
       subscriptions.map((s) => s.communityId)
     );
 
-    // Get user's lifetime purchases
+    // Get user's lifetime purchases (reduced from .collect() to .take(20))
     const purchases = await ctx.db
       .query("purchases")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .filter((q) => q.eq(q.field("status"), "succeeded"))
-      .collect();
+      .take(20);
 
     const purchasedCommunityIds = new Set(
       purchases.map((p) => p.communityId)

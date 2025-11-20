@@ -1,0 +1,42 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { User, Users } from "lucide-react";
+
+interface ProfileDropdownMenuProps {
+  children: React.ReactNode;
+}
+
+export function ProfileDropdownMenu({ children }: ProfileDropdownMenuProps) {
+  const router = useRouter();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {children}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuItem
+          onClick={() => router.push("/profile")}
+          className="cursor-pointer"
+        >
+          <User className="w-4 h-4 mr-2" />
+          Profile
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => router.push("/social")}
+          className="cursor-pointer"
+        >
+          <Users className="w-4 h-4 mr-2" />
+          Social
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

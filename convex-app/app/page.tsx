@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useQuery } from "convex-helpers/react/cache/hooks";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery as useConvexQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,16 +14,11 @@ import { CreateCommunityModal } from "@/components/community/CreateCommunityModa
 import { CheckoutModal } from "@/components/community/CheckoutModal";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { BookMarked, Users, Plus, UserCircle, Settings, LogOut, HandPlatter } from "lucide-react";
+import { BookMarked, Users, Plus, HandPlatter } from "lucide-react";
 import { AuthBlockerModal } from "@/components/auth/AuthBlockerModal";
+import { ProfileDropdownMenu } from "@/components/shared/ProfileDropdownMenu";
+import { NotificationBadge } from "@/components/shared/NotificationBadge";
+import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 
 // Mock data for communities
 const communities = [
@@ -148,8 +143,43 @@ function HomePageContent() {
     user?.id ? { userId: user.id } : "skip"
   );
 
+  // Fetch unread share count for notification badge
+  const unreadShareCount = useQuery(
+    api.sharing.getUnreadShareCount,
+    user?.id ? { userId: user.id } : "skip"
+  ) || 0;
+
+  // Check if user has completed onboarding
+  const hasCompletedOnboarding = useConvexQuery(
+    api.userProfile.hasCompletedOnboarding,
+    user?.id ? { userId: user.id } : "skip"
+  );
+
+  // Local state for onboarding wizard
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
   // Mutation to create/update user
   const createOrUpdateUser = useMutation(api.users.createOrUpdateUser);
+
+  // Show onboarding wizard if user hasn't completed it
+  useEffect(() => {
+    console.log("[ONBOARDING CHECK]", {
+      isLoaded,
+      isSignedIn,
+      userId: user?.id,
+      hasCompletedOnboarding,
+      shouldShow: isLoaded && isSignedIn && user?.id && hasCompletedOnboarding === false,
+    });
+
+    if (isLoaded && isSignedIn && user?.id && hasCompletedOnboarding === false) {
+      console.log("✨ SHOWING ONBOARDING WIZARD");
+      setShowOnboarding(true);
+    }
+  }, [isLoaded, isSignedIn, user?.id, hasCompletedOnboarding]);
+
+  const handleOnboardingComplete = () => {
+    setShowOnboarding(false);
+  };
 
   // Auto-redirect to last visited community when Community tab is active (unless in discover mode)
   useEffect(() => {
@@ -236,6 +266,17 @@ function HomePageContent() {
     <div className="min-h-screen bg-[#FAFAFA]">
       {/* Auth blocker modal - shows when user is not signed in */}
       <AuthBlockerModal isOpen={showAuthModal} />
+
+      {/* Onboarding wizard - shows when user hasn't completed onboarding */}
+      {user?.id && showOnboarding && (
+        <OnboardingWizard
+          userId={user.id}
+          userName={user.fullName || user.firstName || undefined}
+          isOpen={showOnboarding}
+          onComplete={handleOnboardingComplete}
+        />
+      )}
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         {/* Tab Navigation - Bottom Navigation Style */}
         <TabsList className="fixed bottom-0 left-0 right-0 z-50 w-full bg-white border-t border-gray-200 rounded-none h-20 grid grid-cols-2 p-0 shadow-lg">
@@ -277,48 +318,26 @@ function HomePageContent() {
                 </h1>
               </div>
 
-              {/* Right side - User profile dropdown (only when signed in) */}
+              {/* Right side - User profile button (only when signed in) */}
               {isSignedIn && user && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="flex items-center gap-2 hover:bg-pink-50">
+                <ProfileDropdownMenu>
+                  <Button
+                    variant="ghost"
+                    className="flex items-center gap-2 hover:bg-pink-50 relative"
+                  >
+                    <div className="relative">
                       <Avatar className="w-8 h-8 bg-healthymama-logo-pink">
                         <AvatarFallback className="text-white text-sm">
                           {user?.firstName?.[0] || user?.emailAddresses[0]?.emailAddress[0].toUpperCase() || "U"}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-gray-700 text-sm hidden sm:inline">
-                        {user?.firstName || user?.emailAddresses[0]?.emailAddress || "User"}
-                      </span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-56 bg-white border-gray-200" align="end">
-                    <DropdownMenuLabel className="text-gray-700">My Account</DropdownMenuLabel>
-                    <DropdownMenuSeparator className="bg-gray-200" />
-                    <DropdownMenuItem
-                      className="text-gray-700 hover:bg-pink-50 hover:text-healthymama-logo-pink cursor-pointer"
-                      onClick={() => router.push('/profile')}
-                    >
-                      <UserCircle className="mr-2 h-4 w-4" />
-                      <span>Profile</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-gray-700 hover:bg-pink-50 hover:text-healthymama-logo-pink cursor-pointer"
-                      onClick={() => router.push('/settings')}
-                    >
-                      <Settings className="mr-2 h-4 w-4" />
-                      <span>Settings</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator className="bg-gray-200" />
-                    <DropdownMenuItem
-                      className="text-red-600 hover:bg-red-50 hover:text-red-700 cursor-pointer"
-                      onClick={() => router.push('/sign-out')}
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      <span>Sign Out</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      <NotificationBadge count={unreadShareCount} />
+                    </div>
+                    <span className="text-gray-700 text-sm hidden sm:inline">
+                      {user?.firstName || user?.emailAddresses[0]?.emailAddress || "User"}
+                    </span>
+                  </Button>
+                </ProfileDropdownMenu>
               )}
             </div>
           </header>

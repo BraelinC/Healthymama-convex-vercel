@@ -1,34 +1,50 @@
 /**
  * Instagram Recipe Import API Route (Next.js Backend)
  *
- * This API route orchestrates the Instagram recipe import process by coordinating
- * between the Railway Python service (Instagram extraction) and OpenRouter AI (recipe parsing).
+ * This API route orchestrates the Instagram recipe import process using HikerAPI
+ * for Instagram extraction and Gemini 2.0 Flash for AI-powered recipe parsing.
  *
  * Architecture Flow:
  * 1. Frontend sends Instagram URL to this endpoint
- * 2. We call Railway Python service to extract Instagram data (caption, comments, video)
- * 3. We send that data to OpenRouter AI (Gemini 2.0 Flash) for recipe parsing
- * 4. We return the formatted recipe JSON back to frontend for preview/save
+ * 2. We call HikerAPI to extract Instagram data (caption, video URL, metadata)
+ * 3. 🎥 PRIMARY PATH: Watch video with Gemini to extract recipe (ingredients, steps, timing)
+ * 4. Upload video to Mux for hosting (instant clipping support)
+ * 5. Analyze video to segment cooking steps with timestamps (step-by-step cooking mode)
+ * 6. Return formatted recipe JSON to frontend for preview/save
  *
- * Why This Design?:
- * - Railway handles Instagram extraction (requires Python's instagrapi library)
- * - Next.js handles AI parsing (reuses existing OpenRouter integration & retry logic)
- * - Separation of concerns: Instagram scraping vs AI processing
- * - Lower latency: AI processing happens in Vercel (closer to OpenRouter servers)
- * - Better error handling: Can retry AI parsing without re-fetching Instagram data
+ * Why Video-First Extraction?:
+ * - Instagram reels often say "Recipe in bio" or "Link in caption" instead of showing recipe text
+ * - Gemini 2.0 Flash can watch the video and extract ingredients, steps, quantities visually
+ * - More reliable than caption parsing (captions are often marketing copy, not recipes)
+ * - Enables automatic recipe extraction from any cooking video
+ * - Caption parsing is used as fallback if video extraction fails
  *
  * Environment Variables Used:
- * - NEXT_PUBLIC_RAILWAY_INSTAGRAM_URL: Railway service endpoint
- * - OPEN_ROUTER_API_KEY: OpenRouter API key for AI parsing
+ * - HIKER_API_KEY: HikerAPI key for Instagram data extraction
+ * - OPEN_ROUTER_API_KEY: OpenRouter API key for Gemini 2.0 Flash (video analysis + text parsing)
+ * - MUX_TOKEN_ID, MUX_TOKEN_SECRET: Mux credentials for video hosting
  *
  * Error Handling:
- * - Network errors (Railway service down)
+ * - Network errors (HikerAPI unreachable)
  * - Instagram errors (private account, deleted post)
- * - AI parsing errors (invalid JSON, missing fields)
+ * - Video download timeouts (30 second limit)
+ * - AI extraction errors (invalid JSON, missing fields)
+ * - Automatic fallback to caption parsing if video extraction fails
  * - All errors return 500 with descriptive message
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
+import { uploadVideoFromUrl } from '@/lib/mux';
+import { analyzeVideoSegments, VideoSegment, extractRecipeFromVideo } from '@/lib/gemini-video-analysis';
+import {
+  extractYouTubeVideoId,
+  parseYouTubeDescription,
+  isYouTubeUrl,
+  isInstagramUrl
+} from '@/lib/youtube-parser';
+import { formatRecipeWithGPT } from '@/lib/openai-formatter';
+import { downloadYouTubeVideo } from '@/lib/youtube-download';
 
 // Define return type for Railway service
 interface InstagramExtractionResult {
@@ -53,59 +69,164 @@ interface ParsedRecipe {
   prep_time?: string;
   cook_time?: string;
   cuisine?: string;
+  videoSegments?: VideoSegment[]; // AI-analyzed timestamps for each step
 }
 
 /**
- * Step 1: Extract Instagram data from Railway Python service
+ * Step 1: Extract Instagram data using HikerAPI
  *
- * Calls the Railway microservice to fetch Instagram reel data using instagrapi.
- * The Railway service handles Instagram authentication and API access.
+ * Calls HikerAPI (instagrapi fork) to fetch Instagram media data.
+ * HikerAPI provides direct video URLs, captions, and metadata via REST API.
  *
- * @param url - Instagram reel URL (e.g., https://www.instagram.com/reel/ABC123/)
- * @returns Promise<InstagramExtractionResult> - Caption, comments, video URLs
- * @throws Error if Railway service is unreachable or Instagram fetch fails
+ * @param url - Instagram URL (e.g., https://www.instagram.com/reel/ABC123/ or /p/ABC123/)
+ * @returns Promise<InstagramExtractionResult> - Caption, video URLs, thumbnails
+ * @throws Error if HikerAPI is unreachable or Instagram fetch fails
  *
- * Railway Service Response:
+ * HikerAPI Response:
  * {
  *   success: true,
- *   caption: "Recipe text...",
- *   comments: ["comment 1", "comment 2"],
- *   videoUrl: "https://...",
- *   thumbnailUrl: "https://...",
- *   username: "creator_username"
+ *   data: {
+ *     video_url: "https://...",
+ *     caption_text: "Recipe text...",
+ *     thumbnail_url: "https://...",
+ *     user: { username: "creator_username" },
+ *     media_type: 2  // 1=photo, 2=video
+ *   }
  * }
  */
 async function extractInstagramData(url: string): Promise<InstagramExtractionResult> {
-  const railwayUrl = process.env.NEXT_PUBLIC_RAILWAY_INSTAGRAM_URL;
+  const apiKey = process.env.HIKER_API_KEY;
 
-  if (!railwayUrl) {
-    throw new Error('Railway Instagram service URL not configured (NEXT_PUBLIC_RAILWAY_INSTAGRAM_URL)');
+  if (!apiKey) {
+    throw new Error('HikerAPI key not configured (HIKER_API_KEY). Get your key at https://hikerapi.com');
   }
 
-  console.log(`[Instagram Import] Calling Railway service: ${railwayUrl}/extract-instagram`);
+  console.log(`[Instagram Import] Using HikerAPI for URL: ${url}`);
 
-  const response = await fetch(`${railwayUrl}/extract-instagram`, {
-    method: 'POST',
+  // Use /v1/media/by/url endpoint which accepts full Instagram URLs
+  const apiUrl = `https://api.hikerapi.com/v1/media/by/url?url=${encodeURIComponent(url)}`;
+
+  const response = await fetch(apiUrl, {
+    method: 'GET',
     headers: {
-      'Content-Type': 'application/json',
+      'accept': 'application/json',
+      'x-access-key': apiKey,
     },
-    body: JSON.stringify({ url }),
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(`Railway service error: ${errorData.error || response.statusText}`);
+    const errorText = await response.text();
+    console.error('[HikerAPI] Error:', {
+      status: response.status,
+      body: errorText,
+    });
+
+    if (response.status === 401) {
+      throw new Error('HikerAPI: Invalid or expired API key. Please get a new key from https://hikerapi.com/login');
+    }
+
+    throw new Error(`HikerAPI error (${response.status}): ${errorText}`);
   }
 
-  const data: InstagramExtractionResult = await response.json();
+  const data = await response.json();
+  console.log('[HikerAPI] ✅ Success! Media type:', data.media_type);
+  console.log('[HikerAPI] Username:', data.user?.username);
+  console.log('[HikerAPI] Caption length:', data.caption_text?.length || 0);
 
-  if (!data.success) {
-    throw new Error(data.error || 'Failed to extract Instagram data');
+  // Map HikerAPI response to our format
+  return {
+    success: true,
+    caption: data.caption_text || '',
+    comments: [],
+    videoUrl: data.video_url || '',
+    thumbnailUrl: data.thumbnail_url || data.thumbnail_url_hd || '',
+    postUrl: url,
+    username: data.user?.username || '',
+    mediaType: data.media_type === 2 ? 'video' : 'photo',
+  };
+}
+
+/**
+ * Step 1b: Extract YouTube data using YouTube Data API v3
+ *
+ * Calls YouTube Data API to fetch video metadata including description, title, and thumbnail.
+ * The description is where recipes are typically found on YouTube cooking channels.
+ *
+ * @param url - YouTube URL (any format)
+ * @returns Promise<{description, title, thumbnailUrl, videoId}> - Video metadata
+ * @throws Error if YouTube API is unreachable or video is unavailable
+ *
+ * YouTube API Response:
+ * {
+ *   items: [{
+ *     id: "VIDEO_ID",
+ *     snippet: {
+ *       title: "Recipe Title",
+ *       description: "Full recipe text...",
+ *       thumbnails: { maxres: { url: "..." } }
+ *     }
+ *   }]
+ * }
+ */
+async function extractYouTubeData(url: string): Promise<{
+  videoId: string;
+  title: string;
+  description: string;
+  thumbnailUrl: string;
+  videoUrl: string;
+}> {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('YouTube API key not configured (YOUTUBE_API_KEY). Get your key at https://console.cloud.google.com/');
   }
 
-  console.log(`[Instagram Import] ✅ Extracted data from @${data.username}`);
+  // Extract video ID from URL
+  const videoId = extractYouTubeVideoId(url);
 
-  return data;
+  if (!videoId) {
+    throw new Error('Invalid YouTube URL - could not extract video ID');
+  }
+
+  console.log(`[YouTube Import] Fetching video data for: ${videoId}`);
+
+  // Call YouTube Data API v3
+  const apiUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=${apiKey}`;
+
+  const response = await fetch(apiUrl);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[YouTube API] Error:', {
+      status: response.status,
+      body: errorText,
+    });
+
+    if (response.status === 403) {
+      throw new Error('YouTube API: Invalid or quota-exceeded API key. Check your quota at https://console.cloud.google.com/');
+    }
+
+    throw new Error(`YouTube API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  if (!data.items || data.items.length === 0) {
+    throw new Error('YouTube video not found - it may be private, deleted, or unavailable');
+  }
+
+  const snippet = data.items[0].snippet;
+
+  console.log('[YouTube API] ✅ Success! Video:', snippet.title.substring(0, 50) + '...');
+  console.log('[YouTube API] Description length:', snippet.description?.length || 0);
+
+  return {
+    videoId,
+    title: snippet.title,
+    description: snippet.description || '',
+    thumbnailUrl: snippet.thumbnails?.maxres?.url || snippet.thumbnails?.high?.url || '',
+    videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+  };
 }
 
 /**
@@ -118,7 +239,7 @@ async function extractInstagramData(url: string): Promise<InstagramExtractionRes
  * - Fast response time (~1-3 seconds)
  * - Very cheap (~$0.001 per recipe)
  * - Good at understanding recipe text
- * - Same model used in openRouterExtractor.ts (proven reliability)
+ * - Consistent JSON output
  *
  * AI Prompt Strategy:
  * - Combines caption + first 20 comments for context
@@ -199,7 +320,7 @@ Return ONLY the JSON object.`;
       'X-Title': 'HealthyMama Instagram Import',
     },
     body: JSON.stringify({
-      model: 'google/gemini-2.0-flash-001', // Fast and cheap, same as openRouterExtractor
+      model: 'google/gemini-2.0-flash-001', // Fast and cheap
       messages: [
         {
           role: 'user',
@@ -240,6 +361,11 @@ Return ONLY the JSON object.`;
   }
 
   console.log(`[Instagram Import] ✅ Parsed recipe: "${parsed.title}"`);
+  console.log(`[Instagram Import] Ingredients count: ${parsed.ingredients?.length || 0}`);
+  console.log(`[Instagram Import] Instructions count: ${parsed.instructions?.length || 0}`);
+  if (parsed.instructions?.length > 0) {
+    console.log(`[Instagram Import] First instruction: ${parsed.instructions[0].substring(0, 100)}...`);
+  }
 
   return parsed;
 }
@@ -249,62 +375,273 @@ Return ONLY the JSON object.`;
  */
 export async function POST(request: NextRequest) {
   try {
+    // SECURITY: Validate authentication (Next.js 15: auth() is now async)
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized - authentication required' },
+        { status: 401 }
+      );
+    }
+
     // Parse request body
     const body = await request.json();
     const { url } = body;
 
     if (!url || typeof url !== 'string') {
       return NextResponse.json(
-        { error: 'Missing or invalid Instagram URL' },
+        { error: 'Missing or invalid URL' },
         { status: 400 }
       );
     }
 
-    // Validate Instagram URL
-    if (!url.includes('instagram.com')) {
+    // Detect URL type
+    const isInstagram = isInstagramUrl(url);
+    const isYouTube = isYouTubeUrl(url);
+
+    if (!isInstagram && !isYouTube) {
       return NextResponse.json(
-        { error: 'Invalid Instagram URL (must contain instagram.com)' },
+        { error: 'Invalid URL - must be Instagram or YouTube URL' },
         { status: 400 }
       );
     }
 
-    console.log(`\n[Instagram Import] Starting import for: ${url}`);
+    const platform = isInstagram ? 'Instagram' : 'YouTube';
+    console.log(`\n[${platform} Import] Starting import for: ${url}`);
 
-    // Step 1: Extract Instagram data from Railway service
-    const instagramData = await extractInstagramData(url);
+    // Step 1: Extract data based on platform
+    let videoUrl: string;
+    let videoId: string | undefined;
+    let thumbnailUrl: string;
+    let title: string | undefined;
+    let description: string;
 
-    // Step 2: Parse recipe with AI
-    const recipe = await parseRecipeWithAI(
-      instagramData.caption,
-      instagramData.comments,
-      instagramData.username
-    );
+    if (isInstagram) {
+      // Extract Instagram data using HikerAPI
+      const instagramData = await extractInstagramData(url);
 
-    // Step 3: Return combined data to frontend
+      videoUrl = instagramData.videoUrl;
+      thumbnailUrl = instagramData.thumbnailUrl;
+      description = instagramData.caption;
+
+      console.log(`[Instagram Import] Caption length: ${description?.length || 0} chars`);
+      console.log(`[Instagram Import] Caption preview: ${description?.substring(0, 150)}...`);
+    } else {
+      // Extract YouTube data using YouTube API
+      const youtubeData = await extractYouTubeData(url);
+
+      videoUrl = youtubeData.videoUrl; // Watch URL for now, will download later
+      videoId = youtubeData.videoId;
+      thumbnailUrl = youtubeData.thumbnailUrl;
+      title = youtubeData.title;
+      description = youtubeData.description;
+
+      console.log(`[YouTube Import] Title: ${title}`);
+      console.log(`[YouTube Import] Description length: ${description?.length || 0} chars`);
+    }
+
+    // Step 2: Download YouTube video (if YouTube) and upload to Mux
+    let muxData = null;
+    let downloadedVideoUrl = videoUrl; // Default to original URL
+
+    if (isYouTube && videoId) {
+      try {
+        console.log('[YouTube Import] Downloading video for Mux upload...');
+        const downloadedVideo = await downloadYouTubeVideo(videoId);
+        downloadedVideoUrl = downloadedVideo.videoUrl;
+
+        // Override title if not set
+        if (!title) {
+          title = downloadedVideo.title;
+        }
+
+        console.log('[YouTube Import] ✅ Video download complete');
+      } catch (error: any) {
+        console.error('[YouTube Import] ⚠️ Video download failed:', error.message);
+        // Continue with YouTube watch URL (Gemini supports it)
+      }
+    }
+
+    // Upload to Mux for hosting (works for both Instagram and YouTube)
+    if (downloadedVideoUrl) {
+      try {
+        console.log(`[${platform} Import] Uploading video to Mux...`);
+        muxData = await uploadVideoFromUrl(downloadedVideoUrl, {
+          passthrough: isYouTube ? `youtube:${videoId}` : `instagram:${url.split('/').pop()}`,
+        });
+        console.log(`[${platform} Import] ✅ Mux upload complete: ${muxData.playbackId}`);
+      } catch (error: any) {
+        console.error(`[${platform} Import] ⚠️ Mux upload failed:`, error.message);
+        // Continue without Mux - will use original video URL as fallback
+      }
+    }
+
+    // Step 3: Extract recipe (different flow for Instagram vs YouTube)
+    let recipe: ParsedRecipe;
+
+    if (isYouTube) {
+      // YOUTUBE FLOW: Regex → GPT formatting → Video analysis (always)
+
+      // Step 3a: Try to parse recipe from description using regex
+      const parsedDescription = parseYouTubeDescription(description, title || 'Recipe');
+
+      if (parsedDescription.hasRecipe) {
+        // Recipe found in description - format with GPT-4.1-nano
+        console.log('[YouTube Import] Recipe found in description, formatting with GPT-4.1-nano...');
+
+        try {
+          const formatted = await formatRecipeWithGPT(
+            parsedDescription.ingredients!,
+            parsedDescription.instructions!,
+            parsedDescription.title!,
+            {
+              servings: parsedDescription.servings,
+              prepTime: parsedDescription.prepTime,
+              cookTime: parsedDescription.cookTime,
+            }
+          );
+
+          recipe = {
+            title: formatted.title,
+            description: formatted.description,
+            ingredients: formatted.ingredients,
+            instructions: formatted.instructions,
+            servings: formatted.servings,
+            prep_time: formatted.prep_time,
+            cook_time: formatted.cook_time,
+            cuisine: formatted.cuisine,
+          };
+
+          console.log(`[YouTube Import] ✅ Formatted recipe: ${recipe.ingredients.length} ingredients, ${recipe.instructions.length} instructions`);
+        } catch (error: any) {
+          console.warn('[YouTube Import] ⚠️ GPT formatting failed:', error.message);
+          // Use unformatted recipe as fallback
+          recipe = {
+            title: parsedDescription.title!,
+            ingredients: parsedDescription.ingredients!,
+            instructions: parsedDescription.instructions!,
+            servings: parsedDescription.servings,
+            prep_time: parsedDescription.prepTime,
+            cook_time: parsedDescription.cookTime,
+          };
+        }
+      } else {
+        // No recipe in description - extract from video
+        console.log('[YouTube Import] No recipe in description, extracting from video...');
+
+        try {
+          recipe = await extractRecipeFromVideo(videoUrl, title);
+          console.log(`[YouTube Import] ✅ Extracted from video: ${recipe.instructions.length} instructions, ${recipe.ingredients.length} ingredients`);
+        } catch (error: any) {
+          throw new Error(`Failed to extract recipe from YouTube video: ${error.message}`);
+        }
+      }
+    } else {
+      // INSTAGRAM FLOW: Video-first extraction
+
+      if (downloadedVideoUrl) {
+        try {
+          console.log('[Instagram Import] Extracting recipe from video (primary path)...');
+
+          // Extract title from caption first (if available)
+          let captionTitle: string | undefined;
+          try {
+            const captionParse = await parseRecipeWithAI(
+              description,
+              [],
+              ''
+            );
+            captionTitle = captionParse.title;
+            console.log('[Instagram Import] Caption title:', captionTitle);
+          } catch (error) {
+            console.log('[Instagram Import] Could not extract title from caption, will use video');
+          }
+
+          // Watch video and extract full recipe
+          recipe = await extractRecipeFromVideo(
+            downloadedVideoUrl,
+            captionTitle
+          );
+
+          console.log(`[Instagram Import] ✅ Extracted from video: ${recipe.instructions.length} instructions, ${recipe.ingredients.length} ingredients`);
+        } catch (error: any) {
+          console.warn('[Instagram Import] ⚠️ Video extraction failed, falling back to caption parsing:', error.message);
+
+          // Fallback: Try caption parsing
+          recipe = await parseRecipeWithAI(
+            description,
+            [],
+            ''
+          );
+        }
+      } else {
+        // No video - parse from caption only
+        console.log('[Instagram Import] No video found, parsing from caption...');
+        recipe = await parseRecipeWithAI(
+          description,
+          [],
+          ''
+        );
+      }
+    }
+
+    // Step 4: Analyze video to get timestamps for each instruction (ALWAYS for both platforms)
+    let videoSegments: VideoSegment[] | undefined;
+    if (downloadedVideoUrl && recipe.instructions.length > 0) {
+      try {
+        console.log(`[${platform} Import] Analyzing video for step-by-step timestamps...`);
+        const analysis = await analyzeVideoSegments(
+          downloadedVideoUrl,
+          recipe.instructions
+        );
+        videoSegments = analysis.segments;
+        console.log(`[${platform} Import] ✅ Found ${videoSegments.length} video segments`);
+      } catch (error: any) {
+        console.warn(`[${platform} Import] ⚠️ Video analysis failed:`, error.message);
+        // Continue without segments - user can still see full video
+      }
+    }
+
+    // Step 5: Return combined data to frontend
     const result = {
       success: true,
       recipe: {
         // Parsed recipe data
         ...recipe,
 
-        // Instagram metadata
-        instagramUrl: instagramData.postUrl,
-        instagramVideoUrl: instagramData.videoUrl,
-        instagramThumbnailUrl: instagramData.thumbnailUrl,
-        instagramUsername: instagramData.username,
+        // Platform-specific metadata
+        ...(isInstagram ? {
+          instagramUrl: url,
+          instagramVideoUrl: downloadedVideoUrl,
+          instagramThumbnailUrl: thumbnailUrl,
+        } : {
+          youtubeUrl: url,
+          youtubeVideoId: videoId,
+          youtubeThumbnailUrl: thumbnailUrl,
+        }),
+
+        // Mux video hosting (both platforms)
+        muxPlaybackId: muxData?.playbackId,
+        muxAssetId: muxData?.assetId,
+
+        // AI-analyzed video segments for step-by-step cooking mode
+        videoSegments: videoSegments,
+
+        // Source platform
+        source: isYouTube ? 'youtube' : 'instagram',
       },
     };
 
-    console.log(`[Instagram Import] ✅ Import completed successfully\n`);
+    console.log(`[${platform} Import] ✅ Import completed successfully\n`);
 
     return NextResponse.json(result, { status: 200 });
   } catch (error: any) {
-    console.error('[Instagram Import] ❌ Error:', error.message);
+    console.error('[Video Import] ❌ Error:', error.message);
 
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to import Instagram recipe',
+        error: error.message || 'Failed to import recipe from video',
       },
       { status: 500 }
     );

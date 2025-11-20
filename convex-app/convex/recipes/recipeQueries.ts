@@ -122,6 +122,7 @@ export const vectorSearchRecipes = internalAction({
     communityId: v.string(),
     limit: v.optional(v.number()),
     dietaryTags: v.optional(v.array(v.string())),
+    allergens: v.optional(v.array(v.string())), // User allergens to EXCLUDE
     query: v.optional(v.string()), // Original query for hybrid scoring
   },
   handler: async (ctx, args) => {
@@ -148,7 +149,7 @@ export const vectorSearchRecipes = internalAction({
 
     // Load full recipe documents from vector search results
     const recipeIds = vectorResults.map((result) => result._id);
-    const recipes = await ctx.runQuery(internal.recipeQueries.fetchRecipesByIds, {
+    const recipes = await ctx.runQuery(internal["recipes/recipeQueries"].fetchRecipesByIds, {
       ids: recipeIds,
     });
 
@@ -162,11 +163,34 @@ export const vectorSearchRecipes = internalAction({
     // Filter out any null results (deleted recipes)
     const validCandidates = topCandidates.filter((r) => r !== null);
 
-    // Apply dietary tag filter to candidates (post-vector-search filtering)
+    // Apply ALLERGEN filter first (HARD CONSTRAINT - must exclude)
     let filteredCandidates = validCandidates;
+    if (args.allergens && args.allergens.length > 0) {
+      const userAllergens = args.allergens.map(a => a.toLowerCase());
+      const beforeCount = filteredCandidates.length;
+
+      // EXCLUDE recipes that contain any allergens the user is allergic to
+      // Note: This checks recipe names/ingredients for allergen keywords
+      filteredCandidates = filteredCandidates.filter(recipe => {
+        const recipeName = recipe.name.toLowerCase();
+        const ingredients = recipe.ingredients?.map(i => i.toLowerCase()).join(' ') || '';
+        const recipeText = `${recipeName} ${ingredients}`;
+
+        // Check if any allergen appears in recipe
+        const hasAllergen = userAllergens.some(allergen =>
+          recipeText.includes(allergen)
+        );
+
+        return !hasAllergen; // Keep recipe ONLY if it doesn't contain allergens
+      });
+
+      console.log(`   ⚠️ ALLERGEN FILTER: Excluded ${beforeCount - filteredCandidates.length} recipes containing: ${userAllergens.join(', ')}`);
+    }
+
+    // Apply dietary tag filter to candidates (soft preference)
     if (args.dietaryTags && args.dietaryTags.length > 0) {
       const requestedTags = args.dietaryTags.map(tag => tag.toLowerCase());
-      const filtered = validCandidates.filter(recipe =>
+      const filtered = filteredCandidates.filter(recipe =>
         recipe.dietTags.some(tag => requestedTags.includes(tag.toLowerCase()))
       );
 
@@ -175,7 +199,7 @@ export const vectorSearchRecipes = internalAction({
         filteredCandidates = filtered;
         console.log(`   🔍 Filtered from ${validCandidates.length} to ${filteredCandidates.length} candidates by dietary tags: ${requestedTags.join(', ')}`);
       } else {
-        console.log(`   ⚠️ No candidates matched dietary tags [${requestedTags.join(', ')}], using all ${validCandidates.length} candidates`);
+        console.log(`   ⚠️ No candidates matched dietary tags [${requestedTags.join(', ')}], using all ${filteredCandidates.length} candidates`);
       }
     }
 

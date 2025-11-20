@@ -8,7 +8,7 @@ interface UserJotConfig {
   position?: "left" | "right";
   showFeedbackText?: boolean;
   theme?: "light" | "dark" | "auto";
-  trigger?: "default";
+  trigger?: "default" | "custom";
 }
 
 interface UserJotUser {
@@ -21,26 +21,19 @@ interface UserJotUser {
   }>;
 }
 
-interface UserJotNavigateOptions {
-  to: "/feedback" | "/roadmap" | "/changelog";
-  params?: any;
-  state?: any;
-}
-
 interface UserJotInitOptions {
   widget?: boolean;
   position?: "left" | "right";
   theme?: "light" | "dark" | "auto";
+  trigger?: "default" | "custom";
 }
 
 interface UserJotSDK {
   init: (projectId: string, options?: UserJotInitOptions) => void;
   config: (config: UserJotConfig) => void;
   identify: (user: UserJotUser) => void;
-  navigate?: (options: UserJotNavigateOptions) => void;
-  open?: () => void;
-  show?: () => void;
-  toggle?: () => void;
+  showWidget: (options?: { section?: "feedback" | "roadmap" | "updates" }) => void;
+  hideWidget: () => void;
   captureScreenshot: () => void;
   openAnnotationEditor: () => void;
   closeAnnotationEditor: () => void;

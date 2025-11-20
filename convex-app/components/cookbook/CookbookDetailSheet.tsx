@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
   Sheet,
@@ -48,9 +48,9 @@ export function CookbookDetailSheet({
     isOpen && userId ? { userId, cookbookCategory: cookbookId } : "skip"
   );
 
-  // Mutations
+  // Mutations and actions
   const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
-  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
+  const saveRecipe = useAction(api.recipes.userRecipes.saveRecipeWithParsedIngredients);
 
   const handleToggleFavorite = async (recipeId: string) => {
     if (!userId) return;
