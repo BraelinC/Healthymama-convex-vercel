@@ -45,6 +45,8 @@ import {
 } from '@/lib/youtube-parser';
 import { formatRecipeWithGPT } from '@/lib/openai-formatter';
 import { downloadYouTubeVideo } from '@/lib/youtube-download';
+import { extractPinterestPin, isPinterestUrl } from '@/lib/pinterest-extractor';
+import { extractRecipeFromPinterestImage } from '@/lib/gemini-video-analysis';
 
 // Define return type for Railway service
 interface InstagramExtractionResult {
@@ -398,25 +400,40 @@ export async function POST(request: NextRequest) {
     // Detect URL type
     const isInstagram = isInstagramUrl(url);
     const isYouTube = isYouTubeUrl(url);
+    const isPinterest = isPinterestUrl(url);
 
-    if (!isInstagram && !isYouTube) {
+    if (!isInstagram && !isYouTube && !isPinterest) {
       return NextResponse.json(
-        { error: 'Invalid URL - must be Instagram or YouTube URL' },
+        { error: 'Invalid URL - must be Instagram, YouTube, or Pinterest URL' },
         { status: 400 }
       );
     }
 
-    const platform = isInstagram ? 'Instagram' : 'YouTube';
+    const platform = isPinterest ? 'Pinterest' : (isInstagram ? 'Instagram' : 'YouTube');
     console.log(`\n[${platform} Import] Starting import for: ${url}`);
 
     // Step 1: Extract data based on platform
-    let videoUrl: string;
+    let videoUrl: string | undefined;
     let videoId: string | undefined;
     let thumbnailUrl: string;
     let title: string | undefined;
     let description: string;
+    let pinterestData: Awaited<ReturnType<typeof extractPinterestPin>> | undefined;
 
-    if (isInstagram) {
+    if (isPinterest) {
+      // Extract Pinterest pin data using Pinterest API
+      pinterestData = await extractPinterestPin(url);
+
+      videoUrl = pinterestData.videoUrl; // For video pins
+      thumbnailUrl = pinterestData.imageUrls[0]; // First image as thumbnail
+      title = pinterestData.title;
+      description = pinterestData.description;
+
+      console.log(`[Pinterest Import] Type: ${pinterestData.type}`);
+      console.log(`[Pinterest Import] Title: ${title}`);
+      console.log(`[Pinterest Import] Images: ${pinterestData.imageUrls.length}`);
+      console.log(`[Pinterest Import] Description length: ${description?.length || 0} chars`);
+    } else if (isInstagram) {
       // Extract Instagram data using HikerAPI
       const instagramData = await extractInstagramData(url);
 
@@ -462,13 +479,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Upload to Mux for hosting (works for both Instagram and YouTube)
+    // Upload to Mux for hosting (works for Instagram, YouTube, and Pinterest video pins)
     if (downloadedVideoUrl) {
       try {
         console.log(`[${platform} Import] Uploading video to Mux...`);
-        muxData = await uploadVideoFromUrl(downloadedVideoUrl, {
-          passthrough: isYouTube ? `youtube:${videoId}` : `instagram:${url.split('/').pop()}`,
-        });
+        const passthrough = isPinterest ? `pinterest:${pinterestData?.pinId}` :
+                           (isYouTube ? `youtube:${videoId}` : `instagram:${url.split('/').pop()}`);
+
+        muxData = await uploadVideoFromUrl(downloadedVideoUrl, { passthrough });
         console.log(`[${platform} Import] ✅ Mux upload complete: ${muxData.playbackId}`);
       } catch (error: any) {
         console.error(`[${platform} Import] ⚠️ Mux upload failed:`, error.message);
@@ -476,10 +494,39 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 3: Extract recipe (different flow for Instagram vs YouTube)
+    // Step 3: Extract recipe (different flow for each platform)
     let recipe: ParsedRecipe;
 
-    if (isYouTube) {
+    if (isPinterest) {
+      // PINTEREST FLOW: Image vision + description, or video extraction
+
+      if (pinterestData!.type === 'video' && videoUrl) {
+        // Pinterest video pin - extract from video
+        console.log('[Pinterest Import] Extracting recipe from video pin...');
+        try {
+          recipe = await extractRecipeFromVideo(videoUrl, title);
+          console.log(`[Pinterest Import] ✅ Extracted from video: ${recipe.instructions.length} instructions, ${recipe.ingredients.length} ingredients`);
+        } catch (error: any) {
+          console.warn('[Pinterest Import] ⚠️ Video extraction failed, falling back to image/description:', error.message);
+
+          // Fallback to image extraction if video fails
+          recipe = await extractRecipeFromPinterestImage(
+            pinterestData!.imageUrls,
+            description,
+            title
+          );
+        }
+      } else {
+        // Pinterest image pin (single or carousel) - use Gemini vision
+        console.log('[Pinterest Import] Extracting recipe from image pin with Gemini vision...');
+        recipe = await extractRecipeFromPinterestImage(
+          pinterestData!.imageUrls,
+          description,
+          title
+        );
+        console.log(`[Pinterest Import] ✅ Extracted from image: ${recipe.instructions.length} instructions, ${recipe.ingredients.length} ingredients`);
+      }
+    } else if (isYouTube) {
       // YOUTUBE FLOW: Regex → GPT formatting → Video analysis (always)
 
       // Step 3a: Try to parse recipe from description using regex
@@ -610,7 +657,14 @@ export async function POST(request: NextRequest) {
         ...recipe,
 
         // Platform-specific metadata
-        ...(isInstagram ? {
+        ...(isPinterest ? {
+          pinterestUrl: url,
+          pinterestPinId: pinterestData?.pinId,
+          pinterestUsername: pinterestData?.username,
+          pinterestBoardName: pinterestData?.boardName,
+          pinterestImageUrls: pinterestData?.imageUrls,
+          pinterestThumbnailUrl: thumbnailUrl,
+        } : isInstagram ? {
           instagramUrl: url,
           instagramVideoUrl: downloadedVideoUrl,
           instagramThumbnailUrl: thumbnailUrl,
@@ -620,7 +674,7 @@ export async function POST(request: NextRequest) {
           youtubeThumbnailUrl: thumbnailUrl,
         }),
 
-        // Mux video hosting (both platforms)
+        // Mux video hosting (all platforms)
         muxPlaybackId: muxData?.playbackId,
         muxAssetId: muxData?.assetId,
 
@@ -628,7 +682,7 @@ export async function POST(request: NextRequest) {
         videoSegments: videoSegments,
 
         // Source platform
-        source: isYouTube ? 'youtube' : 'instagram',
+        source: isPinterest ? 'pinterest' : (isYouTube ? 'youtube' : 'instagram'),
       },
     };
 

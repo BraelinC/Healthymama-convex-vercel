@@ -3,12 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npx convex dev\" \"next dev\"",
-    "prebuild": "npx convex codegen",
-    "build": "next build",
-    "start": "next start",
+    "dev": "concurrently \"bunx convex dev\" \"bun --bun next dev\"",
+    "postinstall": "bun scripts/install-ytdlp.js",
+    "prebuild": "bun scripts/install-ytdlp.js && bunx convex codegen",
+    "build": "bun --bun next build",
+    "start": "bun --bun next start",
     "lint": "next lint",
-    "deploy": "npx convex deploy && vercel --prod"
+    "deploy": "bunx convex deploy && vercel --prod"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.35.2",

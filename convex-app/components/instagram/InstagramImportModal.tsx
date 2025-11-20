@@ -60,7 +60,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UniversalRecipeCard } from "../recipe/UniversalRecipeCard";
-import { Loader2, Instagram, Youtube, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, Instagram, Youtube, AlertCircle, CheckCircle2, Pin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface InstagramImportModalProps {
@@ -85,7 +85,7 @@ interface ExtractedRecipe {
   prep_time?: string;
   cook_time?: string;
   cuisine?: string;
-  source?: "instagram" | "youtube";
+  source?: "instagram" | "youtube" | "pinterest";
   instagramUrl?: string;
   instagramVideoUrl?: string;
   instagramThumbnailUrl?: string;
@@ -93,6 +93,12 @@ interface ExtractedRecipe {
   youtubeUrl?: string;
   youtubeVideoId?: string;
   youtubeThumbnailUrl?: string;
+  pinterestUrl?: string;
+  pinterestPinId?: string;
+  pinterestUsername?: string;
+  pinterestBoardName?: string;
+  pinterestImageUrls?: string[];
+  pinterestThumbnailUrl?: string;
   muxPlaybackId?: string;
   muxAssetId?: string;
   videoSegments?: VideoSegment[];
@@ -341,8 +347,9 @@ export function InstagramImportModal({
   // Determine platform based on URL
   const isYouTubeUrl = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
   const isInstagramUrl = videoUrl.includes("instagram.com");
-  const PlatformIcon = isYouTubeUrl ? Youtube : Instagram;
-  const iconColor = isYouTubeUrl ? "text-red-500" : "text-pink-500";
+  const isPinterestUrl = videoUrl.includes("pinterest.com") || videoUrl.includes("pin.it");
+  const PlatformIcon = isPinterestUrl ? Pin : (isYouTubeUrl ? Youtube : Instagram);
+  const iconColor = isPinterestUrl ? "text-red-600" : (isYouTubeUrl ? "text-red-500" : "text-pink-500");
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && handleClose()}>
@@ -373,7 +380,7 @@ export function InstagramImportModal({
                 <Input
                   id="video-url"
                   type="url"
-                  placeholder="https://www.instagram.com/reel/... or https://youtube.com/watch?v=..."
+                  placeholder="Instagram, YouTube, or Pinterest URL..."
                   value={videoUrl}
                   onChange={(e) => setVideoUrl(e.target.value)}
                   className="w-full"

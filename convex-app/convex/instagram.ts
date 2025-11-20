@@ -84,7 +84,11 @@ export const importInstagramRecipe = action({
     cuisine: v.optional(v.string()),
 
     // Source platform
-    source: v.optional(v.union(v.literal("instagram"), v.literal("youtube"))),
+    source: v.optional(v.union(
+      v.literal("instagram"),
+      v.literal("youtube"),
+      v.literal("pinterest")
+    )),
 
     // Instagram-specific data
     instagramUrl: v.optional(v.string()),
@@ -97,7 +101,15 @@ export const importInstagramRecipe = action({
     youtubeVideoId: v.optional(v.string()),
     youtubeThumbnailUrl: v.optional(v.string()),
 
-    // Mux video hosting (both platforms)
+    // Pinterest-specific data
+    pinterestUrl: v.optional(v.string()),
+    pinterestPinId: v.optional(v.string()),
+    pinterestUsername: v.optional(v.string()),
+    pinterestBoardName: v.optional(v.string()),
+    pinterestImageUrls: v.optional(v.array(v.string())),
+    pinterestThumbnailUrl: v.optional(v.string()),
+
+    // Mux video hosting (all platforms)
     muxPlaybackId: v.optional(v.string()),
     muxAssetId: v.optional(v.string()),
 
@@ -134,6 +146,12 @@ export const importInstagramRecipe = action({
       youtubeUrl,
       youtubeVideoId,
       youtubeThumbnailUrl,
+      pinterestUrl,
+      pinterestPinId,
+      pinterestUsername,
+      pinterestBoardName,
+      pinterestImageUrls,
+      pinterestThumbnailUrl,
       muxPlaybackId,
       muxAssetId,
       videoSegments,
@@ -141,8 +159,10 @@ export const importInstagramRecipe = action({
 
     // Determine cookbook category and image URL based on source
     const isYouTube = source === "youtube";
-    const cookbookCategory = isYouTube ? "youtube" : "instagram";
-    const imageUrl = isYouTube ? youtubeThumbnailUrl : (instagramThumbnailUrl || instagramVideoUrl);
+    const isPinterest = source === "pinterest";
+    const cookbookCategory = isPinterest ? "pinterest" : (isYouTube ? "youtube" : "instagram");
+    const imageUrl = isPinterest ? pinterestThumbnailUrl :
+                     (isYouTube ? youtubeThumbnailUrl : (instagramThumbnailUrl || instagramVideoUrl));
 
     // Duplicate Detection: Check if recipe already exists in same cookbook
     const existingRecipe = await ctx.runQuery(api.recipes.userRecipes.getUserRecipeByTitle, {
@@ -168,7 +188,10 @@ export const importInstagramRecipe = action({
 
       // Recipe data
       title,
-      description: description || (isYouTube ? `Recipe from YouTube` : `Recipe from @${instagramUsername || 'Instagram'}`),
+      description: description || (
+        isPinterest ? `Recipe from @${pinterestUsername || 'Pinterest'}` :
+        (isYouTube ? `Recipe from YouTube` : `Recipe from @${instagramUsername || 'Instagram'}`)
+      ),
       imageUrl,
       ingredients,
       instructions,
@@ -197,6 +220,14 @@ export const importInstagramRecipe = action({
       youtubeUrl,
       youtubeVideoId,
       youtubeThumbnailUrl,
+
+      // Pinterest fields
+      pinterestUrl,
+      pinterestPinId,
+      pinterestUsername,
+      pinterestBoardName,
+      pinterestImageUrls,
+      pinterestThumbnailUrl,
 
       // AI-analyzed video segments
       videoSegments,

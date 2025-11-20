@@ -542,3 +542,193 @@ export function generateClipUrls(
     clipUrl: `https://stream.mux.com/${muxPlaybackId}.m3u8?asset_start_time=${segment.startTime}&asset_end_time=${segment.endTime}`,
   }));
 }
+
+/**
+ * Extract recipe from Pinterest image(s) using Gemini vision
+ *
+ * @param imageUrls - Array of image URLs (Pinterest pin images)
+ * @param description - Pinterest pin description text
+ * @param title - Pinterest pin title (optional)
+ * @returns Full recipe extracted from images + text
+ */
+export async function extractRecipeFromPinterestImage(
+  imageUrls: string[],
+  description: string,
+  title?: string
+): Promise<{
+  title: string;
+  ingredients: string[];
+  instructions: string[];
+  description?: string;
+  servings?: string;
+  prep_time?: string;
+  cook_time?: string;
+  cuisine?: string;
+}> {
+  const apiKey = process.env.OPEN_ROUTER_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('OPEN_ROUTER_API_KEY not configured');
+  }
+
+  console.log('[Gemini Image] Extracting recipe from Pinterest pin with', imageUrls.length, 'image(s)');
+
+  const prompt = `You are a recipe extraction expert. Analyze this Pinterest recipe pin and extract the complete recipe.
+
+${title ? `PIN TITLE: "${title}"` : ''}
+
+PIN DESCRIPTION:
+${description || 'No description provided'}
+
+YOUR TASK:
+1. **Read text from the image(s)**: Many Pinterest recipe pins have ingredients and instructions written directly on the image as text overlays, lists, or annotations
+2. **Extract from description**: The Pinterest description may also contain recipe information
+3. **Combine both sources**: Merge information from images and description for the most complete recipe
+
+EXTRACTION PRIORITY:
+- If ingredients are visible in the image, use those (they're often more detailed)
+- If instructions are in the image, use those
+- Fill in any missing information from the description
+- If there's conflicting information, prefer what's visible in the image
+
+RULES:
+- List ALL ingredients with quantities (read carefully from image text)
+- Write step-by-step instructions (combine image text + description)
+- Estimate servings, prep time, cook time, cuisine based on available information
+- If you can't see quantities, use standard measurements
+- Be specific: "dice the onions" not "add onions"
+
+Return ONLY this JSON (no markdown, no extra text):
+{
+  "title": "Recipe Name",
+  "description": "One sentence description of the dish",
+  "ingredients": ["ingredient 1 with quantity", "ingredient 2", ...],
+  "instructions": ["Step 1: Action", "Step 2: Action", ...],
+  "servings": "4 servings",
+  "prep_time": "15 minutes",
+  "cook_time": "30 minutes",
+  "cuisine": "Italian"
+}`;
+
+  try {
+    // Download and encode images
+    console.log('[Gemini Image] Downloading', imageUrls.length, 'image(s) from Pinterest...');
+
+    const imageDataPromises = imageUrls.map(async (imageUrl) => {
+      const response = await fetch(imageUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to download image: ${response.statusText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64Image = buffer.toString('base64');
+
+      // Detect image type from URL or default to jpeg
+      let mimeType = 'image/jpeg';
+      if (imageUrl.includes('.png')) mimeType = 'image/png';
+      else if (imageUrl.includes('.webp')) mimeType = 'image/webp';
+
+      return `data:${mimeType};base64,${base64Image}`;
+    });
+
+    const imageDataUrls = await Promise.all(imageDataPromises);
+
+    console.log('[Gemini Image] Images encoded, total size:',
+      Math.round(imageDataUrls.reduce((sum, url) => sum + url.length, 0) / 1024), 'KB');
+
+    // Build content array with text prompt + all images
+    const content: any[] = [
+      {
+        type: 'text',
+        text: prompt,
+      },
+    ];
+
+    // Add all images
+    imageDataUrls.forEach((dataUrl) => {
+      content.push({
+        type: 'image_url',
+        image_url: {
+          url: dataUrl,
+        },
+      });
+    });
+
+    // Call OpenRouter API with Gemini 2.0 Flash vision
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://healthymama.app',
+        'X-Title': 'HealthyMama Pinterest Recipe Extraction',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.0-flash-001', // Supports vision
+        messages: [
+          {
+            role: 'user',
+            content,
+          },
+        ],
+        temperature: 0.3,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Gemini Image] API error (${response.status}):`, errorText);
+      throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error('Invalid response format from OpenRouter');
+    }
+
+    const text = data.choices[0].message.content.trim();
+
+    // Parse JSON response
+    let jsonText = text.trim();
+
+    // Remove markdown code blocks
+    if (jsonText.includes('```json')) {
+      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    } else if (jsonText.includes('```')) {
+      jsonText = jsonText.replace(/```\n?/g, '').trim();
+    }
+
+    // Extract JSON object
+    const firstBrace = jsonText.indexOf('{');
+    const lastBrace = jsonText.lastIndexOf('}');
+
+    if (firstBrace === -1 || lastBrace === -1) {
+      throw new Error('No JSON object found in response');
+    }
+
+    jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+
+    const recipe = JSON.parse(jsonText);
+
+    // Validate
+    if (!recipe.title || !recipe.ingredients || !recipe.instructions) {
+      throw new Error('Invalid recipe format: missing required fields');
+    }
+
+    console.log('[Gemini Image] ✅ Extracted recipe from Pinterest image:', recipe.title);
+    console.log('[Gemini Image] Ingredients:', recipe.ingredients.length);
+    console.log('[Gemini Image] Instructions:', recipe.instructions.length);
+
+    return recipe;
+  } catch (error: any) {
+    console.error('[Gemini Image] Recipe extraction failed:', error.message);
+    throw new Error(`Pinterest image recipe extraction failed: ${error.message}`);
+  }
+}

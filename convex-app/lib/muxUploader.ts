@@ -36,8 +36,9 @@ export async function uploadVideoToMux(
       new_asset_settings: {
         playback_policy: ['public'], // Public playback for recipe videos
         video_quality: 'basic', // Lower tier = cheaper (adequate for recipes)
-        mp4_support: 'standard', // Enable MP4 downloads
-        max_resolution_tier: '720p', // Limit resolution to save costs
+        // Note: mp4_support removed - not supported on 'basic' video_quality tier
+        // Note: max_resolution_tier defaults to '1080p' (minimum allowed value)
+        // video_quality: 'basic' controls costs more effectively than resolution
         passthrough: options.passthrough || JSON.stringify({
           title: options.title,
           description: options.description,
@@ -67,20 +68,41 @@ export async function uploadVideoToMux(
       },
     });
 
-    console.log(`[Mux] Video uploaded successfully, waiting for processing...`);
+    console.log(`[Mux] Video uploaded successfully, waiting for asset creation...`);
 
-    // Step 3: Wait for asset to be ready
-    let asset = await mux.video.assets.retrieve(upload.asset_id!);
-    let attempts = 0;
-    const maxAttempts = 120; // 10 minutes max wait (5 sec intervals)
+    // Step 3a: Wait for upload to create asset (asset_id becomes available)
+    let uploadStatus = upload;
+    let uploadAttempts = 0;
+    const maxUploadAttempts = 60; // 2 minutes max wait (2 sec intervals)
 
-    while (asset.status !== 'ready' && asset.status !== 'errored' && attempts < maxAttempts) {
+    while (!uploadStatus.asset_id && uploadStatus.status === 'waiting' && uploadAttempts < maxUploadAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+      uploadStatus = await mux.video.uploads.retrieve(upload.id);
+      uploadAttempts++;
+
+      if (uploadAttempts % 5 === 0) {
+        console.log(`[Mux] Waiting for asset creation... (${uploadAttempts * 2}s elapsed, status: ${uploadStatus.status})`);
+      }
+    }
+
+    if (!uploadStatus.asset_id) {
+      throw new Error(`Asset creation failed or timed out. Upload status: ${uploadStatus.status}, Upload ID: ${upload.id}`);
+    }
+
+    console.log(`[Mux] Asset created: ${uploadStatus.asset_id}`);
+
+    // Step 3b: Wait for asset to be ready (encoding completes)
+    let asset = await mux.video.assets.retrieve(uploadStatus.asset_id);
+    let assetAttempts = 0;
+    const maxAssetAttempts = 120; // 10 minutes max wait (5 sec intervals)
+
+    while (asset.status !== 'ready' && asset.status !== 'errored' && assetAttempts < maxAssetAttempts) {
       await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-      asset = await mux.video.assets.retrieve(upload.asset_id!);
-      attempts++;
+      asset = await mux.video.assets.retrieve(uploadStatus.asset_id);
+      assetAttempts++;
 
-      if (attempts % 6 === 0) {
-        console.log(`[Mux] Still processing... (${attempts * 5}s elapsed, status: ${asset.status})`);
+      if (assetAttempts % 6 === 0) {
+        console.log(`[Mux] Still encoding... (${assetAttempts * 5}s elapsed, status: ${asset.status})`);
       }
     }
 
@@ -105,6 +127,65 @@ export async function uploadVideoToMux(
       uploadId: upload.id,
       thumbnailUrl: getMuxThumbnailUrl(playbackId),
       duration: asset.duration,
+    };
+  } catch (error: any) {
+    console.error(`[Mux] Upload error:`, error);
+    throw new Error(`Failed to upload video to Mux: ${error.message}`);
+  }
+}
+
+/**
+ * Uploads video buffer to Mux WITHOUT waiting for processing (Vercel-friendly)
+ * Returns immediately after upload starts. Use webhooks or client-side polling for status.
+ */
+export async function uploadVideoToMuxAsync(
+  videoBuffer: Buffer,
+  options: MuxUploadOptions
+): Promise<{ uploadId: string; assetId: string }> {
+  try {
+    console.log(`[Mux] Creating direct upload URL for "${options.title}" (async mode)...`);
+
+    // Step 1: Create Direct Upload URL
+    const upload = await mux.video.uploads.create({
+      new_asset_settings: {
+        playback_policy: ['public'],
+        video_quality: 'basic',
+        // Note: mp4_support removed - not supported on 'basic' video_quality tier
+        passthrough: options.passthrough || JSON.stringify({
+          title: options.title,
+          description: options.description,
+        }),
+      },
+      cors_origin: '*',
+      timeout: 3600,
+    });
+
+    console.log(`[Mux] Upload URL created: ${upload.id}`);
+
+    // Step 2: Upload video buffer to Mux via PUT request
+    console.log(`[Mux] Uploading video buffer (${(videoBuffer.length / 1024 / 1024).toFixed(2)}MB)...`);
+
+    await axios.put(upload.url, videoBuffer, {
+      headers: {
+        'Content-Type': 'video/mp4',
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      timeout: 600000, // 10 minute upload timeout
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total) {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          console.log(`[Mux] Upload progress: ${percentCompleted}%`);
+        }
+      },
+    });
+
+    console.log(`[Mux] Video uploaded successfully! Processing will continue asynchronously.`);
+    console.log(`[Mux] Asset ID: ${upload.asset_id}, Upload ID: ${upload.id}`);
+
+    return {
+      uploadId: upload.id,
+      assetId: upload.asset_id!,
     };
   } catch (error: any) {
     console.error(`[Mux] Upload error:`, error);

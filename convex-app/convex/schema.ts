@@ -444,10 +444,14 @@ export default defineSchema({
     isFavorited: v.boolean(),
     lastAccessedAt: v.optional(v.number()),
 
-    // Video import source (Instagram or YouTube)
-    source: v.optional(v.union(v.literal("instagram"), v.literal("youtube"))),
+    // Video import source (Instagram, YouTube, or Pinterest)
+    source: v.optional(v.union(
+      v.literal("instagram"),
+      v.literal("youtube"),
+      v.literal("pinterest")
+    )),
 
-    // Mux video hosting (for Instagram & YouTube imports)
+    // Mux video hosting (for Instagram, YouTube & Pinterest video imports)
     muxPlaybackId: v.optional(v.string()),    // Mux playback ID for video player
     muxAssetId: v.optional(v.string()),       // Mux asset ID for management
 
@@ -459,6 +463,14 @@ export default defineSchema({
     youtubeVideoId: v.optional(v.string()),    // YouTube video ID (e.g., "dQw4w9WgXcQ")
     youtubeUrl: v.optional(v.string()),        // Full YouTube URL
     youtubeThumbnailUrl: v.optional(v.string()), // YouTube thumbnail URL
+
+    // Pinterest-specific fields
+    pinterestUrl: v.optional(v.string()),          // Pinterest pin URL
+    pinterestPinId: v.optional(v.string()),        // Pinterest pin ID
+    pinterestUsername: v.optional(v.string()),     // Pinterest user who created the pin
+    pinterestBoardName: v.optional(v.string()),    // Board where pin is saved
+    pinterestImageUrls: v.optional(v.array(v.string())), // Array of image URLs (for carousels)
+    pinterestThumbnailUrl: v.optional(v.string()), // Thumbnail URL
 
     // AI-analyzed video segments for step-by-step cooking mode (both platforms)
     videoSegments: v.optional(v.array(v.object({

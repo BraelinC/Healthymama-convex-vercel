@@ -2,6 +2,7 @@ import YTDlpWrap from 'yt-dlp-wrap';
 import fs from 'fs';
 import path from 'path';
 import { tmpdir } from 'os';
+import { ensureYtDlpBinary } from './ensureYtDlp';
 
 export type VideoPlatform = 'youtube' | 'instagram' | 'tiktok' | 'other';
 
@@ -75,7 +76,9 @@ export async function downloadVideo(url: string): Promise<DownloadedVideo> {
 
   console.log(`[VideoDownloader] Detected platform: ${platform}, Video ID: ${videoId}`);
 
-  const ytDlp = new YTDlpWrap();
+  // Ensure yt-dlp binary is available (downloads automatically if needed)
+  const binaryPath = await ensureYtDlpBinary();
+  const ytDlp = new YTDlpWrap(binaryPath);
 
   // Create temp directory
   const tempDir = path.join(tmpdir(), 'healthymama-videos');
@@ -83,25 +86,56 @@ export async function downloadVideo(url: string): Promise<DownloadedVideo> {
     fs.mkdirSync(tempDir, { recursive: true });
   }
 
-  const outputPath = path.join(tempDir, `${Date.now()}.mp4`);
+  const timestamp = Date.now();
+  const outputTemplate = path.join(tempDir, `${timestamp}.%(ext)s`);
+  let outputPath: string | undefined;
 
   try {
     console.log(`[VideoDownloader] Downloading video from ${url}...`);
+    console.log(`[VideoDownloader] Temp directory: ${tempDir}`);
 
     // Download with optimized settings for recipe videos
-    await ytDlp.execPromise([
+    const downloadOutput = await ytDlp.execPromise([
       url,
       // Format selection: prefer MP4, max 720p for cost savings
       '-f', 'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best',
       '--merge-output-format', 'mp4',
-      '-o', outputPath,
+      '-o', outputTemplate,
       '--no-playlist', // Single video only
       '--max-filesize', '500M', // Limit to 500MB
       '--socket-timeout', '30', // 30 second timeout
       '--retries', '3', // Retry 3 times on failure
+      '--print', 'after_move:filepath', // Print the actual output file path
     ]);
 
+    // Get the actual output path from yt-dlp
+    const actualOutputPath = downloadOutput.toString().trim().split('\n').pop()?.trim();
+
+    console.log(`[VideoDownloader] yt-dlp output: ${downloadOutput.toString()}`);
+    console.log(`[VideoDownloader] Actual file path: ${actualOutputPath}`);
+
+    // Verify the file exists
+    if (actualOutputPath && fs.existsSync(actualOutputPath)) {
+      outputPath = actualOutputPath;
+    } else {
+      // Fallback: search for the file in temp directory
+      console.log(`[VideoDownloader] File not found at reported path, searching temp directory...`);
+      const files = fs.readdirSync(tempDir).filter(f => f.startsWith(timestamp.toString()));
+
+      if (files.length === 0) {
+        throw new Error(`Downloaded file not found in ${tempDir}`);
+      }
+
+      outputPath = path.join(tempDir, files[0]);
+      console.log(`[VideoDownloader] Found file: ${outputPath}`);
+    }
+
     console.log(`[VideoDownloader] Download completed: ${outputPath}`);
+
+    // Ensure outputPath is defined
+    if (!outputPath) {
+      throw new Error('Failed to determine output file path after download');
+    }
 
     // Get metadata
     console.log(`[VideoDownloader] Fetching metadata...`);
@@ -137,7 +171,7 @@ export async function downloadVideo(url: string): Promise<DownloadedVideo> {
     console.error(`[VideoDownloader] Error downloading video:`, error);
 
     // Cleanup on error
-    if (fs.existsSync(outputPath)) {
+    if (outputPath && fs.existsSync(outputPath)) {
       fs.unlinkSync(outputPath);
     }
 

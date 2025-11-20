@@ -22,8 +22,10 @@ import {
 } from '@/lib/videoDownloader';
 import {
   uploadVideoToMux,
+  uploadVideoToMuxAsync,
   getMuxThumbnailUrl,
   getMuxVideoUrl,
+  getMuxAsset,
 } from '@/lib/muxUploader';
 import { analyzeRecipeVideo } from '@/lib/geminiVideoAnalyzer';
 import { extractFrameFromMux, timestampToSeconds } from '@/lib/frameExtractor';
@@ -94,6 +96,60 @@ export async function POST(request: NextRequest): Promise<NextResponse<VideoImpo
       status: 'uploading_to_mux',
     });
 
+    // Use async mode on Vercel to avoid timeout issues
+    const useAsyncMode = process.env.VERCEL === '1' || process.env.MUX_ASYNC_MODE === 'true';
+
+    if (useAsyncMode) {
+      // Async mode: Upload and return immediately (Vercel-friendly)
+      console.log('[Video Import] Using async Mux upload (Vercel mode)...');
+
+      const { uploadId, assetId } = await uploadVideoToMuxAsync(buffer, {
+        title: metadata.title || 'Recipe Video',
+        description: metadata.description,
+        passthrough: JSON.stringify({
+          sourceUrl: url,
+          platform,
+          username: metadata.uploader,
+        }),
+      });
+
+      console.log(`[Video Import] Video uploaded to Mux (processing asynchronously): ${assetId}`);
+
+      // Update Convex with upload info (video will continue processing on Mux)
+      await convex.mutation(api.videoRecipes.updateMuxData, {
+        id: jobId,
+        muxAssetId: assetId,
+        muxPlaybackId: '', // Will be available after processing completes
+        muxUploadId: uploadId,
+        muxThumbnailUrl: '',
+        videoDuration: metadata.duration, // Use source metadata
+      });
+
+      await convex.mutation(api.videoRecipes.updateStatus, {
+        id: jobId,
+        status: 'processing_video', // Video is still processing on Mux
+      });
+
+      // Skip AI analysis in async mode - will be handled by a separate webhook or polling
+      console.log('[Video Import] ⏳ Video processing will continue asynchronously');
+      console.log('[Video Import] Check back later or set up Mux webhooks for completion notification');
+
+      // Cleanup temp file
+      if (tempVideoPath) {
+        cleanupVideo(tempVideoPath);
+        tempVideoPath = null;
+      }
+
+      return NextResponse.json({
+        success: true,
+        jobId,
+        muxAssetId: assetId,
+        status: 'processing',
+        message: 'Video uploaded successfully. Processing will continue in the background.',
+      });
+    }
+
+    // Sync mode: Wait for processing to complete (local dev)
     const muxData = await uploadVideoToMux(buffer, {
       title: metadata.title || 'Recipe Video',
       description: metadata.description,
@@ -183,12 +239,34 @@ export async function POST(request: NextRequest): Promise<NextResponse<VideoImpo
       cleanupVideo(tempVideoPath);
     }
 
+    // Provide more specific error messages
+    let errorMessage = error.message || 'Failed to import video';
+    let statusCode = 500;
+
+    // Check for specific error types
+    if (error.message?.includes('ENOENT') || error.message?.includes('spawn yt-dlp')) {
+      errorMessage = 'Video downloader (yt-dlp) is not properly installed. Please restart the server to download the required binary.';
+      statusCode = 503; // Service Unavailable
+    } else if (error.message?.includes('Failed to download')) {
+      errorMessage = 'Unable to download video. Please check the URL and try again.';
+      statusCode = 400; // Bad Request
+    } else if (error.message?.includes('timeout') || error.message?.includes('ETIMEDOUT')) {
+      errorMessage = 'Video download timed out. The video may be too large or the network is slow.';
+      statusCode = 504; // Gateway Timeout
+    } else if (error.message?.includes('Mux')) {
+      errorMessage = 'Failed to upload video to Mux. Please check Mux API credentials.';
+      statusCode = 502; // Bad Gateway
+    } else if (error.message?.includes('Gemini') || error.message?.includes('AI')) {
+      errorMessage = 'Failed to analyze video with AI. Please check Google AI API credentials.';
+      statusCode = 502; // Bad Gateway
+    }
+
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to import video',
+        error: errorMessage,
       },
-      { status: 500 }
+      { status: statusCode }
     );
   }
 }
