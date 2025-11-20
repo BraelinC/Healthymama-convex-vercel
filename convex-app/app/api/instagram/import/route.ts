@@ -1,10 +1,31 @@
 /**
- * Instagram Recipe Import API Route
+ * Instagram Recipe Import API Route (Next.js Backend)
  *
- * Orchestrates:
- * 1. Call Railway service to extract Instagram data
- * 2. Parse caption/comments with OpenRouter AI
- * 3. Return formatted recipe JSON to frontend
+ * This API route orchestrates the Instagram recipe import process by coordinating
+ * between the Railway Python service (Instagram extraction) and OpenRouter AI (recipe parsing).
+ *
+ * Architecture Flow:
+ * 1. Frontend sends Instagram URL to this endpoint
+ * 2. We call Railway Python service to extract Instagram data (caption, comments, video)
+ * 3. We send that data to OpenRouter AI (Gemini 2.0 Flash) for recipe parsing
+ * 4. We return the formatted recipe JSON back to frontend for preview/save
+ *
+ * Why This Design?:
+ * - Railway handles Instagram extraction (requires Python's instagrapi library)
+ * - Next.js handles AI parsing (reuses existing OpenRouter integration & retry logic)
+ * - Separation of concerns: Instagram scraping vs AI processing
+ * - Lower latency: AI processing happens in Vercel (closer to OpenRouter servers)
+ * - Better error handling: Can retry AI parsing without re-fetching Instagram data
+ *
+ * Environment Variables Used:
+ * - NEXT_PUBLIC_RAILWAY_INSTAGRAM_URL: Railway service endpoint
+ * - OPEN_ROUTER_API_KEY: OpenRouter API key for AI parsing
+ *
+ * Error Handling:
+ * - Network errors (Railway service down)
+ * - Instagram errors (private account, deleted post)
+ * - AI parsing errors (invalid JSON, missing fields)
+ * - All errors return 500 with descriptive message
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -35,7 +56,24 @@ interface ParsedRecipe {
 }
 
 /**
- * Step 1: Extract Instagram data from Railway service
+ * Step 1: Extract Instagram data from Railway Python service
+ *
+ * Calls the Railway microservice to fetch Instagram reel data using instagrapi.
+ * The Railway service handles Instagram authentication and API access.
+ *
+ * @param url - Instagram reel URL (e.g., https://www.instagram.com/reel/ABC123/)
+ * @returns Promise<InstagramExtractionResult> - Caption, comments, video URLs
+ * @throws Error if Railway service is unreachable or Instagram fetch fails
+ *
+ * Railway Service Response:
+ * {
+ *   success: true,
+ *   caption: "Recipe text...",
+ *   comments: ["comment 1", "comment 2"],
+ *   videoUrl: "https://...",
+ *   thumbnailUrl: "https://...",
+ *   username: "creator_username"
+ * }
  */
 async function extractInstagramData(url: string): Promise<InstagramExtractionResult> {
   const railwayUrl = process.env.NEXT_PUBLIC_RAILWAY_INSTAGRAM_URL;
@@ -71,7 +109,40 @@ async function extractInstagramData(url: string): Promise<InstagramExtractionRes
 }
 
 /**
- * Step 2: Parse Instagram caption + comments into recipe using OpenRouter
+ * Step 2: Parse Instagram caption + comments into structured recipe using OpenRouter AI
+ *
+ * Takes the raw Instagram data (caption + comments) and uses OpenRouter's Gemini 2.0 Flash
+ * model to extract a structured recipe with title, ingredients, instructions, etc.
+ *
+ * Why Gemini 2.0 Flash?:
+ * - Fast response time (~1-3 seconds)
+ * - Very cheap (~$0.001 per recipe)
+ * - Good at understanding recipe text
+ * - Same model used in openRouterExtractor.ts (proven reliability)
+ *
+ * AI Prompt Strategy:
+ * - Combines caption + first 20 comments for context
+ * - Recipe might be split across caption and comments
+ * - Asks for specific JSON structure (title, ingredients[], instructions[])
+ * - Low temperature (0.2) for consistent, predictable output
+ *
+ * @param caption - Instagram post caption (usually contains recipe)
+ * @param comments - Array of comment texts (may contain additional recipe details)
+ * @param username - Post author username (for context/attribution)
+ * @returns Promise<ParsedRecipe> - Structured recipe with ingredients, instructions, etc.
+ * @throws Error if AI parsing fails or returns invalid JSON
+ *
+ * Response Format:
+ * {
+ *   title: "Recipe Name",
+ *   description: "Brief description",
+ *   ingredients: ["1 cup flour", "2 eggs", ...],
+ *   instructions: ["Step 1...", "Step 2...", ...],
+ *   servings: "4 servings",  // Optional
+ *   prep_time: "15 minutes",  // Optional
+ *   cook_time: "30 minutes",  // Optional
+ *   cuisine: "Italian"  // Optional
+ * }
  */
 async function parseRecipeWithAI(
   caption: string,

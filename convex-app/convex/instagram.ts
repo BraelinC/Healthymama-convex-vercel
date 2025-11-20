@@ -1,15 +1,71 @@
 /**
- * Instagram Recipe Import
- * Handles importing recipes from Instagram reels
+ * Instagram Recipe Import - Convex Backend
+ *
+ * This Convex file provides mutations and queries for managing Instagram-imported recipes.
+ * All Instagram imports are automatically saved to a dedicated "instagram" cookbook category.
+ *
+ * Data Flow:
+ * 1. Frontend calls Next.js API route (/api/instagram/import)
+ * 2. API route extracts Instagram data + parses with AI
+ * 3. Frontend calls `importInstagramRecipe` mutation (this file)
+ * 4. Recipe is saved to Convex `userRecipes` table with cookbookCategory="instagram"
+ *
+ * Database Schema:
+ * - Table: userRecipes
+ * - Key Fields:
+ *   - userId: Clerk user ID
+ *   - recipeType: "community" (Instagram imports are external content)
+ *   - cookbookCategory: "instagram" (dedicated cookbook for all Instagram imports)
+ *   - title, ingredients[], instructions[] (standard recipe fields)
+ *   - notes: Contains Instagram source URL for reference
+ *
+ * Features:
+ * - Auto-creates "Instagram" cookbook (no manual setup needed)
+ * - Duplicate detection (prevents re-importing same recipe)
+ * - Full CRUD operations (import, query, delete)
+ * - Cookbook stats for UI display
  */
 
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
 /**
- * Import an Instagram recipe to user's cookbook
+ * Import an Instagram Recipe to User's Cookbook
  *
- * Creates an "instagram" cookbook category if it doesn't exist yet
+ * Main mutation for saving Instagram-extracted recipes to the database.
+ * Automatically organizes all Instagram imports into a dedicated "instagram" cookbook category.
+ *
+ * Process:
+ * 1. Check for duplicate recipes (same title + instagram cookbook)
+ * 2. Save recipe to userRecipes table
+ * 3. Set cookbookCategory="instagram" (auto-creates cookbook in UI)
+ * 4. Store Instagram URL in notes field for attribution
+ *
+ * Duplicate Detection:
+ * - Checks if recipe with same title exists in Instagram cookbook
+ * - Returns error if duplicate found (prevents re-importing same recipe)
+ * - User can manually save to different cookbook if desired
+ *
+ * Cookbook Auto-Creation:
+ * - No manual cookbook creation needed
+ * - UI automatically displays "Instagram" cookbook when first recipe is saved
+ * - getCookbookStats query handles cookbook display logic
+ *
+ * @param userId - Clerk user ID (required for all user-specific data)
+ * @param title - Recipe name (e.g., "Chocolate Chip Cookies")
+ * @param ingredients - Array of ingredient strings (e.g., ["1 cup flour", "2 eggs"])
+ * @param instructions - Array of step strings (e.g., ["Preheat oven", "Mix ingredients"])
+ * @param instagramUrl - Original Instagram reel URL (for reference)
+ * @param instagramVideoUrl - Direct video URL (optional, for playback)
+ * @param instagramThumbnailUrl - Preview image URL (used as recipe image)
+ * @param instagramUsername - Post author (optional, for attribution)
+ * @param description, servings, prep_time, cook_time, cuisine - Optional metadata
+ *
+ * @returns {success: boolean, recipeId?: string, error?: string, message?: string}
+ *
+ * Error Cases:
+ * - Duplicate recipe: Returns {success: false, error: "already imported", recipeId}
+ * - Database error: Throws exception (handled by Convex)
  */
 export const importInstagramRecipe = mutation({
   args: {
@@ -50,7 +106,9 @@ export const importInstagramRecipe = mutation({
       instagramUsername,
     } = args;
 
-    // Check if recipe with same Instagram URL already exists
+    // Duplicate Detection: Check if recipe already exists
+    // We check by title + instagram cookbook to prevent re-importing the same recipe
+    // Note: This allows importing the same recipe from different sources (community, custom)
     const existingRecipe = await ctx.db
       .query("userRecipes")
       .filter((q) =>
@@ -71,7 +129,8 @@ export const importInstagramRecipe = mutation({
       };
     }
 
-    // Create recipe in userRecipes table
+    // Save Recipe to Database
+    // Insert into userRecipes table with instagram cookbook category
     const recipeId = await ctx.db.insert("userRecipes", {
       userId,
 
