@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"bunx convex dev\" \"bun --bun next dev\"",
+    "dev": "concurrently \"bunx convex dev\" \"bun --bun next dev -p 5000 -H 0.0.0.0\"",
     "postinstall": "bun scripts/install-ytdlp.js",
     "prebuild": "bun scripts/install-ytdlp.js && bunx convex codegen",
     "build": "bun --bun next build",
