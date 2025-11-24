@@ -1107,5 +1107,57 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_expires", ["userId", "expiresAt"]),
+
+  // ========== SHARED COOKBOOKS (Spotify Playlist-style) ==========
+
+  // Shared Cookbooks: Collaborative recipe collections between friends
+  sharedCookbooks: defineTable({
+    name: v.string(), // Cookbook name
+    description: v.optional(v.string()), // Optional description
+    imageStorageId: v.optional(v.id("_storage")), // Uploaded cover image
+    creatorId: v.string(), // Clerk user ID of creator
+
+    // Stats (denormalized for performance)
+    recipeCount: v.number(), // Number of recipes in cookbook
+    memberCount: v.number(), // Number of collaborators (including creator)
+
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_creator", ["creatorId"])
+    .index("by_updated", ["updatedAt"]),
+
+  // Shared Cookbook Members: Links users to shared cookbooks
+  sharedCookbookMembers: defineTable({
+    cookbookId: v.id("sharedCookbooks"),
+    userId: v.string(), // Clerk user ID
+    role: v.union(
+      v.literal("owner"),       // Creator, can delete cookbook
+      v.literal("collaborator") // Can add/remove recipes
+    ),
+    invitedBy: v.optional(v.string()), // Who invited this user
+
+    createdAt: v.number(),
+  })
+    .index("by_cookbook", ["cookbookId"])
+    .index("by_user", ["userId"])
+    .index("by_cookbook_user", ["cookbookId", "userId"]), // Check membership
+
+  // Shared Cookbook Recipes: Recipes in shared cookbooks with attribution
+  sharedCookbookRecipes: defineTable({
+    cookbookId: v.id("sharedCookbooks"),
+    recipeId: v.id("userRecipes"), // Reference to the actual recipe
+    addedByUserId: v.string(), // Who added this recipe (for avatar display)
+
+    // Denormalized recipe info for display (avoids joins)
+    recipeTitle: v.string(),
+    recipeImageUrl: v.optional(v.string()),
+
+    createdAt: v.number(),
+  })
+    .index("by_cookbook", ["cookbookId"])
+    .index("by_recipe", ["recipeId"])
+    .index("by_cookbook_recipe", ["cookbookId", "recipeId"]) // Prevent duplicates
+    .index("by_added_by", ["addedByUserId"]),
 });
 

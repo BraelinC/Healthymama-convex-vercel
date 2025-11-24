@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Search, UserPlus, Check, X, Users } from "lucide-react";
+import { ArrowLeft, Search, UserPlus, Check, X, Users, Shuffle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
+import { CreateSharedCookbookModal } from "@/components/cookbook/CreateSharedCookbookModal";
 
 export default function SocialPage() {
   const router = useRouter();
@@ -19,6 +20,14 @@ export default function SocialPage() {
   const { toast } = useToast();
   const [searchEmail, setSearchEmail] = useState("");
   const [searchResult, setSearchResult] = useState<any>(null);
+
+  // Shared cookbook modal state
+  const [isSharedCookbookModalOpen, setIsSharedCookbookModalOpen] = useState(false);
+  const [selectedFriend, setSelectedFriend] = useState<{
+    userId: string;
+    name: string;
+    email: string;
+  } | null>(null);
 
   // Queries
   const recipesSharedWithMe = useQuery(
@@ -380,10 +389,26 @@ export default function SocialPage() {
                             {friend.name[0].toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
-                        <div>
+                        <div className="flex-1">
                           <p className="font-medium text-gray-900">{friend.name}</p>
                           <p className="text-sm text-gray-500">{friend.email}</p>
                         </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-healthymama-pink border-healthymama-pink hover:bg-pink-50"
+                          onClick={() => {
+                            setSelectedFriend({
+                              userId: friend.userId,
+                              name: friend.name,
+                              email: friend.email,
+                            });
+                            setIsSharedCookbookModalOpen(true);
+                          }}
+                        >
+                          <Shuffle className="w-4 h-4 mr-1" />
+                          Remix
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -401,6 +426,20 @@ export default function SocialPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Shared Cookbook Modal */}
+      <CreateSharedCookbookModal
+        open={isSharedCookbookModalOpen}
+        onOpenChange={setIsSharedCookbookModalOpen}
+        friend={selectedFriend}
+        onSuccess={(cookbookId) => {
+          toast({
+            title: "Shared cookbook created!",
+            description: `You can now share recipes with ${selectedFriend?.name}`,
+          });
+          setSelectedFriend(null);
+        }}
+      />
     </div>
   );
 }

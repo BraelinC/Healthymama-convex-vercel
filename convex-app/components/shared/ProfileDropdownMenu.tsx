@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   DropdownMenu,
@@ -16,6 +17,16 @@ interface ProfileDropdownMenuProps {
 
 export function ProfileDropdownMenu({ children }: ProfileDropdownMenuProps) {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Render children without dropdown wrapper during SSR to avoid hydration mismatch
+  if (!mounted) {
+    return <>{children}</>;
+  }
 
   return (
     <DropdownMenu>

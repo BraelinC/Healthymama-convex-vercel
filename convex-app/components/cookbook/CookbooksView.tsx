@@ -4,19 +4,22 @@ import { useState } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@clerk/nextjs";
+import { Id } from "@/convex/_generated/dataModel";
 import { CookbookCategoryCard, NewCookbookCard } from "./CookbookCategoryCard";
+import { SharedCookbookCard } from "./SharedCookbookCard";
 import { PlusButtonMenu } from "../shared/PlusButtonMenu";
 import { CreateRecipe } from "../recipe/CreateRecipe";
 import { FavoritesSheet } from "../recipe/FavoritesSheet";
 import { CookbookSelectionSheet } from "./CookbookSelectionSheet";
 import { CookbookDetailSheet } from "./CookbookDetailSheet";
+import { SharedCookbookDetailSheet } from "./SharedCookbookDetailSheet";
 import { CreateCookbookDialog } from "./CreateCookbookDialog";
 import { MealPlanView } from "../meal-plan/MealPlanView";
 import { InstagramImportModal } from "../instagram/InstagramImportModal";
 import { UniversalVideoImportModal } from "../video/UniversalVideoImportModal";
 import { GroceryListPanel } from "@/components/grocery/GroceryListPanel";
 import { Button } from "@/components/ui/button";
-import { Plus, ShoppingCart } from "lucide-react";
+import { Plus, ShoppingCart, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export function CookbooksView() {
@@ -35,6 +38,8 @@ export function CookbooksView() {
   const [isGroceryPanelOpen, setIsGroceryPanelOpen] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<any>(null);
   const [selectedCookbook, setSelectedCookbook] = useState<{ id: string; name: string } | null>(null);
+  const [isSharedCookbookDetailOpen, setIsSharedCookbookDetailOpen] = useState(false);
+  const [selectedSharedCookbookId, setSelectedSharedCookbookId] = useState<Id<"sharedCookbooks"> | null>(null);
 
   // Fetch real data from Convex
   const cookbookStats = useQuery(
@@ -43,6 +48,12 @@ export function CookbooksView() {
   );
   const favoriteRecipes = useQuery(
     api.recipes.userRecipes.getFavoritedRecipes,
+    userId ? { userId } : "skip"
+  );
+
+  // Fetch shared cookbooks
+  const sharedCookbooks = useQuery(
+    api.sharedCookbooks.getSharedCookbooks,
     userId ? { userId } : "skip"
   );
 
@@ -202,27 +213,54 @@ export function CookbooksView() {
 
             {/* Conditional Content: Cookbooks Grid or Meal Plan View */}
             {viewMode === "cookbooks" ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {cookbookStats ? (
-                  <>
-                    {cookbookStats.map((category: any) => (
-                      <CookbookCategoryCard
-                        key={category.id}
-                        name={category.name}
-                        recipeCount={category.recipeCount}
-                        recipeImages={category.recipeImages}
-                        onClick={() => handleCategoryClick(category.id)}
-                      />
-                    ))}
-                    {/* New Cookbook Card */}
-                    <NewCookbookCard onClick={handleNewCookbook} />
-                  </>
-                ) : (
-                  <div className="col-span-full text-center py-8 text-gray-500">
-                    Loading cookbooks...
+              <>
+                {/* Personal Cookbooks */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {cookbookStats ? (
+                    <>
+                      {cookbookStats.map((category: any) => (
+                        <CookbookCategoryCard
+                          key={category.id}
+                          name={category.name}
+                          recipeCount={category.recipeCount}
+                          recipeImages={category.recipeImages}
+                          onClick={() => handleCategoryClick(category.id)}
+                        />
+                      ))}
+                      {/* New Cookbook Card */}
+                      <NewCookbookCard onClick={handleNewCookbook} />
+                    </>
+                  ) : (
+                    <div className="col-span-full text-center py-8 text-gray-500">
+                      Loading cookbooks...
+                    </div>
+                  )}
+                </div>
+
+                {/* Shared Cookbooks Section */}
+                {sharedCookbooks && sharedCookbooks.length > 0 && (
+                  <div className="mt-8">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Users className="w-6 h-6 text-healthymama-pink" />
+                      <h2 className="text-xl font-bold text-gray-900">Shared Cookbooks</h2>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {sharedCookbooks.map((cookbook) => (
+                        cookbook && (
+                          <SharedCookbookCard
+                            key={cookbook._id}
+                            cookbook={cookbook}
+                            onClick={() => {
+                              setSelectedSharedCookbookId(cookbook._id);
+                              setIsSharedCookbookDetailOpen(true);
+                            }}
+                          />
+                        )
+                      ))}
+                    </div>
                   </div>
                 )}
-              </div>
+              </>
             ) : (
               <div>
                 {userId ? (
@@ -314,6 +352,16 @@ export function CookbooksView() {
           userId={userId}
         />
       )}
+
+      {/* Shared Cookbook Detail Sheet */}
+      <SharedCookbookDetailSheet
+        isOpen={isSharedCookbookDetailOpen}
+        onClose={() => {
+          setIsSharedCookbookDetailOpen(false);
+          setSelectedSharedCookbookId(null);
+        }}
+        cookbookId={selectedSharedCookbookId}
+      />
 
       {/* Create Cookbook Dialog */}
       <CreateCookbookDialog

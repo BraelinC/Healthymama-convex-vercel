@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useUser } from "@clerk/nextjs";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import {
   Sheet,
   SheetContent,
@@ -9,16 +13,19 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ImageWithFallback } from "../shared/ImageWithFallback";
-import { Plus, ChevronRight } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Plus, ChevronRight, Users } from "lucide-react";
 
 interface CookbookSelectionSheetProps {
   isOpen: boolean;
   onClose: () => void;
   recipe: {
+    id?: Id<"userRecipes">;
     title: string;
     imageUrl?: string;
   };
   onSelectCookbook: (cookbookId: string, cookbookName: string) => void;
+  onSelectSharedCookbook?: (cookbookId: Id<"sharedCookbooks">, cookbookName: string) => void;
 }
 
 const COOKBOOKS = [
@@ -35,15 +42,53 @@ export function CookbookSelectionSheet({
   onClose,
   recipe,
   onSelectCookbook,
+  onSelectSharedCookbook,
 }: CookbookSelectionSheetProps) {
+  const { user } = useUser();
+  const [isAdding, setIsAdding] = useState<string | null>(null);
+
+  // Query shared cookbooks
+  const sharedCookbooks = useQuery(
+    api.sharedCookbooks.getSharedCookbooks,
+    user?.id ? { userId: user.id } : "skip"
+  );
+
+  // Mutation to add recipe to shared cookbook
+  const addToSharedCookbook = useMutation(api.sharedCookbooks.addRecipeToSharedCookbook);
+
   const handleSelectCookbook = (cookbookId: string, cookbookName: string) => {
     onSelectCookbook(cookbookId, cookbookName);
     onClose();
   };
 
+  const handleSelectSharedCookbook = async (
+    cookbookId: Id<"sharedCookbooks">,
+    cookbookName: string
+  ) => {
+    if (!user?.id || !recipe.id) return;
+
+    setIsAdding(cookbookId);
+    try {
+      await addToSharedCookbook({
+        cookbookId,
+        recipeId: recipe.id,
+        userId: user.id,
+      });
+
+      if (onSelectSharedCookbook) {
+        onSelectSharedCookbook(cookbookId, cookbookName);
+      }
+      onClose();
+    } catch (error: any) {
+      console.error("Failed to add to shared cookbook:", error);
+    } finally {
+      setIsAdding(null);
+    }
+  };
+
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="bottom" className="h-auto max-h-[80vh] rounded-t-2xl">
+      <SheetContent side="bottom" className="h-auto max-h-[80vh] rounded-t-2xl overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="text-left">Add to Cookbook</SheetTitle>
         </SheetHeader>
@@ -73,7 +118,7 @@ export function CookbookSelectionSheet({
           </div>
         </div>
 
-        {/* Cookbook List */}
+        {/* Personal Cookbooks */}
         <div className="space-y-2 mb-4">
           {COOKBOOKS.map((cookbook) => (
             <button
@@ -108,6 +153,70 @@ export function CookbookSelectionSheet({
             </span>
           </button>
         </div>
+
+        {/* Shared Cookbooks Section */}
+        {sharedCookbooks && sharedCookbooks.length > 0 && recipe.id && (
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Users className="w-5 h-5 text-healthymama-pink" />
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                Shared Cookbooks
+              </h3>
+            </div>
+            <div className="space-y-2">
+              {sharedCookbooks.filter(Boolean).map((cookbook: any) => (
+                <button
+                  key={cookbook?._id}
+                  onClick={() =>
+                    cookbook && handleSelectSharedCookbook(cookbook._id, cookbook.name)
+                  }
+                  disabled={isAdding === cookbook?._id}
+                  className="w-full flex items-center justify-between p-4 rounded-lg hover:bg-pink-50 dark:hover:bg-pink-900/20 transition-colors text-left group border border-pink-100 dark:border-pink-900/30"
+                >
+                  <div className="flex items-center gap-3">
+                    {/* Cookbook Image or Placeholder */}
+                    <div className="w-10 h-10 rounded-lg overflow-hidden bg-pink-100 dark:bg-pink-900/30 flex-shrink-0">
+                      {cookbook?.imageUrl ? (
+                        <img
+                          src={cookbook.imageUrl}
+                          alt={cookbook.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Users className="w-5 h-5 text-healthymama-pink" />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-900 dark:text-gray-100 block">
+                        {cookbook?.name}
+                      </span>
+                      {/* Member Avatars */}
+                      <div className="flex items-center gap-1 mt-1">
+                        {cookbook?.members?.slice(0, 3).map((member: any, idx: number) => (
+                          <Avatar
+                            key={member.userId}
+                            className="w-5 h-5 border border-white"
+                            style={{ marginLeft: idx > 0 ? "-4px" : "0" }}
+                          >
+                            <AvatarFallback className="text-[10px] bg-healthymama-pink text-white">
+                              {member.name?.[0]?.toUpperCase() || "?"}
+                            </AvatarFallback>
+                          </Avatar>
+                        ))}
+                        <span className="text-xs text-gray-500 ml-1">
+                          {cookbook?.recipeCount} recipes
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-pink-400 group-hover:text-pink-600" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );
