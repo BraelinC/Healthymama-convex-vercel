@@ -1,53 +1,23 @@
 /**
- * Universal Video Import Modal Component
+ * Universal Import Modal Component
  *
- * A multi-step modal/sheet for importing recipes from Instagram reels and YouTube videos.
- * Guides users through URL input → extraction → preview → save workflow.
- *
- * Supported Platforms:
- * - Instagram Reels: Railway service + Gemini video analysis
- * - YouTube Videos: YouTube Data API + Regex parsing + GPT formatting + Gemini video analysis
+ * A multi-step modal/sheet for importing recipes from:
+ * - Instagram reels
+ * - YouTube videos
+ * - Pinterest pins
+ * - **NEW: Uploaded images (food photos or recipe screenshots)**
  *
  * User Flow:
- * 1. Input: User pastes Instagram or YouTube URL
- * 2. Extracting: Shows loading spinner while fetching + parsing
- * 3. Preview: Displays parsed recipe for review (ingredients, instructions, metadata)
+ * 1. Input: User chooses URL or Image mode
+ * 2. Extracting: Shows loading spinner while AI processes
+ * 3. Preview: Displays parsed recipe for review
  * 4. Saving: Shows loading spinner while saving to Convex
- * 5. Success: Shows checkmark, auto-closes modal after 1.5 seconds
+ * 5. Success: Shows checkmark, auto-closes modal
  * 6. Error: Shows error message with "Try Again" button
- *
- * Technical Flow:
- * 1. User pastes URL → Frontend validation (Instagram or YouTube)
- * 2. Call /api/instagram/import (Next.js API route)
- * 3. API route orchestrates platform-specific extraction:
- *    - Instagram: Railway service + Gemini video analysis
- *    - YouTube: Regex description parsing → GPT formatting → Gemini video analysis
- * 4. Return formatted recipe JSON with platform-specific fields
- * 5. Display preview in modal with correct thumbnail and metadata
- * 6. User clicks "Save" → Call Convex mutation (importInstagramRecipe)
- * 7. Recipe saved to platform-specific cookbook ("Instagram" or "YouTube")
- * 8. Success toast + modal closes
- *
- * Component Architecture:
- * - Uses shadcn/ui Sheet component (bottom drawer on mobile)
- * - State-driven step transitions (input → extracting → preview → saving → success/error)
- * - Dynamic platform icon display (Instagram/YouTube)
- * - Toast notifications for user feedback
- * - Responsive design (mobile-first)
- *
- * Props:
- * @param isOpen - Controls modal visibility
- * @param onClose - Callback to close modal and reset state
- * @param userId - Clerk user ID (required for Convex mutation)
- *
- * Dependencies:
- * - Convex: importInstagramRecipe action (handles both platforms)
- * - API Route: /api/instagram/import (universal video import endpoint)
- * - UI Components: Sheet, Button, Input, Loader, Icons
  */
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
@@ -59,8 +29,9 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { UniversalRecipeCard } from "../recipe/UniversalRecipeCard";
-import { Loader2, Instagram, Youtube, AlertCircle, CheckCircle2, Pin } from "lucide-react";
+import { Loader2, Instagram, Youtube, AlertCircle, CheckCircle2, Pin, Image, Upload, Link, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface InstagramImportModalProps {
@@ -85,7 +56,8 @@ interface ExtractedRecipe {
   prep_time?: string;
   cook_time?: string;
   cuisine?: string;
-  source?: "instagram" | "youtube" | "pinterest";
+  diet?: string;
+  source?: "instagram" | "youtube" | "pinterest" | "image";
   instagramUrl?: string;
   instagramVideoUrl?: string;
   instagramThumbnailUrl?: string;
@@ -102,37 +74,26 @@ interface ExtractedRecipe {
   muxPlaybackId?: string;
   muxAssetId?: string;
   videoSegments?: VideoSegment[];
+  // For image imports
+  uploadedImageUrl?: string;
 }
 
 type ImportStep = "input" | "extracting" | "preview" | "saving" | "success" | "error";
+type ImportMode = "url" | "image";
 
 /**
  * Parse time strings to total minutes
- *
- * Converts time strings like "15 minutes", "1 hour", "30 min" to total minutes.
- * Combines prep_time and cook_time into a single time_minutes value.
- *
- * @param prep_time - Prep time string (e.g., "15 minutes")
- * @param cook_time - Cook time string (e.g., "30 minutes")
- * @returns Total minutes or undefined if no times provided
- *
- * @example
- * parseTimeToMinutes("15 minutes", "30 minutes") // 45
- * parseTimeToMinutes("1 hour", "15 min") // 75
- * parseTimeToMinutes(undefined, "20 minutes") // 20
  */
 function parseTimeToMinutes(prep_time?: string, cook_time?: string): number | undefined {
   if (!prep_time && !cook_time) return undefined;
 
   const parseTime = (timeStr: string): number => {
-    // Match patterns like: "15 minutes", "1 hour", "30 min", "2 hrs"
     const match = timeStr.match(/(\d+)\s*(min|minute|minutes|hour|hours|hr|hrs)/i);
     if (!match) return 0;
 
     const value = parseInt(match[1]);
     const unit = match[2].toLowerCase();
 
-    // Convert hours to minutes
     if (unit.startsWith('h')) return value * 60;
     return value;
   };
@@ -149,7 +110,14 @@ export function InstagramImportModal({
   userId,
 }: InstagramImportModalProps) {
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // State
+  const [importMode, setImportMode] = useState<ImportMode>("url");
   const [videoUrl, setVideoUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
+  const [imageContext, setImageContext] = useState("");
   const [step, setStep] = useState<ImportStep>("input");
   const [extractedRecipe, setExtractedRecipe] = useState<ExtractedRecipe | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -160,38 +128,67 @@ export function InstagramImportModal({
   // Reset state when modal closes
   const handleClose = () => {
     setVideoUrl("");
+    setImageFile(null);
+    setImagePreview("");
+    setImageContext("");
     setStep("input");
     setExtractedRecipe(null);
     setErrorMessage("");
+    setImportMode("url");
     onClose();
   };
 
+  // Handle image file selection
+  const handleImageSelect = (file: File) => {
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!validTypes.includes(file.type)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a JPEG, PNG, WebP, or GIF image",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please upload an image under 10MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setImageFile(file);
+    const preview = URL.createObjectURL(file);
+    setImagePreview(preview);
+  };
+
+  // Handle file input change
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleImageSelect(file);
+  };
+
+  // Handle drag and drop
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleImageSelect(file);
+  };
+
+  // Clear selected image
+  const clearImage = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   /**
-   * Step 1: Extract Recipe from Video (Instagram or YouTube)
-   *
-   * Calls the Next.js API route to orchestrate:
-   * - Instagram: Railway service (data extraction) + Gemini (video analysis)
-   * - YouTube: YouTube Data API + Regex parsing + GPT formatting + Gemini (video analysis)
-   *
-   * Process:
-   * 1. Validate video URL (must contain "instagram.com" or "youtube.com")
-   * 2. Set step to "extracting" (shows loading UI)
-   * 3. Call /api/instagram/import with URL
-   * 4. Parse response and store extracted recipe
-   * 5. Transition to "preview" step
-   * 6. Show success toast
-   *
-   * Error Handling:
-   * - Invalid URL: Toast error, don't call API
-   * - API error: Set step to "error", show error message
-   * - Network error: Caught and displayed in error step
-   *
-   * Expected Duration: 5-15 seconds
-   * - Platform fetch: 2-5 seconds
-   * - AI parsing: 2-5 seconds
-   * - Network latency: 1-5 seconds
+   * Extract Recipe from URL (Instagram, YouTube, Pinterest)
    */
-  const handleExtract = async () => {
+  const handleExtractUrl = async () => {
     if (!videoUrl.trim()) {
       toast({
         title: "Missing URL",
@@ -201,14 +198,14 @@ export function InstagramImportModal({
       return;
     }
 
-    // Validate Instagram or YouTube URL
     const isInstagram = videoUrl.includes("instagram.com");
     const isYouTube = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
+    const isPinterest = videoUrl.includes("pinterest.com") || videoUrl.includes("pin.it");
 
-    if (!isInstagram && !isYouTube) {
+    if (!isInstagram && !isYouTube && !isPinterest) {
       toast({
         title: "Invalid URL",
-        description: "Please enter a valid Instagram or YouTube URL",
+        description: "Please enter an Instagram, YouTube, or Pinterest URL",
         variant: "destructive",
       });
       return;
@@ -218,12 +215,9 @@ export function InstagramImportModal({
     setErrorMessage("");
 
     try {
-      // Call Next.js API route
       const response = await fetch("/api/instagram/import", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: videoUrl }),
       });
 
@@ -233,7 +227,6 @@ export function InstagramImportModal({
         throw new Error(data.error || "Failed to extract recipe");
       }
 
-      // Store extracted recipe
       setExtractedRecipe(data.recipe);
       setStep("preview");
 
@@ -255,36 +248,66 @@ export function InstagramImportModal({
   };
 
   /**
-   * Step 2: Save Recipe to Convex Database
-   *
-   * Calls the Convex action to save the extracted recipe to the user's cookbook.
-   * The recipe is automatically saved to the platform-specific cookbook category:
-   * - YouTube recipes → "YouTube" cookbook
-   * - Instagram recipes → "Instagram" cookbook
-   *
-   * Process:
-   * 1. Validate extractedRecipe exists
-   * 2. Set step to "saving" (shows loading UI)
-   * 3. Call importInstagramRecipe action with all recipe data (both platforms)
-   * 4. Handle response (success or duplicate error)
-   * 5. Transition to "success" step
-   * 6. Auto-close modal after 1.5 seconds
-   *
-   * Error Handling:
-   * - Duplicate recipe: Action returns {success: false, error: "already imported"}
-   * - Database error: Caught and displayed in error step
-   * - Network error: Caught and displayed in error step
-   *
-   * Convex Action:
-   * - Function: api.instagram.importInstagramRecipe (handles both platforms)
-   * - Result: {success: boolean, recipeId?: string, error?: string}
-   * - Auto-creates platform-specific cookbook if doesn't exist
-   *
-   * Post-Success:
-   * - Shows success step with checkmark
-   * - Displays platform-aware success toast
-   * - Auto-closes modal after 1.5 seconds
-   * - User can view recipe in platform-specific cookbook (Instagram or YouTube)
+   * Extract Recipe from Uploaded Image
+   */
+  const handleExtractImage = async () => {
+    if (!imageFile) {
+      toast({
+        title: "No image selected",
+        description: "Please upload an image first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setStep("extracting");
+    setErrorMessage("");
+
+    try {
+      const formData = new FormData();
+      formData.append("image", imageFile);
+      if (imageContext.trim()) {
+        formData.append("context", imageContext.trim());
+      }
+
+      const response = await fetch("/api/recipe-image/extract", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to extract recipe from image");
+      }
+
+      // Store the uploaded image URL for preview
+      setExtractedRecipe({
+        ...data.recipe,
+        source: "image",
+        uploadedImageUrl: imagePreview,
+      });
+      setStep("preview");
+
+      toast({
+        title: "Recipe Extracted!",
+        description: "Preview your recipe below",
+      });
+    } catch (error: any) {
+      console.error("[Image Import] Error:", error);
+      setErrorMessage(error.message || "Failed to extract recipe from image");
+      setStep("error");
+
+      toast({
+        title: "Extraction Failed",
+        description: error.message || "Could not extract recipe from image",
+        variant: "destructive",
+      });
+    }
+  };
+
+  /**
+   * Save Recipe to Convex Database
    */
   const handleSave = async () => {
     if (!extractedRecipe) return;
@@ -293,7 +316,6 @@ export function InstagramImportModal({
 
     try {
       const result = await importRecipe({
-        // SECURITY: userId removed - now retrieved from authenticated context in Convex action
         title: extractedRecipe.title,
         description: extractedRecipe.description || undefined,
         ingredients: extractedRecipe.ingredients,
@@ -305,7 +327,9 @@ export function InstagramImportModal({
         source: extractedRecipe.source || undefined,
         instagramUrl: extractedRecipe.instagramUrl || undefined,
         instagramVideoUrl: extractedRecipe.instagramVideoUrl || undefined,
-        instagramThumbnailUrl: extractedRecipe.instagramThumbnailUrl || undefined,
+        instagramThumbnailUrl: extractedRecipe.source === "image"
+          ? extractedRecipe.uploadedImageUrl
+          : extractedRecipe.instagramThumbnailUrl || undefined,
         instagramUsername: extractedRecipe.instagramUsername || undefined,
         youtubeUrl: extractedRecipe.youtubeUrl || undefined,
         youtubeVideoId: extractedRecipe.youtubeVideoId || undefined,
@@ -318,13 +342,15 @@ export function InstagramImportModal({
       if (result.success) {
         setStep("success");
 
-        const cookbookName = extractedRecipe.source === "youtube" ? "YouTube" : "Instagram";
+        const cookbookName = extractedRecipe.source === "youtube" ? "YouTube"
+          : extractedRecipe.source === "image" ? "Imported"
+          : "Instagram";
+
         toast({
           title: "Recipe Saved!",
           description: `"${extractedRecipe.title}" added to ${cookbookName} cookbook`,
         });
 
-        // Close modal after 1.5 seconds
         setTimeout(() => {
           handleClose();
         }, 1500);
@@ -332,7 +358,7 @@ export function InstagramImportModal({
         throw new Error(result.error || "Failed to save recipe");
       }
     } catch (error: any) {
-      console.error("[Video Import] Save error:", error);
+      console.error("[Import] Save error:", error);
       setErrorMessage(error.message || "Failed to save recipe");
       setStep("error");
 
@@ -344,12 +370,17 @@ export function InstagramImportModal({
     }
   };
 
-  // Determine platform based on URL
+  // Determine platform icon based on URL
   const isYouTubeUrl = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
-  const isInstagramUrl = videoUrl.includes("instagram.com");
   const isPinterestUrl = videoUrl.includes("pinterest.com") || videoUrl.includes("pin.it");
-  const PlatformIcon = isPinterestUrl ? Pin : (isYouTubeUrl ? Youtube : Instagram);
-  const iconColor = isPinterestUrl ? "text-red-600" : (isYouTubeUrl ? "text-red-500" : "text-pink-500");
+  const PlatformIcon = importMode === "image" ? Image
+    : isPinterestUrl ? Pin
+    : isYouTubeUrl ? Youtube
+    : Instagram;
+  const iconColor = importMode === "image" ? "text-emerald-500"
+    : isPinterestUrl ? "text-red-600"
+    : isYouTubeUrl ? "text-red-500"
+    : "text-pink-500";
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && handleClose()}>
@@ -357,11 +388,11 @@ export function InstagramImportModal({
         <SheetHeader>
           <SheetTitle className="text-left flex items-center gap-2">
             <PlatformIcon className={`w-5 h-5 ${iconColor}`} />
-            Import Recipe from Video
+            Import Recipe
           </SheetTitle>
           <SheetDescription className="text-left">
-            {step === "input" && "Paste an Instagram or YouTube URL to extract the recipe"}
-            {step === "extracting" && "Extracting recipe from video..."}
+            {step === "input" && "Import from URL or upload an image"}
+            {step === "extracting" && (importMode === "image" ? "Analyzing image with AI..." : "Extracting recipe from video...")}
             {step === "preview" && "Preview and save your recipe"}
             {step === "saving" && "Saving to your cookbook..."}
             {step === "success" && "Recipe saved successfully!"}
@@ -373,30 +404,134 @@ export function InstagramImportModal({
           {/* Input Step */}
           {step === "input" && (
             <div className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="video-url" className="text-sm font-medium text-gray-700">
-                  Video URL
-                </label>
-                <Input
-                  id="video-url"
-                  type="url"
-                  placeholder="Instagram, YouTube, or Pinterest URL..."
-                  value={videoUrl}
-                  onChange={(e) => setVideoUrl(e.target.value)}
-                  className="w-full"
-                />
-                <p className="text-xs text-gray-500">
-                  Paste a link to an Instagram reel or YouTube video with a recipe
-                </p>
+              {/* Mode Toggle */}
+              <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
+                <button
+                  onClick={() => setImportMode("url")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                    importMode === "url"
+                      ? "bg-white shadow text-gray-900"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <Link className="w-4 h-4" />
+                  Paste URL
+                </button>
+                <button
+                  onClick={() => setImportMode("image")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                    importMode === "image"
+                      ? "bg-white shadow text-gray-900"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <Image className="w-4 h-4" />
+                  Upload Image
+                </button>
               </div>
 
-              <Button
-                onClick={handleExtract}
-                className="w-full bg-gradient-to-br from-[#dc2626] to-[#ec4899] hover:shadow-red-glow text-white"
-              >
-                <PlatformIcon className="w-4 h-4 mr-2" />
-                Extract Recipe
-              </Button>
+              {/* URL Input Mode */}
+              {importMode === "url" && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="video-url" className="text-sm font-medium text-gray-700">
+                      Video URL
+                    </label>
+                    <Input
+                      id="video-url"
+                      type="url"
+                      placeholder="Instagram, YouTube, or Pinterest URL..."
+                      value={videoUrl}
+                      onChange={(e) => setVideoUrl(e.target.value)}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Paste a link to an Instagram reel, YouTube video, or Pinterest pin
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={handleExtractUrl}
+                    className="w-full bg-gradient-to-br from-[#dc2626] to-[#ec4899] hover:shadow-red-glow text-white"
+                  >
+                    <PlatformIcon className="w-4 h-4 mr-2" />
+                    Extract Recipe
+                  </Button>
+                </div>
+              )}
+
+              {/* Image Upload Mode */}
+              {importMode === "image" && (
+                <div className="space-y-4">
+                  {/* Image Upload Area */}
+                  {!imageFile ? (
+                    <div
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors"
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                      <Upload className="w-10 h-10 mx-auto text-gray-400 mb-3" />
+                      <p className="text-sm font-medium text-gray-700">
+                        Drop an image here or click to browse
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Food photos or recipe screenshots (JPEG, PNG, WebP)
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <img
+                        src={imagePreview}
+                        alt="Selected recipe"
+                        className="w-full h-48 object-cover rounded-lg"
+                      />
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={clearImage}
+                        className="absolute top-2 right-2"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Optional Context Input */}
+                  <div className="space-y-2">
+                    <label htmlFor="image-context" className="text-sm font-medium text-gray-700">
+                      Add context (optional)
+                    </label>
+                    <Textarea
+                      id="image-context"
+                      placeholder="e.g., 'This is my grandma's apple pie recipe' or 'Vegan chocolate cake'"
+                      value={imageContext}
+                      onChange={(e) => setImageContext(e.target.value)}
+                      className="w-full resize-none"
+                      rows={2}
+                    />
+                    <p className="text-xs text-gray-500">
+                      Help the AI better understand your image
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={handleExtractImage}
+                    disabled={!imageFile}
+                    className="w-full bg-gradient-to-br from-emerald-500 to-teal-500 hover:shadow-lg text-white disabled:opacity-50"
+                  >
+                    <Image className="w-4 h-4 mr-2" />
+                    Extract Recipe from Image
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
@@ -405,9 +540,13 @@ export function InstagramImportModal({
             <div className="flex flex-col items-center justify-center py-12 space-y-4">
               <Loader2 className={`w-12 h-12 ${iconColor} animate-spin`} />
               <div className="text-center space-y-2">
-                <p className="text-sm font-medium text-gray-900">Extracting recipe...</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {importMode === "image" ? "Analyzing image..." : "Extracting recipe..."}
+                </p>
                 <p className="text-xs text-gray-500">
-                  Fetching video data and parsing with AI
+                  {importMode === "image"
+                    ? "AI is reading your image and extracting recipe details"
+                    : "Fetching video data and parsing with AI"}
                 </p>
               </div>
             </div>
@@ -420,16 +559,20 @@ export function InstagramImportModal({
                 recipe={{
                   title: extractedRecipe.title,
                   description: extractedRecipe.description,
-                  imageUrl: extractedRecipe.source === "youtube"
-                    ? extractedRecipe.youtubeThumbnailUrl
-                    : extractedRecipe.instagramThumbnailUrl,
+                  imageUrl: extractedRecipe.source === "image"
+                    ? extractedRecipe.uploadedImageUrl
+                    : extractedRecipe.source === "youtube"
+                      ? extractedRecipe.youtubeThumbnailUrl
+                      : extractedRecipe.instagramThumbnailUrl,
                   ingredients: extractedRecipe.ingredients,
                   instructions: extractedRecipe.instructions,
                   cuisine: extractedRecipe.cuisine,
                   muxPlaybackId: extractedRecipe.muxPlaybackId,
                   instagramUsername: extractedRecipe.instagramUsername,
                   videoSegments: extractedRecipe.videoSegments,
-                  category: extractedRecipe.source === "youtube" ? "YouTube" : "Instagram",
+                  category: extractedRecipe.source === "youtube" ? "YouTube"
+                    : extractedRecipe.source === "image" ? "Imported"
+                    : "Instagram",
                   time_minutes: parseTimeToMinutes(
                     extractedRecipe.prep_time,
                     extractedRecipe.cook_time
@@ -443,7 +586,7 @@ export function InstagramImportModal({
                   onClick={() => setStep("input")}
                   className="flex-1"
                 >
-                  Try Another URL
+                  Try Again
                 </Button>
                 <Button
                   onClick={handleSave}
@@ -462,7 +605,7 @@ export function InstagramImportModal({
               <div className="text-center space-y-2">
                 <p className="text-sm font-medium text-gray-900">Saving recipe...</p>
                 <p className="text-xs text-gray-500">
-                  Adding to {extractedRecipe?.source === "youtube" ? "YouTube" : "Instagram"} cookbook
+                  Adding to your cookbook
                 </p>
               </div>
             </div>
@@ -475,7 +618,7 @@ export function InstagramImportModal({
               <div className="text-center space-y-2">
                 <p className="text-lg font-semibold text-gray-900">Recipe Saved!</p>
                 <p className="text-sm text-gray-600">
-                  Check your {extractedRecipe?.source === "youtube" ? "YouTube" : "Instagram"} cookbook to view it
+                  Check your cookbook to view it
                 </p>
               </div>
             </div>

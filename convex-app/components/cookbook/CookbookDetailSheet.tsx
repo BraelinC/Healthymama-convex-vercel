@@ -2,16 +2,17 @@
 
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useRouter } from "next/navigation";
 import {
   Sheet,
   SheetContent,
-  SheetHeader,
-  SheetTitle,
 } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 import { CompactRecipeCard } from "../recipe/CompactRecipeCard";
 import { RecipeDetailSheet } from "../recipe/RecipeDetailSheet";
 import { CookbookSelectionSheet } from "./CookbookSelectionSheet";
 import { useState } from "react";
+import { ArrowLeft, BookOpen } from "lucide-react";
 
 interface CookbookDetailSheetProps {
   isOpen: boolean;
@@ -30,6 +31,15 @@ const COOKBOOK_EMOJIS: Record<string, string> = {
   snacks: "🍿",
 };
 
+const COOKBOOK_GRADIENTS: Record<string, string> = {
+  uncategorized: "from-gray-400 to-gray-600",
+  breakfast: "from-amber-400 to-orange-500",
+  lunch: "from-green-400 to-emerald-500",
+  dinner: "from-purple-400 to-indigo-500",
+  dessert: "from-pink-400 to-rose-500",
+  snacks: "from-yellow-400 to-amber-500",
+};
+
 export function CookbookDetailSheet({
   isOpen,
   onClose,
@@ -37,6 +47,7 @@ export function CookbookDetailSheet({
   cookbookName,
   userId,
 }: CookbookDetailSheetProps) {
+  const router = useRouter();
   const [selectedRecipe, setSelectedRecipe] = useState<any>(null);
   const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
   const [isRecipeDetailOpen, setIsRecipeDetailOpen] = useState(false);
@@ -110,36 +121,62 @@ export function CookbookDetailSheet({
   };
 
   const handleRecipeClick = (recipe: any) => {
-    setRecipeForDetail(recipe);
-    setIsRecipeDetailOpen(true);
+    router.push(`/recipe/${recipe._id}`);
+    onClose();
   };
 
   const emoji = COOKBOOK_EMOJIS[cookbookId] || "📚";
+  const gradient = COOKBOOK_GRADIENTS[cookbookId] || "from-purple-400 to-indigo-500";
 
   return (
     <>
       <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <SheetContent side="bottom" className="h-[90vh] rounded-t-2xl">
-          <SheetHeader className="mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-2xl">
-                {emoji}
+        <SheetContent side="right" className="w-full sm:max-w-lg p-0">
+          {/* Header with gradient background */}
+          <div className="relative">
+            <div className={`h-32 bg-gradient-to-br ${gradient}`}>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-6xl opacity-30">{emoji}</span>
               </div>
-              <div className="flex-1">
-                <SheetTitle className="text-left text-2xl">
+            </div>
+
+            {/* Back Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              className="absolute top-4 left-4 bg-white/90 hover:bg-white"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+
+            {/* Cookbook Info Overlay */}
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/60 to-transparent">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">{emoji}</span>
+                <h2 className="text-xl font-bold text-white">
                   {cookbookName}
-                </SheetTitle>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                </h2>
+              </div>
+            </div>
+          </div>
+
+          {/* Recipe Count */}
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-end">
+              <div className="flex items-center gap-1 text-sm text-gray-500">
+                <BookOpen className="w-4 h-4" />
+                <span>
                   {recipes === undefined
                     ? "Loading..."
                     : `${recipes.length} ${recipes.length === 1 ? "recipe" : "recipes"}`}
-                </p>
+                </span>
               </div>
             </div>
-          </SheetHeader>
+          </div>
 
-          {/* Scrollable Content */}
-          <div className="overflow-y-auto h-[calc(90vh-140px)] pb-6">
+          {/* Recipe Grid */}
+          <div className="p-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 220px)" }}>
             {recipes === undefined ? (
               <div className="flex items-center justify-center h-64 text-gray-500">
                 Loading recipes...
@@ -155,7 +192,7 @@ export function CookbookDetailSheet({
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 {recipes.map((recipe: any) => (
                   <CompactRecipeCard
                     key={recipe._id}

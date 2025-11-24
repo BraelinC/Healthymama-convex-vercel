@@ -62,6 +62,7 @@ export default function CommunityPage({ params }: CommunityPageProps) {
   // Mutations
   const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
   const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
+  const addToSharedCookbook = useMutation(api.sharedCookbooks.addRecipeToSharedCookbook);
 
   // Fetch community data from Convex
   const community = useQuery(
@@ -190,6 +191,55 @@ export default function CommunityPage({ params }: CommunityPageProps) {
       toast({
         title: "Error",
         description: "Failed to save recipe",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSelectSharedCookbook = async (cookbookId: Id<"sharedCookbooks">, cookbookName: string) => {
+    if (!user?.id || !selectedRecipeForCookbook) return;
+
+    try {
+      // First save the recipe to get a recipe ID
+      const recipeId = await saveRecipe({
+        userId: user.id,
+        recipeType: "community",
+        cookbookCategory: "uncategorized", // Default category, it will be in shared cookbook
+        title: selectedRecipeForCookbook.name,
+        description: selectedRecipeForCookbook.description,
+        imageUrl: selectedRecipeForCookbook.imageUrl,
+        ingredients: selectedRecipeForCookbook.ingredients || [],
+        instructions: selectedRecipeForCookbook.steps || [],
+        servings: selectedRecipeForCookbook.servings,
+        prep_time: selectedRecipeForCookbook.prep_time,
+        cook_time: selectedRecipeForCookbook.cook_time,
+        time_minutes: selectedRecipeForCookbook.time_minutes,
+        cuisine: selectedRecipeForCookbook.cuisine,
+        diet: selectedRecipeForCookbook.diet,
+        category: selectedRecipeForCookbook.category,
+        communityRecipeId: selectedRecipeForCookbook._id,
+        isFavorited: false,
+      });
+
+      // Then add it to the shared cookbook
+      await addToSharedCookbook({
+        cookbookId,
+        recipeId: recipeId as Id<"userRecipes">,
+        userId: user.id,
+      });
+
+      toast({
+        title: "Added to shared cookbook!",
+        description: `Recipe added to "${cookbookName}"`,
+      });
+
+      setIsCookbookSelectionOpen(false);
+      setSelectedRecipeForCookbook(null);
+    } catch (error) {
+      console.error("Save to shared cookbook error:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save recipe to shared cookbook",
         variant: "destructive",
       });
     }
@@ -380,6 +430,7 @@ export default function CommunityPage({ params }: CommunityPageProps) {
             }}
             recipe={selectedRecipeForCookbook}
             onSelectCookbook={handleSelectCookbook}
+            onSelectSharedCookbook={handleSelectSharedCookbook}
           />
         )}
 
