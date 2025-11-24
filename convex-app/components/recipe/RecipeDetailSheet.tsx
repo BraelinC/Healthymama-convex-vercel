@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
   Sheet,
@@ -31,9 +31,9 @@ export function RecipeDetailSheet({
   const { toast } = useToast();
   const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
 
-  // Mutations
+  // Mutations and actions
   const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
-  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
+  const saveRecipe = useAction(api.recipes.userRecipes.saveRecipeWithParsedIngredients);
 
   const handleToggleFavorite = async () => {
     if (!userId || !recipe._id) return;
@@ -122,6 +122,7 @@ export function RecipeDetailSheet({
           <div className="overflow-y-auto h-[calc(90vh-100px)] pb-6">
             <UnifiedRecipeCard
               recipe={recipe}
+              userId={userId}
               isFavorited={isFavorited}
               onToggleFavorite={handleToggleFavorite}
               onAddToCookbook={handleAddToCookbook}

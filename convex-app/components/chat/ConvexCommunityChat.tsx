@@ -41,7 +41,7 @@ export default function ConvexCommunityChat({
   const [tempSessionId, setTempSessionId] = useState<string | null>(null); // Temporary session (not saved to DB)
   const [selectedSessionId, setSelectedSessionId] = useState<Id<"chatSessions"> | null>(null);
   const [inputMessage, setInputMessage] = useState("");
-  const [selectedModel, setSelectedModel] = useState<"gpt-5-mini" | "grok-4-fast" | "claude-haiku-4.5" | "gpt-4o-mini" | "gpt-4.1-mini">("grok-4-fast");
+  const selectedModel = "gpt-4o-mini"; // Hardcoded primary model (fallback to gpt-4.1-mini handled in API)
   const [aiName, setAiName] = useState("Community AI Assistant");
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [showSettingsOverlay, setShowSettingsOverlay] = useState(false);
@@ -76,11 +76,18 @@ export default function ConvexCommunityChat({
     api.chat.communitychat.getSessionMessages,
     selectedSessionId ? { sessionId: selectedSessionId } : "skip" // Skip for temp sessions
   );
+  const community = useQuery(
+    api.communities.getCommunityById,
+    communityId ? { communityId } : "skip"
+  );
 
   const createSession = useMutation(api.chat.communitychat.createSession);
   const savePrompt = useMutation(api.systemPrompts.savePrompt);
-  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
+  const saveRecipe = useAction(api.recipes.userRecipes.saveRecipeWithParsedIngredients);
   // COMMENTED OUT: const finalizeThread = useAction(api.memory.tieredProcessing.finalizeThreadOnExit);
+
+  // Check if current user is the community creator
+  const isCreator = community && userId ? community.creatorId === userId : false;
 
   const [isSending, setIsSending] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState("");
@@ -155,7 +162,6 @@ export default function ConvexCommunityChat({
   useEffect(() => {
     if (aiSettings) {
       setAiName(aiSettings.aiName || "Community AI Assistant");
-      setSelectedModel(aiSettings.defaultModel as "gpt-5-mini" | "grok-4-fast" | "claude-haiku-4.5" | "gpt-4o-mini" | "gpt-4.1-mini" || "grok-4-fast");
     }
   }, [aiSettings]);
 
@@ -634,7 +640,7 @@ export default function ConvexCommunityChat({
   };
 
   return (
-    <div className="h-full flex relative bg-gray-900">
+    <div className="flex flex-col h-full relative bg-pink-50/30 overflow-hidden">
       {/* Mobile Menu Overlay */}
       {showMobileMenu && (
         <div
@@ -645,18 +651,18 @@ export default function ConvexCommunityChat({
 
       {/* Sliding Sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-80 bg-gray-800 shadow-xl transform transition-transform duration-300 ease-in-out border-r border-gray-700 ${
+        className={`fixed inset-y-0 left-0 z-50 w-80 bg-white shadow-xl transform transition-transform duration-300 ease-in-out border-r border-gray-200 ${
           showMobileMenu ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         {/* Sidebar Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-100">Chat History</h2>
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">Chat History</h2>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setShowMobileMenu(false)}
-            className="p-1 text-gray-300 hover:text-gray-100 hover:bg-gray-700"
+            className="p-1 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
           >
             <X size={20} />
           </Button>
@@ -666,7 +672,7 @@ export default function ConvexCommunityChat({
           {/* New Chat Button */}
           <Button
             onClick={handleCreateSession}
-            className="w-full justify-start gap-2 h-10 bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600 hover:text-white"
+            className="w-full justify-start gap-2 h-10 bg-white border-healthymama-pink/20 text-gray-700 hover:bg-healthymama-pink/5 hover:border-healthymama-pink/40 hover:text-healthymama-pink transition-all rounded-xl shadow-sm"
             variant="outline"
           >
             <Plus size={16} />
@@ -699,20 +705,20 @@ export default function ConvexCommunityChat({
                   }}
                   className={`w-full text-left p-3 rounded-lg text-sm transition-colors ${
                     selectedSessionId === session._id
-                      ? "bg-purple-600/20 border border-purple-400/30 text-gray-100"
-                      : "hover:bg-gray-700 text-gray-300 hover:text-gray-100"
+                      ? "bg-healthymama-pink/10 border border-healthymama-pink/30 text-gray-900 shadow-sm"
+                      : "hover:bg-healthymama-pink/5 text-gray-700 hover:text-gray-900"
                   }`}
                 >
                   <div className="font-medium truncate">{session.title || "New Chat"}</div>
                   {session.lastMessageAt && (
-                    <div className="text-gray-400 text-xs mt-1">
+                    <div className="text-gray-500 text-xs mt-1">
                       {new Date(session.lastMessageAt).toLocaleDateString()}
                     </div>
                   )}
                 </button>
               ))
             ) : (
-              <div className="text-center text-gray-400 text-sm py-8">
+              <div className="text-center text-gray-500 text-sm py-8">
                 No conversations yet
               </div>
             )}
@@ -721,70 +727,62 @@ export default function ConvexCommunityChat({
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-gray-900 relative">
+      <div className="flex-1 flex flex-col min-w-0 bg-transparent relative overflow-hidden">
         {/* AI Name Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-gray-800">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white/80 backdrop-blur-sm">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 flex items-center justify-center">
+            {/* Hamburger Menu Button - Integrated in Header */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowMobileMenu(true)}
+              className="p-2 text-gray-600 hover:text-healthymama-pink hover:bg-healthymama-pink/10 rounded-lg transition-colors"
+              title="Chat History"
+            >
+              <Menu size={20} />
+            </Button>
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-healthymama-pink to-pink-600 flex items-center justify-center shadow-md">
               <Bot className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-gray-100">{aiName}</h3>
-              <p className="text-xs text-gray-400">AI Assistant</p>
+              <h3 className="text-sm font-semibold text-gray-900">{aiName}</h3>
+              <p className="text-xs text-gray-600">AI Assistant</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCreateSession}
-              className="p-2 text-gray-400 hover:text-gray-100 hover:bg-gray-700 rounded-lg"
-              title="Start New Conversation"
-            >
-              <Plus size={18} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowSettingsOverlay(true)}
-              className="p-2 text-gray-400 hover:text-gray-100 hover:bg-gray-700 rounded-lg"
-              title="View AI Settings"
-            >
-              <Settings size={18} />
-            </Button>
-          </div>
+          {isCreator && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSettingsOverlay(true)}
+                className="p-2 text-gray-600 hover:text-healthymama-pink hover:bg-healthymama-pink/10 rounded-lg transition-colors"
+                title="View AI Settings (Creator Only)"
+              >
+                <Settings size={18} />
+              </Button>
+            </div>
+          )}
         </div>
-
-        {/* Floating Hamburger Menu Button */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setShowMobileMenu(true)}
-          className="fixed top-48 left-4 z-30 p-3 bg-gray-800 border border-gray-700 text-gray-300 hover:text-gray-100 hover:bg-gray-700 rounded-lg shadow-lg"
-          title="Chat History"
-        >
-          <Menu size={20} />
-        </Button>
 
         {/* Chat Messages */}
         <div
           ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-900"
+          className="flex-1 overflow-y-auto p-4 space-y-4 bg-transparent"
           onScroll={handleScroll}
         >
           {messages && messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 flex items-center justify-center mb-4">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-healthymama-pink to-pink-600 flex items-center justify-center mb-4 shadow-lg">
                 <Bot className="w-10 h-10 text-white" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-100 mb-2">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 Welcome to Community AI Assistant
               </h2>
-              <p className="text-gray-400 mb-6 max-w-md">
+              <p className="text-gray-600 mb-6 max-w-md">
                 Your intelligent cooking assistant with perfect memory of your preferences,
                 dietary restrictions, and cooking history.
               </p>
-              <div className="text-left space-y-2 text-sm text-gray-300 max-w-md">
+              <div className="text-left space-y-2 text-sm text-gray-700 max-w-md">
                 <p>• Ask about recipes from any creator</p>
                 <p>• Get personalized recommendations based on your dietary needs</p>
                 <p>• Receive suggestions that learn from your feedback</p>
@@ -800,12 +798,12 @@ export default function ConvexCommunityChat({
                   <div
                     className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-3 ${
                       msg.role === "user"
-                        ? "bg-purple-500 text-white"
-                        : "bg-gray-800 text-gray-100 border border-gray-700"
+                        ? "bg-healthymama-pink text-white shadow-md"
+                        : "bg-white text-gray-900 border border-gray-100 shadow-sm"
                     }`}
                   >
                     {msg.role === "assistant" ? (
-                      <div className="prose prose-sm max-w-none prose-headings:text-gray-200 prose-h1:text-base prose-h1:font-semibold prose-h1:mb-3 prose-h2:text-sm prose-h2:font-medium prose-h2:mb-2 prose-h2:mt-4 prose-ul:list-disc prose-ul:ml-4 prose-ul:my-2 prose-ol:list-decimal prose-ol:ml-4 prose-ol:my-2 prose-li:my-1 prose-li:leading-relaxed prose-strong:font-semibold prose-p:text-gray-300 prose-li:text-gray-300">
+                      <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-h1:text-base prose-h1:font-semibold prose-h1:mb-3 prose-h2:text-sm prose-h2:font-medium prose-h2:mb-2 prose-h2:mt-4 prose-ul:list-disc prose-ul:ml-4 prose-ul:my-2 prose-ol:list-decimal prose-ol:ml-4 prose-ol:my-2 prose-li:my-1 prose-li:leading-relaxed prose-strong:font-semibold prose-p:text-gray-700 prose-li:text-gray-700">
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </div>
                     ) : (
@@ -838,8 +836,8 @@ export default function ConvexCommunityChat({
                           </CarouselItem>
                         ))}
                       </CarouselContent>
-                      <CarouselPrevious className="text-white border-gray-600 hover:bg-gray-700" />
-                      <CarouselNext className="text-white border-gray-600 hover:bg-gray-700" />
+                      <CarouselPrevious className="text-healthymama-pink border-healthymama-pink/30 hover:bg-healthymama-pink/10 bg-white shadow-md" />
+                      <CarouselNext className="text-healthymama-pink border-healthymama-pink/30 hover:bg-healthymama-pink/10 bg-white shadow-md" />
                     </Carousel>
                   </div>
                 )}
@@ -850,12 +848,12 @@ export default function ConvexCommunityChat({
           {/* Streaming message indicator */}
           {isSending && streamingMessage && (
             <div className="flex justify-start">
-              <div className="max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-3 bg-gray-800 text-gray-100 border border-gray-700">
-                <div className="prose prose-sm max-w-none prose-headings:text-gray-200 prose-h1:text-base prose-h1:font-semibold prose-h1:mb-3 prose-h2:text-sm prose-h2:font-medium prose-h2:mb-2 prose-h2:mt-4 prose-ul:list-disc prose-ul:ml-4 prose-ul:my-2 prose-ol:list-decimal prose-ol:ml-4 prose-ol:my-2 prose-li:my-1 prose-li:leading-relaxed prose-strong:font-semibold prose-p:text-gray-300 prose-li:text-gray-300">
+              <div className="max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-3 bg-white text-gray-900 border border-gray-100 shadow-sm">
+                <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-h1:text-base prose-h1:font-semibold prose-h1:mb-3 prose-h2:text-sm prose-h2:font-medium prose-h2:mb-2 prose-h2:mt-4 prose-ul:list-disc prose-ul:ml-4 prose-ul:my-2 prose-ol:list-decimal prose-ol:ml-4 prose-ol:my-2 prose-li:my-1 prose-li:leading-relaxed prose-strong:font-semibold prose-p:text-gray-700 prose-li:text-gray-700">
                   <ReactMarkdown>{streamingMessage}</ReactMarkdown>
                 </div>
-                <div className="mt-2 flex items-center gap-1 text-xs text-purple-400">
-                  <div className="w-1 h-1 bg-purple-400 rounded-full animate-pulse"></div>
+                <div className="mt-2 flex items-center gap-1 text-xs text-healthymama-pink">
+                  <div className="w-1 h-1 bg-healthymama-pink rounded-full animate-pulse"></div>
                   <span>Streaming...</span>
                 </div>
               </div>
@@ -866,17 +864,17 @@ export default function ConvexCommunityChat({
           {isSending && !streamingMessage && (
             <div className="flex justify-start">
               <div className="max-w-[85%] sm:max-w-[70%]">
-                <div className="text-sm text-gray-400 px-4 py-3 flex items-center gap-2 animate-pulse">
+                <div className="text-sm text-gray-600 px-4 py-3 flex items-center gap-2 animate-pulse">
                   <div
-                    className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce"
+                    className="w-1.5 h-1.5 bg-healthymama-pink rounded-full animate-bounce"
                     style={{ animationDelay: "0ms" }}
                   ></div>
                   <div
-                    className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce"
+                    className="w-1.5 h-1.5 bg-healthymama-pink rounded-full animate-bounce"
                     style={{ animationDelay: "150ms" }}
                   ></div>
                   <div
-                    className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce"
+                    className="w-1.5 h-1.5 bg-healthymama-pink rounded-full animate-bounce"
                     style={{ animationDelay: "300ms" }}
                   ></div>
                   <span>Thinking...</span>
@@ -909,8 +907,8 @@ export default function ConvexCommunityChat({
                     </CarouselItem>
                   ))}
                 </CarouselContent>
-                <CarouselPrevious className="text-white border-gray-600 hover:bg-gray-700" />
-                <CarouselNext className="text-white border-gray-600 hover:bg-gray-700" />
+                <CarouselPrevious className="text-healthymama-pink border-healthymama-pink/30 hover:bg-healthymama-pink/10 bg-white shadow-md" />
+                <CarouselNext className="text-healthymama-pink border-healthymama-pink/30 hover:bg-healthymama-pink/10 bg-white shadow-md" />
               </Carousel>
             </div>
           )}
@@ -920,7 +918,7 @@ export default function ConvexCommunityChat({
 
         {/* Floating Scroll to Bottom Button */}
         {!shouldAutoScroll && messages && messages.length > 0 && (
-          <div className="absolute bottom-20 right-4">
+          <div className="absolute bottom-32 right-4">
             <Button
               size="sm"
               variant="secondary"
@@ -928,40 +926,24 @@ export default function ConvexCommunityChat({
                 setShouldAutoScroll(true);
                 scrollToBottom();
               }}
-              className="h-10 w-10 rounded-full shadow-lg"
+              className="h-10 w-10 rounded-full shadow-lg bg-white border-2 border-healthymama-pink/20 text-healthymama-pink hover:bg-healthymama-pink hover:text-white transition-all"
             >
               <ChevronDown size={16} />
             </Button>
           </div>
         )}
 
-        {/* Floating Input Area - ChatGPT style */}
-        <div className="p-4 bg-gray-900">
-          {/* Model Selector */}
-          <div className="max-w-3xl mx-auto mb-2 flex items-center justify-between">
-            <label className="text-xs font-medium text-gray-400">AI Model:</label>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value as "gpt-5-mini" | "grok-4-fast" | "claude-haiku-4.5" | "gpt-4o-mini" | "gpt-4.1-mini")}
-              className="border border-blue-500 bg-blue-950 text-blue-100 rounded-lg px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-400"
-            >
-              <option value="grok-4-fast">⚡ Grok-4-Fast</option>
-              <option value="gpt-5-mini">🤖 GPT-5-Mini</option>
-              <option value="claude-haiku-4.5">🧠 Claude Haiku 4.5</option>
-              <option value="gpt-4o-mini">✨ GPT-4o Mini</option>
-              <option value="gpt-4.1-mini">🔮 GPT-4.1-Mini</option>
-            </select>
-          </div>
-
+        {/* Input Area */}
+        <div className="flex-shrink-0 z-40 p-4 bg-white/90 backdrop-blur-sm border-t border-gray-200 shadow-[0_-2px_10px_rgba(0,0,0,0.1)]">
           <div className="max-w-3xl mx-auto">
-            <div className="relative bg-gray-800 rounded-2xl shadow-lg border border-gray-700">
+            <div className="relative bg-white rounded-2xl shadow-lg border border-healthymama-pink/20 focus-within:border-healthymama-pink focus-within:ring-2 focus-within:ring-healthymama-pink/20 transition-all">
               <input
                 type="text"
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder="Ask about recipes, cooking, or dietary needs..."
-                className="w-full border-0 bg-transparent text-white placeholder-gray-400 rounded-2xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full border-0 bg-transparent text-gray-900 placeholder-gray-500 rounded-2xl px-4 py-3 pr-12 focus:outline-none"
                 disabled={isSending || !activeSessionId}
               />
               <button
@@ -969,7 +951,7 @@ export default function ConvexCommunityChat({
                 disabled={isSending || !inputMessage.trim() || !activeSessionId}
                 className={`absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-8 h-8 rounded-lg text-white transition-colors ${
                   inputMessage.trim() && !isSending && activeSessionId
-                    ? "bg-purple-600 hover:bg-purple-700"
+                    ? "bg-healthymama-pink hover:bg-healthymama-pink/90 shadow-md"
                     : "bg-gray-600"
                 }`}
               >
@@ -991,14 +973,14 @@ export default function ConvexCommunityChat({
           onClick={() => setShowSettingsOverlay(false)}
         >
           <div
-            className="bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full border border-gray-700 max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-xl shadow-2xl max-w-4xl w-full border border-gray-200 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-700">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <div>
-                <h2 className="text-lg font-semibold text-gray-100">System Prompt Editor</h2>
-                <p className="text-xs text-gray-400 mt-1">
+                <h2 className="text-lg font-semibold text-gray-900">System Prompt Editor</h2>
+                <p className="text-xs text-gray-600 mt-1">
                   {customPrompt?.promptText ? "Editing custom prompt" : "Viewing default prompt"}
                 </p>
               </div>
@@ -1006,7 +988,7 @@ export default function ConvexCommunityChat({
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowSettingsOverlay(false)}
-                className="p-1 text-gray-400 hover:text-gray-100 hover:bg-gray-700"
+                className="p-1 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
               >
                 <X size={20} />
               </Button>
@@ -1017,13 +999,13 @@ export default function ConvexCommunityChat({
               {/* Prompt Editor */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-gray-300">Current Active Prompt</h3>
+                  <h3 className="text-sm font-medium text-gray-900">Current Active Prompt</h3>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => setShowPreview(!showPreview)}
-                      className="text-xs text-gray-400 hover:text-gray-100"
+                      className="text-xs text-gray-600 hover:text-gray-900"
                     >
                       {showPreview ? "Hide Preview" : "Show Preview"}
                     </Button>
@@ -1032,11 +1014,11 @@ export default function ConvexCommunityChat({
                 <textarea
                   value={editablePrompt}
                   onChange={(e) => setEditablePrompt(e.target.value)}
-                  className="w-full h-96 p-4 bg-gray-900 border border-gray-700 rounded-lg text-gray-100 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full h-96 p-4 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder="Enter your system prompt here..."
                 />
                 <div className="flex items-center justify-between mt-2">
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-gray-600">
                     {editablePrompt.length} characters
                   </p>
                   {saveStatus === "success" && (
@@ -1051,26 +1033,26 @@ export default function ConvexCommunityChat({
               {/* Context Instructions */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-gray-300">Context Usage Instructions</h3>
-                  <p className="text-xs text-gray-400">Optional: How should the AI use the user context?</p>
+                  <h3 className="text-sm font-medium text-gray-900">Context Usage Instructions</h3>
+                  <p className="text-xs text-gray-600">Optional: How should the AI use the user context?</p>
                 </div>
                 <textarea
                   value={contextInstructions}
                   onChange={(e) => setContextInstructions(e.target.value)}
-                  className="w-full h-24 p-3 bg-gray-900 border border-gray-700 rounded-lg text-gray-100 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full h-24 p-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder="e.g., Use the profile below to personalize responses. Never mention these details explicitly."
                 />
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-gray-600 mt-1">
                   These instructions will be placed BEFORE the user context in the prompt
                 </p>
               </div>
 
               {/* Preview Mode */}
               {showPreview && (
-                <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
-                  <h3 className="text-sm font-medium text-gray-300 mb-2">Preview (with sample context)</h3>
-                  <div className="bg-gray-800 rounded p-3 max-h-64 overflow-y-auto">
-                    <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono">
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-gray-900 mb-2">Preview (with sample context)</h3>
+                  <div className="bg-white rounded p-3 max-h-64 overflow-y-auto">
+                    <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">
                       {editablePrompt.replace(
                         '[User context will be injected here at runtime]',
                         contextInstructions
@@ -1083,15 +1065,15 @@ export default function ConvexCommunityChat({
               )}
 
               {/* Quick Info */}
-              <details className="bg-gray-900/50 border border-gray-700 rounded-lg">
-                <summary className="p-3 cursor-pointer text-sm text-gray-300 hover:text-gray-100">
+              <details className="bg-gray-50 border border-gray-200 rounded-lg">
+                <summary className="p-3 cursor-pointer text-sm text-gray-700 hover:text-gray-900">
                   Current AI Settings
                 </summary>
-                <div className="p-3 pt-0 space-y-2 text-xs text-gray-400">
-                  <p><span className="text-gray-300">Model:</span> {selectedModel}</p>
-                  <p><span className="text-gray-300">AI Name:</span> {aiSettings?.aiName || "Community AI Assistant"}</p>
-                  <p><span className="text-gray-300">Temperature:</span> {aiSettings?.temperature ?? 0.7}</p>
-                  <p><span className="text-gray-300">Persona:</span> {aiSettings?.persona || "Default"}</p>
+                <div className="p-3 pt-0 space-y-2 text-xs text-gray-600">
+                  <p><span className="text-gray-700">Model:</span> {selectedModel}</p>
+                  <p><span className="text-gray-700">AI Name:</span> {aiSettings?.aiName || "Community AI Assistant"}</p>
+                  <p><span className="text-gray-700">Temperature:</span> {aiSettings?.temperature ?? 0.7}</p>
+                  <p><span className="text-gray-700">Persona:</span> {aiSettings?.persona || "Default"}</p>
                 </div>
               </details>
 

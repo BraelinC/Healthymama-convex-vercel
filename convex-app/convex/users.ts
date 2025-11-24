@@ -52,21 +52,47 @@ export const getUserProfile = query({
     userId: v.string(),
   },
   handler: async (ctx, args) => {
+    console.log("🔍 [getUserProfile] Searching for userId:", args.userId);
+
     const profile = await ctx.db
       .query("users")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .unique();
 
     if (!profile) {
+      console.warn("⚠️ [getUserProfile] No profile found for userId:", args.userId);
       return null;
     }
+
+    console.log("✅ [getUserProfile] Profile found:", {
+      _id: profile._id,
+      userId: profile.userId,
+      email: profile.email,
+      isCreator: profile.isCreator,
+    });
 
     return {
       _id: profile._id,
       userId: profile.userId,
       email: profile.email,
+      isCreator: profile.isCreator || false,
       prefs: profile.prefs,
       updatedAt: profile.updatedAt,
     };
+  },
+});
+
+// Alias for Stripe actions
+export const getUser = query({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .unique();
+
+    return user;
   },
 });

@@ -73,6 +73,49 @@ export const storeRecipeWithEmbedding = internalMutation({
 });
 
 /**
+ * Internal mutation to store ingredient embeddings for a recipe
+ */
+export const storeIngredientEmbeddings = internalMutation({
+  args: {
+    recipeId: v.id("recipes"),
+    ingredientEmbeddings: v.array(v.object({
+      ingredient: v.string(),
+      type: v.union(v.literal("main"), v.literal("other")),
+      embedding: v.array(v.float64()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    // First, remove any existing ingredient embeddings for this recipe
+    const existingEmbeddings = await ctx.db
+      .query("ingredientEmbeddings")
+      .withIndex("by_recipe", (q) => q.eq("recipeId", args.recipeId))
+      .collect();
+
+    for (const existing of existingEmbeddings) {
+      await ctx.db.delete(existing._id);
+    }
+
+    // Insert new ingredient embeddings
+    const insertedIds = [];
+    for (const ingredientData of args.ingredientEmbeddings) {
+      const id = await ctx.db.insert("ingredientEmbeddings", {
+        recipeId: args.recipeId,
+        ingredient: ingredientData.ingredient,
+        ingredientType: ingredientData.type,
+        embedding: ingredientData.embedding,
+        embeddingModel: EMBEDDING_MODEL,
+        createdAt: Date.now(),
+      });
+      insertedIds.push(id);
+    }
+
+    console.log(`✅ [INGREDIENT EMBEDDINGS] Stored ${args.ingredientEmbeddings.length} ingredient embeddings for recipe ${args.recipeId}`);
+
+    return insertedIds;
+  },
+});
+
+/**
  * Internal Mutation: Update enrichment status for extracted recipes
  */
 export const updateEnrichmentStatus = internalMutation({
@@ -93,12 +136,9 @@ export const updateEnrichmentStatus = internalMutation({
       difficulty: v.optional(v.string()),
       timeCommitment: v.optional(v.string()),
       flavorProfile: v.array(v.string()),
-      texture: v.array(v.string()),
       mainIngredients: v.array(v.string()),
-      equipment: v.array(v.string()),
       makeAhead: v.boolean(),
       mealPrepFriendly: v.boolean(),
-      confidence: v.number(),
       model: v.string(),
       enrichedAt: v.number(),
     })),

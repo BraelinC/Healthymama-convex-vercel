@@ -5,10 +5,9 @@ import { api } from "@/convex/_generated/api";
 import { CompactRecipeCard } from "@/components/recipe/CompactRecipeCard";
 import { RecipeDetailSheet } from "@/components/recipe/RecipeDetailSheet";
 import { MealPlanCookbookSelector } from "./MealPlanCookbookSelector";
-import { GroceryListPanel } from "@/components/grocery/GroceryListPanel";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Plus, X, ShoppingCart } from "lucide-react";
+import { Calendar, Plus, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface MealPlanViewProps {
@@ -34,13 +33,23 @@ export function MealPlanView({ userId }: MealPlanViewProps) {
   const [isCookbookSelectorOpen, setIsCookbookSelectorOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<{ day: number; mealType: string } | null>(null);
   const [maxDays, setMaxDays] = useState(0); // Start empty - user adds days
-  const [isGroceryPanelOpen, setIsGroceryPanelOpen] = useState(false);
+  const [longPressedCard, setLongPressedCard] = useState<string | null>(null);
 
   // Fetch meal plan data
   const mealPlanData = useQuery(
     api.mealPlan.getMealPlanByUser,
     userId ? { userId } : "skip"
   );
+
+  // Auto-detect maxDays from existing data
+  useEffect(() => {
+    if (mealPlanData && mealPlanData.length > 0) {
+      const highestDay = Math.max(...mealPlanData.map((entry: any) => entry.dayNumber));
+      if (highestDay > maxDays) {
+        setMaxDays(highestDay);
+      }
+    }
+  }, [mealPlanData]);
 
   // Mutations
   const addMealToPlan = useMutation(api.mealPlan.addMealToPlan);
@@ -133,6 +142,29 @@ export function MealPlanView({ userId }: MealPlanViewProps) {
     }
   };
 
+  // Long press handlers for mobile
+  const handleTouchStart = (mealPlanId: string) => {
+    const timeoutId = setTimeout(() => {
+      setLongPressedCard(mealPlanId);
+    }, 500); // 500ms long press
+
+    // Store timeout ID so we can clear it
+    (window as any).longPressTimeout = timeoutId;
+  };
+
+  const handleTouchEnd = () => {
+    if ((window as any).longPressTimeout) {
+      clearTimeout((window as any).longPressTimeout);
+    }
+  };
+
+  const handleTouchMove = () => {
+    // Cancel long press if user moves finger
+    if ((window as any).longPressTimeout) {
+      clearTimeout((window as any).longPressTimeout);
+    }
+  };
+
   // Organize meal plan data by day
   const organizeMealsByDay = (): DayMeals[] => {
     // Create days structure based on maxDays
@@ -206,27 +238,6 @@ export function MealPlanView({ userId }: MealPlanViewProps) {
   return (
     <>
       <div className="space-y-8">
-        {/* Action Buttons Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Add Day Button */}
-          <button
-            onClick={handleAddDay}
-            className="border-2 border-dashed border-gray-300 hover:border-purple-400 hover:bg-purple-50 rounded-lg p-6 text-center transition-all group bg-white"
-          >
-            <Plus className="w-6 h-6 mx-auto text-gray-400 group-hover:text-purple-500 mb-2" />
-            <span className="text-sm text-gray-500 group-hover:text-purple-600">Add Day</span>
-          </button>
-
-          {/* Grocery List Button */}
-          <button
-            onClick={() => setIsGroceryPanelOpen(true)}
-            className="border-2 border-dashed border-gray-300 hover:border-green-400 hover:bg-green-50 rounded-lg p-6 text-center transition-all group bg-white"
-          >
-            <ShoppingCart className="w-6 h-6 mx-auto text-gray-400 group-hover:text-green-600 mb-2" />
-            <span className="text-sm text-gray-500 group-hover:text-green-600">Grocery List</span>
-          </button>
-        </div>
-
         {/* Day Cards */}
         {mealPlanDays.map((dayData) => (
           <div key={dayData.day} className="space-y-4">
@@ -265,16 +276,34 @@ export function MealPlanView({ userId }: MealPlanViewProps) {
                 </div>
                 {dayData.meals.breakfast.length > 0 ? (
                   dayData.meals.breakfast.map((recipe) => (
-                    <div key={recipe._id} className="relative group">
+                    <div
+                      key={recipe.mealPlanId}
+                      className="relative group"
+                      onTouchStart={() => handleTouchStart(recipe.mealPlanId)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchMove={handleTouchMove}
+                    >
                       <CompactRecipeCard
                         recipe={recipe}
-                        onClick={() => handleRecipeClick(recipe)}
+                        onClick={() => {
+                          if (longPressedCard === recipe.mealPlanId) {
+                            setLongPressedCard(null);
+                          } else {
+                            handleRecipeClick(recipe);
+                          }
+                        }}
                       />
                       <button
-                        onClick={() => handleRemoveMeal(recipe.mealPlanId)}
-                        className="absolute top-2 right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveMeal(recipe.mealPlanId);
+                          setLongPressedCard(null);
+                        }}
+                        className={`absolute top-1 right-1 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-opacity shadow-md z-10 ${
+                          longPressedCard === recipe.mealPlanId ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                        }`}
                       >
-                        <X className="w-4 h-4 text-white" />
+                        <X className="w-3 h-3 text-white" />
                       </button>
                     </div>
                   ))
@@ -298,16 +327,34 @@ export function MealPlanView({ userId }: MealPlanViewProps) {
                 </div>
                 {dayData.meals.lunch.length > 0 ? (
                   dayData.meals.lunch.map((recipe) => (
-                    <div key={recipe._id} className="relative group">
+                    <div
+                      key={recipe.mealPlanId}
+                      className="relative group"
+                      onTouchStart={() => handleTouchStart(recipe.mealPlanId)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchMove={handleTouchMove}
+                    >
                       <CompactRecipeCard
                         recipe={recipe}
-                        onClick={() => handleRecipeClick(recipe)}
+                        onClick={() => {
+                          if (longPressedCard === recipe.mealPlanId) {
+                            setLongPressedCard(null);
+                          } else {
+                            handleRecipeClick(recipe);
+                          }
+                        }}
                       />
                       <button
-                        onClick={() => handleRemoveMeal(recipe.mealPlanId)}
-                        className="absolute top-2 right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveMeal(recipe.mealPlanId);
+                          setLongPressedCard(null);
+                        }}
+                        className={`absolute top-1 right-1 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-opacity shadow-md z-10 ${
+                          longPressedCard === recipe.mealPlanId ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                        }`}
                       >
-                        <X className="w-4 h-4 text-white" />
+                        <X className="w-3 h-3 text-white" />
                       </button>
                     </div>
                   ))
@@ -331,16 +378,34 @@ export function MealPlanView({ userId }: MealPlanViewProps) {
                 </div>
                 {dayData.meals.dinner.length > 0 ? (
                   dayData.meals.dinner.map((recipe) => (
-                    <div key={recipe._id} className="relative group">
+                    <div
+                      key={recipe.mealPlanId}
+                      className="relative group"
+                      onTouchStart={() => handleTouchStart(recipe.mealPlanId)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchMove={handleTouchMove}
+                    >
                       <CompactRecipeCard
                         recipe={recipe}
-                        onClick={() => handleRecipeClick(recipe)}
+                        onClick={() => {
+                          if (longPressedCard === recipe.mealPlanId) {
+                            setLongPressedCard(null);
+                          } else {
+                            handleRecipeClick(recipe);
+                          }
+                        }}
                       />
                       <button
-                        onClick={() => handleRemoveMeal(recipe.mealPlanId)}
-                        className="absolute top-2 right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveMeal(recipe.mealPlanId);
+                          setLongPressedCard(null);
+                        }}
+                        className={`absolute top-1 right-1 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-opacity shadow-md z-10 ${
+                          longPressedCard === recipe.mealPlanId ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                        }`}
                       >
-                        <X className="w-4 h-4 text-white" />
+                        <X className="w-3 h-3 text-white" />
                       </button>
                     </div>
                   ))
@@ -356,50 +421,69 @@ export function MealPlanView({ userId }: MealPlanViewProps) {
               </div>
             </div>
 
-            {/* Snacks - always show, with add button */}
+            {/* Snacks - always show multiple add slots */}
             <div className="space-y-3 pt-2">
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
                   <span className="mr-1">🍿</span> Snacks
                 </Badge>
+                <span className="text-xs text-gray-500">(Click + to add multiple)</span>
               </div>
-              {dayData.meals.snack.length > 0 ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {dayData.meals.snack.map((recipe) => (
-                    <div key={recipe._id} className="relative group">
-                      <CompactRecipeCard
-                        recipe={recipe}
-                        onClick={() => handleRecipeClick(recipe)}
-                      />
-                      <button
-                        onClick={() => handleRemoveMeal(recipe.mealPlanId)}
-                        className="absolute top-2 right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10"
-                      >
-                        <X className="w-4 h-4 text-white" />
-                      </button>
-                    </div>
-                  ))}
-                  {/* Add more snacks button */}
-                  <button
-                    onClick={() => handleAddMeal(dayData.day, "snack")}
-                    className="border-2 border-dashed border-gray-300 hover:border-purple-400 hover:bg-purple-50 rounded-lg h-40 flex flex-col items-center justify-center transition-all group"
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Show existing snacks */}
+                {dayData.meals.snack.map((recipe) => (
+                  <div
+                    key={recipe.mealPlanId}
+                    className="relative group"
+                    onTouchStart={() => handleTouchStart(recipe.mealPlanId)}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchMove={handleTouchMove}
                   >
-                    <Plus className="w-6 h-6 text-gray-400 group-hover:text-purple-500 mb-2" />
-                    <span className="text-sm text-gray-500 group-hover:text-purple-600">Add snack</span>
-                  </button>
-                </div>
-              ) : (
+                    <CompactRecipeCard
+                      recipe={recipe}
+                      onClick={() => {
+                        if (longPressedCard === recipe.mealPlanId) {
+                          setLongPressedCard(null);
+                        } else {
+                          handleRecipeClick(recipe);
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveMeal(recipe.mealPlanId);
+                        setLongPressedCard(null);
+                      }}
+                      className={`absolute top-1 right-1 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-opacity shadow-md z-10 ${
+                        longPressedCard === recipe.mealPlanId ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      <X className="w-3 h-3 text-white" />
+                    </button>
+                  </div>
+                ))}
+                {/* Always show add snack button */}
                 <button
                   onClick={() => handleAddMeal(dayData.day, "snack")}
-                  className="border-2 border-dashed border-gray-300 hover:border-purple-400 hover:bg-purple-50 rounded-lg p-6 text-center transition-all group w-full md:w-64"
+                  className="border-2 border-dashed border-gray-300 hover:border-purple-400 hover:bg-purple-50 rounded-lg h-40 flex flex-col items-center justify-center transition-all group"
                 >
-                  <Plus className="w-6 h-6 mx-auto text-gray-400 group-hover:text-purple-500 mb-2" />
+                  <Plus className="w-6 h-6 text-gray-400 group-hover:text-purple-500 mb-2" />
                   <span className="text-sm text-gray-500 group-hover:text-purple-600">Add snack</span>
                 </button>
-              )}
+              </div>
             </div>
           </div>
         ))}
+
+        {/* Add Day Button - After Days */}
+        <button
+          onClick={handleAddDay}
+          className="border-2 border-dashed border-gray-300 hover:border-purple-400 hover:bg-purple-50 rounded-lg p-6 text-center transition-all group bg-white"
+        >
+          <Plus className="w-6 h-6 mx-auto text-gray-400 group-hover:text-purple-500 mb-2" />
+          <span className="text-sm text-gray-500 group-hover:text-purple-600">Add Day</span>
+        </button>
       </div>
 
       {/* Recipe Detail Sheet */}
@@ -427,13 +511,6 @@ export function MealPlanView({ userId }: MealPlanViewProps) {
           onRecipeSelected={handleRecipeSelected}
         />
       )}
-
-      {/* Grocery List Panel */}
-      <GroceryListPanel
-        isOpen={isGroceryPanelOpen}
-        onClose={() => setIsGroceryPanelOpen(false)}
-        userId={userId}
-      />
     </>
   );
 }

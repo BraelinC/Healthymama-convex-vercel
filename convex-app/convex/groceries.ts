@@ -2,6 +2,8 @@ import { action, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
+import { normalizeUnit, parseQuantity } from "../lib/instacart-units";
+import { createRecipeViaMCP, createShoppingListViaMCP } from "./lib/instacartMCP";
 
 /**
  * Sanitize and fix common JSON errors from AI responses
@@ -23,7 +25,267 @@ function sanitizeJSON(jsonString: string): string {
 }
 
 /**
- * Generate a grocery list from user's meal plan using AI consolidation
+ * Parse ingredients using AI (OpenRouter GPT-4o-mini) into Instacart-compatible format
+ */
+export async function parseIngredientsWithAI(
+  ingredients: string[],
+  openRouterKey: string
+): Promise<Array<{
+  name: string;
+  display_text: string;
+  measurements: Array<{
+    quantity: number;
+    unit: string;
+  }>;
+}>> {
+  const supportedUnits = [
+    "cup", "cups", "tablespoon", "tablespoons", "tbsp", "teaspoon", "teaspoons", "tsp",
+    "ounce", "ounces", "oz", "fluid ounce", "fl oz", "pound", "pounds", "lb", "lbs",
+    "gram", "grams", "g", "kilogram", "kg", "liter", "l", "milliliter", "ml",
+    "gallon", "pint", "quart", "can", "jar", "package", "bunch", "head", "clove",
+    "large", "medium", "small", "each"
+  ];
+
+  const prompt = `Extract product name, quantity, and unit from each ingredient. Return valid JSON array.
+
+RULES:
+1. Extract the simplest, most searchable product name (1-3 words max)
+2. Remove ALL from name: modifiers, brands, preparation words
+3. Extract quantity as NUMBER (convert fractions: "1/2"=0.5, "1 1/2"=1.5, "2-3"=2.5)
+4. Extract unit (cup, tablespoon, teaspoon, pound, ounce, etc. or "each" as default)
+
+EXAMPLES (study these carefully):
+Input: "1 1/2 pounds carrots, peeled"
+Output: {"name": "carrots", "quantity": 1.5, "unit": "pound"}
+
+Input: "2 tablespoons olive oil"
+Output: {"name": "olive oil", "quantity": 2, "unit": "tablespoon"}
+
+Input: "1 15-ounce can chickpeas, rinsed and very well drained"
+Output: {"name": "chickpeas", "quantity": 15, "unit": "ounce"}
+
+Input: "1/2 teaspoon cumin seeds"
+Output: {"name": "cumin seeds", "quantity": 0.5, "unit": "teaspoon"}
+
+Input: "1/4 teaspoon (or more) red pepper flakes"
+Output: {"name": "red pepper flakes", "quantity": 0.25, "unit": "teaspoon"}
+
+Input: "3 tablespoons tahini"
+Output: {"name": "tahini", "quantity": 3, "unit": "tablespoon"}
+
+Input: "2 tablespoons lemon juice"
+Output: {"name": "lemon juice", "quantity": 2, "unit": "tablespoon"}
+
+Input: "1 small garlic clove, pressed or minced"
+Output: {"name": "garlic", "quantity": 1, "unit": "clove"}
+
+Input: "Salt and freshly ground black pepper to taste"
+Output: {"name": "salt and pepper", "quantity": 1, "unit": "each"}
+
+Input: "1/4 cup chopped fresh cilantro or parsley, for serving"
+Output: {"name": "cilantro", "quantity": 0.25, "unit": "cup"}
+
+Required JSON format:
+[
+  {"name": "carrots", "quantity": 1.5, "unit": "pound"},
+  {"name": "olive oil", "quantity": 2, "unit": "tablespoon"},
+  {"name": "chickpeas", "quantity": 15, "unit": "ounce"}
+]
+
+Return ONLY the JSON array. No text, no markdown, no explanations.
+
+Ingredients to parse:
+${ingredients.map((ing, i) => `${i + 1}. ${ing}`).join("\n")}
+
+Return the JSON array now:`;
+
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${openRouterKey}`,
+        "HTTP-Referer": "https://healthymama.app",
+        "X-Title": "HealthyMama Instacart Ingredient Parser",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-safeguard-20b",
+        messages: [
+          {
+            role: "system",
+            content: "You are a JSON-only ingredient parser. Return valid JSON arrays with 'name' (simple product name, 1-3 words), 'quantity' (number), and 'unit' (measurement unit) fields. Extract quantities as numbers (convert fractions). Remove modifiers/brands from names. Use 'each' as default unit.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 3000,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`OpenRouter API error (${response.status}): ${error}`);
+    }
+
+    const data = await response.json();
+    const aiResponse = data.choices?.[0]?.message?.content;
+
+    if (!aiResponse) {
+      throw new Error("No response from AI");
+    }
+
+    // Parse with robust error handling
+    let jsonText = aiResponse.match(/\[[\s\S]*\]/)?.[0];
+
+    if (!jsonText) {
+      // Try to find JSON in an object wrapper
+      const objMatch = aiResponse.match(/\{[\s\S]*"ingredients"[\s\S]*\[[\s\S]*\][\s\S]*\}/);
+      if (objMatch) {
+        const obj = JSON.parse(sanitizeJSON(objMatch[0]));
+        jsonText = JSON.stringify(obj.ingredients || obj.items || obj.list || obj.data);
+      } else {
+        throw new Error("No JSON array found in AI response");
+      }
+    }
+
+    const sanitized = sanitizeJSON(jsonText);
+    const parsed = JSON.parse(sanitized);
+
+    if (!Array.isArray(parsed)) {
+      throw new Error("AI response is not an array");
+    }
+
+    // Validate and format for Instacart, with fallback to original
+    const formatted = parsed.map((item: any, index: number) => {
+      // Extract simple product name (working)
+      const name = item.name || ingredients[index] || "Unknown ingredient";
+
+      // Use the same simple name for display (no amounts/units in display)
+      const displayText = name;
+
+      // Extract and validate quantity
+      let quantity = 1;
+      if (typeof item.quantity === 'number' && item.quantity > 0) {
+        quantity = item.quantity;
+      } else if (item.quantity) {
+        const parsed = parseQuantity(String(item.quantity));
+        quantity = parsed && parsed > 0 ? parsed : 1;
+      }
+
+      // Extract and normalize unit
+      const unit = item.unit ? normalizeUnit(item.unit) : "each";
+
+      return {
+        name: name,
+        display_text: displayText,
+        measurements: [{
+          quantity: quantity,
+          unit: unit,
+        }],
+      };
+    });
+
+    console.log(`[INSTACART] AI extracted ${formatted.length} ingredients:`,
+      formatted.slice(0, 3).map(i => `${i.name} (${i.measurements[0].quantity} ${i.measurements[0].unit})`).join(", "));
+
+    return formatted;
+  } catch (error: any) {
+    console.error("[INSTACART] AI parsing failed:", error.message);
+    throw error;
+  }
+}
+
+/**
+ * Parse ingredients using regex fallback (used when AI is unavailable)
+ */
+function parseIngredientsWithRegex(
+  ingredients: string[]
+): Array<{
+  name: string;
+  display_text: string;
+  measurements: Array<{
+    quantity: number;
+    unit: string;
+  }>;
+}> {
+  return ingredients.map(ing => {
+    // Extract quantity, unit, and name from ingredient string
+    // Examples: "2 cups flour", "1 tablespoon salt", "3 large eggs"
+    const match = ing.match(/^([\d./]+)?\s*([a-zA-Z]+)?\s*(.+)$/);
+
+    let quantity = 1;
+    let unit = "each";
+    let name = ing;
+
+    if (match) {
+      const [, qty, maybeUnit, rest] = match;
+      if (qty) {
+        quantity = parseQuantity(qty) ?? 1;
+      }
+      // Check if maybeUnit is actually a unit (not part of ingredient name)
+      const commonUnits = ["cup", "cups", "tablespoon", "tablespoons", "teaspoon", "teaspoons",
+                          "oz", "ounce", "ounces", "lb", "pound", "pounds", "gram", "grams",
+                          "kg", "kilogram", "large", "medium", "small", "bunch", "can", "jar"];
+      if (maybeUnit && commonUnits.includes(maybeUnit.toLowerCase())) {
+        unit = normalizeUnit(maybeUnit);
+        name = rest.trim();
+      } else {
+        name = (maybeUnit ? maybeUnit + " " : "") + rest.trim();
+      }
+    }
+
+    return {
+      name: name,
+      display_text: ing,
+      measurements: [{
+        quantity: quantity,
+        unit: unit,
+      }],
+    };
+  });
+}
+
+/**
+ * Simple categorization of ingredients by name
+ */
+function categorizeIngredient(name: string): string {
+  if (!name) return "other";
+  const nameLower = name.toLowerCase();
+
+  // Produce & Vegetables
+  if (nameLower.match(/(apple|banana|berry|orange|lemon|lime|avocado|tomato|lettuce|spinach|kale|carrot|potato|onion|garlic|pepper|cucumber|celery|broccoli|cauliflower|zucchini|squash|peach|pear|grape|melon|mango)/)) {
+    return "produce";
+  }
+
+  // Meat & Seafood
+  if (nameLower.match(/(chicken|beef|pork|turkey|lamb|fish|salmon|tuna|shrimp|bacon|sausage)/)) {
+    return "meat";
+  }
+
+  // Dairy & Eggs
+  if (nameLower.match(/(milk|cheese|butter|cream|yogurt|egg)/)) {
+    return "dairy";
+  }
+
+  // Bakery
+  if (nameLower.match(/(bread|bun|roll|bagel|tortilla|pita)/)) {
+    return "bakery";
+  }
+
+  // Pantry
+  if (nameLower.match(/(flour|sugar|salt|pepper|oil|vinegar|sauce|pasta|rice|bean|spice|vanilla|cocoa|baking|honey|syrup)/)) {
+    return "pantry";
+  }
+
+  // Default
+  return "other";
+}
+
+/**
+ * Generate a grocery list from user's meal plan using pre-parsed ingredients (INSTANT!)
  */
 export const generateGroceryList = action({
   args: {
@@ -31,9 +293,8 @@ export const generateGroceryList = action({
   },
   handler: async (ctx, args) => {
     const openRouterKey = process.env.OPEN_ROUTER_API_KEY;
-    if (!openRouterKey) {
-      throw new Error("OPEN_ROUTER_API_KEY not configured");
-    }
+
+    console.log(`[GROCERY LIST] Starting generation for user ${args.userId}`);
 
     // 1. Fetch user's meal plan via query
     const mealPlanEntries = await ctx.runQuery(
@@ -45,154 +306,125 @@ export const generateGroceryList = action({
       throw new Error("No meal plan found. Add recipes to your meal plan first.");
     }
 
-    // 2. Extract all ingredients from recipes
-    const allIngredients: string[] = [];
+    // 2. Collect pre-parsed ingredients from recipes
+    const allParsedIngredients: Array<{
+      name: string;
+      display_text: string;
+      quantity: number;
+      unit: string;
+    }> = [];
+
+    const unparsedIngredients: string[] = [];
     const recipeIds: Id<"userRecipes">[] = [];
 
     for (const entry of mealPlanEntries) {
       if (entry.recipe) {
         recipeIds.push(entry.recipe._id);
-        allIngredients.push(...entry.recipe.ingredients);
+
+        // Check if recipe has pre-parsed ingredients
+        if (entry.recipe.parsedIngredients && entry.recipe.parsedIngredients.length > 0) {
+          console.log(`[GROCERY LIST] ✅ Using pre-parsed ingredients from "${entry.recipe.title}"`);
+          allParsedIngredients.push(...entry.recipe.parsedIngredients);
+        } else {
+          console.log(`[GROCERY LIST] ⚠️ Recipe "${entry.recipe.title}" has no pre-parsed ingredients, will parse now`);
+          unparsedIngredients.push(...entry.recipe.ingredients);
+        }
       }
     }
 
-    if (allIngredients.length === 0) {
+    // 3. Parse any unparsed ingredients (for old recipes without pre-parsed data)
+    if (unparsedIngredients.length > 0 && openRouterKey) {
+      console.log(`[GROCERY LIST] Parsing ${unparsedIngredients.length} unparsed ingredients with AI`);
+      try {
+        const parsed = await parseIngredientsWithAI(unparsedIngredients, openRouterKey);
+        allParsedIngredients.push(...parsed);
+        console.log(`[GROCERY LIST] ✅ Parsed ${parsed.length} ingredients`);
+      } catch (error: any) {
+        console.error(`[GROCERY LIST] ❌ Failed to parse ingredients:`, error.message);
+        // Create basic fallback for unparsed ingredients
+        unparsedIngredients.forEach(ing => {
+          allParsedIngredients.push({
+            name: ing,
+            display_text: ing,
+            quantity: 1,
+            unit: "each",
+          });
+        });
+      }
+    }
+
+    if (allParsedIngredients.length === 0) {
       throw new Error("No ingredients found in meal plan recipes.");
     }
 
-    // 3. Call OpenRouter API to consolidate and categorize
-    const prompt = `You are a smart grocery list assistant. Consolidate these ingredients into a shopping list.
+    console.log(`[GROCERY LIST] Total ingredients to consolidate: ${allParsedIngredients.length}`);
 
-CRITICAL: Return ONLY valid JSON. No explanations, no markdown, no code blocks.
+    // 4. Consolidate duplicate ingredients (same name + unit)
+    const ingredientMap = new Map<string, {
+      name: string;
+      quantity: number;
+      unit: string;
+      displayText: string;
+      category: string;
+    }>();
 
-Rules:
-1. Consolidate duplicates (e.g., "2 cups flour" + "1 cup flour" = "3 cups flour")
-2. Standardize quantities and units
-3. Use ONLY these categories: produce, meat, dairy, bakery, seafood, eggs, vegetables, pantry, other
+    for (const ing of allParsedIngredients) {
+      // Extract quantity and unit from measurements array if present
+      const quantity = ing.quantity ?? ing.measurements?.[0]?.quantity ?? 1;
+      const unit = ing.unit ?? ing.measurements?.[0]?.unit ?? "each";
 
-Required JSON format (copy this structure EXACTLY):
-[
-  {
-    "name": "flour",
-    "quantity": "3",
-    "unit": "cups",
-    "category": "pantry",
-    "displayText": "3 cups flour"
-  }
-]
-
-IMPORTANT: Every property must have a colon (:) and be properly quoted. Check your JSON is valid before responding.
-
-Ingredients:
-${allIngredients.map((ing, i) => `${i + 1}. ${ing}`).join("\n")}
-
-Return the JSON array now:`;
-
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openRouterKey}`,
-        "HTTP-Referer": "https://healthymama.app",
-        "X-Title": "HealthyMama Grocery List",
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-20b",
-        messages: [
-          {
-            role: "system",
-            content: "You are a JSON-only API. Return valid JSON arrays only. No text, no markdown, no explanations.",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.1, // Lower temperature for more consistent JSON
-        max_tokens: 4000,
-        response_format: { type: "json_object" },
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`OpenRouter API error: ${error}`);
-    }
-
-    const data = await response.json();
-    const aiResponse = data.choices?.[0]?.message?.content;
-
-    if (!aiResponse) {
-      throw new Error("No response from AI");
-    }
-
-    // 4. Parse AI response with robust error handling
-    let consolidatedIngredients;
-    try {
-      // Extract JSON from response (might be wrapped in markdown code blocks)
-      let jsonText = aiResponse.match(/\[[\s\S]*\]/)?.[0];
-
-      if (!jsonText) {
-        // Try to find JSON object wrapper
-        const objMatch = aiResponse.match(/\{[\s\S]*"ingredients"[\s\S]*\[[\s\S]*\][\s\S]*\}/);
-        if (objMatch) {
-          const obj = JSON.parse(sanitizeJSON(objMatch[0]));
-          jsonText = JSON.stringify(obj.ingredients || obj.items || obj.list);
-        } else {
-          throw new Error("No JSON array found in AI response");
-        }
+      // Skip if missing required fields
+      if (!ing.name || !unit) {
+        console.warn(`[GROCERY LIST] Skipping ingredient with missing data:`, ing);
+        continue;
       }
 
-      // Sanitize and parse
-      const sanitized = sanitizeJSON(jsonText);
-      consolidatedIngredients = JSON.parse(sanitized);
+      const key = `${ing.name.toLowerCase()}_${unit.toLowerCase()}`;
 
-      // Validate structure
-      if (!Array.isArray(consolidatedIngredients)) {
-        throw new Error("Response is not an array");
+      if (ingredientMap.has(key)) {
+        // Merge quantities
+        const existing = ingredientMap.get(key)!;
+        existing.quantity += quantity;
+        existing.displayText = `${existing.quantity} ${existing.unit} ${existing.name}`;
+      } else {
+        // Add new ingredient
+        ingredientMap.set(key, {
+          name: ing.name,
+          quantity: quantity,
+          unit: unit,
+          displayText: `${quantity} ${unit} ${ing.name}`,
+          category: categorizeIngredient(ing.name),
+        });
       }
-
-      // Ensure all items have required fields
-      consolidatedIngredients = consolidatedIngredients.map((item: any) => ({
-        name: item.name || "Unknown",
-        quantity: item.quantity || "",
-        unit: item.unit || "",
-        category: item.category || "other",
-        displayText: item.displayText || item.name || "Unknown item",
-      }));
-
-    } catch (error) {
-      console.error("Failed to parse AI response:", aiResponse);
-      console.error("Parse error:", error);
-
-      // Fallback: create basic grocery list without AI
-      const fallbackIngredients = allIngredients.map((ing) => ({
-        name: ing,
-        quantity: "",
-        unit: "",
-        category: "other",
-        displayText: ing,
-      }));
-
-      consolidatedIngredients = fallbackIngredients;
-      console.log("Using fallback ingredient list");
     }
 
-    // 5. Save to database via mutation
+    const consolidatedIngredients = Array.from(ingredientMap.values());
+    console.log(`[GROCERY LIST] ✅ Consolidated to ${consolidatedIngredients.length} unique ingredients (instant!)`);
+
+    // 5. Convert to database format (quantity as string)
+    const ingredientsForDB = consolidatedIngredients.map(ing => ({
+      name: ing.name,
+      quantity: String(ing.quantity),  // Convert number to string for database
+      unit: ing.unit,
+      category: ing.category,
+      displayText: ing.displayText,
+    }));
+
+    // 6. Save to database via mutation
     const listId = await ctx.runMutation(
       api.groceries.saveGroceryList,
       {
         userId: args.userId,
         mealPlanSnapshot: recipeIds,
-        consolidatedIngredients,
+        consolidatedIngredients: ingredientsForDB,
       }
     );
 
     return {
       listId,
-      consolidatedIngredients,
+      consolidatedIngredients: ingredientsForDB,  // Return DB format (strings)
       recipeCount: recipeIds.length,
-      ingredientCount: consolidatedIngredients.length,
+      ingredientCount: ingredientsForDB.length,
     };
   },
 });
@@ -346,87 +578,6 @@ export const triggerGroceryListRegeneration = mutation({
 // ========== INSTACART API INTEGRATION ==========
 
 /**
- * Instacart-supported units (from official API docs)
- * https://docs.instacart.com/developer_platform_api/api/units_of_measurement/
- */
-const ALL_VALID_UNITS = [
-  // Volume
-  'cup', 'cups', 'c', 'fl oz', 'can', 'container', 'jar', 'pouch', 'ounce',
-  'gallon', 'gallons', 'gal', 'gals', 'milliliter', 'millilitre', 'milliliters',
-  'millilitres', 'ml', 'mls', 'liter', 'litre', 'liters', 'litres', 'l',
-  'pint', 'pints', 'pt', 'pts', 'quart', 'quarts', 'qt', 'qts',
-  'tablespoon', 'tablespoons', 'tb', 'tbs', 'teaspoon', 'teaspoons', 'ts', 'tsp', 'tspn',
-  // Weight
-  'gram', 'grams', 'g', 'gs', 'kilogram', 'kilograms', 'kg', 'kgs', 'lb', 'bag',
-  'per lb', 'ounce', 'ounces', 'oz', 'pound', 'pounds', 'lbs',
-  // Count
-  'bunch', 'bunches', 'cans', 'each', 'ears', 'head', 'heads',
-  'large', 'lrg', 'lge', 'lg', 'medium', 'med', 'md',
-  'package', 'packages', 'packet', 'small', 'sm', 'small ears',
-  'small head', 'small heads',
-];
-
-const UNIT_ALIASES: Record<string, string> = {
-  'tbsp': 'tablespoon', 'tbsps': 'tablespoons', 'T': 'tablespoon', 'Tbsp': 'tablespoon',
-  'tsps': 'teaspoons', 't': 'teaspoon', 'Tsp': 'teaspoon',
-  'Cup': 'cup', 'Cups': 'cups', 'oz.': 'oz', 'Oz': 'oz', 'ozs': 'ounces',
-  'Lb': 'lb', 'Lbs': 'lbs', 'LB': 'lb', 'LBS': 'lbs', 'Pound': 'pound',
-  'G': 'g', 'Gram': 'gram', 'Grams': 'grams',
-  'Kg': 'kg', 'KG': 'kg', 'Kilogram': 'kilogram', 'Kilograms': 'kilograms',
-  'L': 'l', 'Liter': 'liter', 'Liters': 'liters', 'Litre': 'litre', 'Litres': 'litres',
-  'ML': 'ml', 'Ml': 'ml', 'Milliliter': 'milliliter', 'Milliliters': 'milliliters',
-  'Gal': 'gal', 'Gallon': 'gallon', 'Gallons': 'gallons',
-  'Pint': 'pint', 'Pints': 'pints', 'Quart': 'quart', 'Quarts': 'quarts',
-  'piece': 'each', 'pieces': 'each', 'whole': 'each', 'item': 'each', 'items': 'each',
-  'bottle': 'container', 'bottles': 'container', 'box': 'container', 'boxes': 'container',
-  'carton': 'container', 'cartons': 'container',
-};
-
-/**
- * Normalize unit to Instacart-supported format
- */
-function normalizeUnit(unit: string | undefined): string {
-  if (!unit || unit.trim() === '') return 'each';
-
-  const trimmed = unit.trim();
-
-  // Already valid?
-  if (ALL_VALID_UNITS.includes(trimmed)) return trimmed;
-
-  // Check aliases
-  if (UNIT_ALIASES[trimmed]) return UNIT_ALIASES[trimmed];
-  if (UNIT_ALIASES[trimmed.toLowerCase()]) return UNIT_ALIASES[trimmed.toLowerCase()];
-
-  // Case-insensitive match
-  for (const validUnit of ALL_VALID_UNITS) {
-    if (trimmed.toLowerCase() === validUnit.toLowerCase()) return validUnit;
-  }
-
-  console.warn(`Unknown unit "${unit}", defaulting to "each"`);
-  return 'each';
-}
-
-/**
- * Parse quantity string (handles fractions like "1/2")
- */
-function parseQuantity(quantity: string | undefined): number {
-  if (!quantity || quantity.trim() === '') return 1;
-
-  const trimmed = quantity.trim();
-
-  // Handle fractions
-  if (trimmed.includes('/')) {
-    const [numerator, denominator] = trimmed.split('/').map(Number);
-    if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
-      return numerator / denominator;
-    }
-  }
-
-  const num = parseFloat(trimmed);
-  return (!isNaN(num) && num > 0) ? num : 1;
-}
-
-/**
  * Create Instacart shopping list via official API
  * Runs in Convex action where INSTACART_API_KEY environment variable is accessible
  */
@@ -445,71 +596,169 @@ export const createInstacartShoppingList = action({
   handler: async (ctx, args) => {
     try {
       const apiKey = process.env.INSTACART_API_KEY;
+      const environment = process.env.INSTACART_ENVIRONMENT || "development";
 
       if (!apiKey) {
-        console.warn("[INSTACART] INSTACART_API_KEY not configured in Convex environment");
-        return generateFallbackUrl(args.ingredients);
+        console.error("[INSTACART SHOPPING LIST] INSTACART_API_KEY not configured");
+        throw new Error("INSTACART_API_KEY not configured");
       }
 
-      // Prepare ingredients with measurements array (Instacart recipe format)
+      console.log(`[INSTACART SHOPPING LIST] Environment: ${environment}`);
+      console.log(`[INSTACART SHOPPING LIST] API Key present: ${apiKey ? 'YES (length: ' + apiKey.length + ')' : 'NO'}`);
+      console.log(`[INSTACART SHOPPING LIST] Creating shopping list with ${args.ingredients.length} items`);
+
+      // Prepare ingredients with measurements array (Instacart format)
       const ingredients = args.ingredients.map(ing => ({
         name: ing.name,
         display_text: ing.displayText,
         measurements: [{
-          quantity: parseQuantity(ing.quantity),
-          unit: normalizeUnit(ing.unit),
+          quantity: parseQuantity(ing.quantity) ?? 1,
+          unit: normalizeUnit(ing.unit || ""),
         }],
       }));
 
-      console.log(`[INSTACART] Creating recipe page with ${ingredients.length} items`);
+      console.log(`[INSTACART SHOPPING LIST] Sample ingredients:`, JSON.stringify(ingredients.slice(0, 3), null, 2));
+      console.log(`[INSTACART SHOPPING LIST] ALL ingredients being passed to MCP:`, JSON.stringify(ingredients, null, 2));
 
-      // Call Instacart Developer Platform API (recipe endpoint)
-      const response = await fetch("https://connect.dev.instacart.tools/idp/v1/products/recipe", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      // Call Instacart via MCP (Model Context Protocol) - use recipe tool (same as single recipes)
+      console.log(`[INSTACART SHOPPING LIST] Calling MCP with environment: ${environment}`);
+
+      const instacartUrl = await createRecipeViaMCP(
+        {
           title: "Your Meal Plan Grocery List",
-          imageUrl: "",
-          link_type: "recipe",
-          instructions: ["Shop for these ingredients for your meal plan."],
           ingredients: ingredients,
-          landing_page_configuration: {
-            partner_linkback_url: "https://healthymama.app",
-            enable_pantry_items: true,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[INSTACART] API error (${response.status}):`, errorText);
-
-        if (response.status === 429) {
-          console.warn("[INSTACART] Rate limited by API");
-        }
-
-        return generateFallbackUrl(args.ingredients);
-      }
-
-      const data = await response.json();
-      // Recipe endpoint returns "products_link_url" or "recipe_url"
-      const instacartUrl = data.products_link_url || data.recipe_url;
+          instructions: ["Shop for these ingredients from your meal plan."],
+          imageUrl: undefined,
+          servings: undefined,
+        },
+        apiKey,
+        environment
+      );
 
       if (instacartUrl) {
-        console.log(`[INSTACART] Successfully created recipe page: ${instacartUrl}`);
+        console.log(`[INSTACART SHOPPING LIST] ✅ Successfully created shopping list: ${instacartUrl}`);
         return instacartUrl;
       }
 
-      return generateFallbackUrl(args.ingredients);
-    } catch (error) {
-      console.error("[INSTACART] Failed to create shopping list:", error);
-      return generateFallbackUrl(args.ingredients);
+      console.error("[INSTACART SHOPPING LIST] ❌ No URL returned from MCP");
+      throw new Error("No Instacart URL returned from MCP");
+    } catch (error: any) {
+      console.error("[INSTACART SHOPPING LIST] ❌ Fatal error:", {
+        message: error.message,
+        status: error.status,
+        fullError: error.toString(),
+      });
+      // Don't use fallback - throw the error so user can see what went wrong
+      throw error;
     }
   },
 });
+
+/**
+ * Create Instacart shopping link for a single recipe
+ * Runs in Convex action where INSTACART_API_KEY environment variable is accessible
+ */
+export const createInstacartRecipeLink = action({
+  args: {
+    title: v.string(),
+    ingredients: v.array(v.string()),
+    imageUrl: v.optional(v.string()),
+    servings: v.optional(v.union(v.string(), v.number())),
+    instructions: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const apiKey = process.env.INSTACART_API_KEY;
+      const openRouterKey = process.env.OPEN_ROUTER_API_KEY;
+      const environment = process.env.INSTACART_ENVIRONMENT || "development";
+
+      // Determine API endpoint based on environment
+      const apiUrl = environment === "production"
+        ? "https://connect.instacart.com/idp/v1/products/recipe"
+        : "https://connect.dev.instacart.tools/idp/v1/products/recipe";
+
+      if (!apiKey) {
+        console.error("[INSTACART] INSTACART_API_KEY not configured in Convex environment");
+        throw new Error("INSTACART_API_KEY not configured");
+      }
+
+      console.log(`[INSTACART] Environment: ${environment}`);
+      console.log(`[INSTACART] API Key present: ${apiKey ? 'YES (length: ' + apiKey.length + ')' : 'NO'}`);
+      console.log(`[INSTACART] OpenRouter Key present: ${openRouterKey ? 'YES' : 'NO'}`);
+
+      // Parse ingredients: Try AI first, fall back to regex
+      let ingredients;
+
+      if (openRouterKey) {
+        try {
+          console.log(`[INSTACART] Parsing ${args.ingredients.length} ingredients with AI (gpt-4o-mini)`);
+          const startTime = Date.now();
+
+          ingredients = await parseIngredientsWithAI(args.ingredients, openRouterKey);
+
+          const duration = Date.now() - startTime;
+          console.log(`[INSTACART] ✅ AI parsing successful (${duration}ms)`);
+        } catch (aiError: any) {
+          console.error(`[INSTACART] ❌ AI parsing failed:`, {
+            message: aiError.message,
+            status: aiError.status,
+            fullError: aiError.toString(),
+          });
+          console.log(`[INSTACART] Falling back to regex parsing`);
+          ingredients = parseIngredientsWithRegex(args.ingredients);
+        }
+      } else {
+        console.log(`[INSTACART] OPEN_ROUTER_API_KEY not configured, using regex parsing`);
+        ingredients = parseIngredientsWithRegex(args.ingredients);
+      }
+
+      console.log(`[INSTACART] Creating recipe page for "${args.title}" with ${ingredients.length} items`);
+      console.log(`[INSTACART] Sample ingredients being sent to MCP:`, JSON.stringify(ingredients.slice(0, 3), null, 2));
+
+      // Call Instacart via MCP (Model Context Protocol)
+      console.log(`[INSTACART] Calling MCP with environment: ${environment}`);
+
+      const instacartUrl = await createRecipeViaMCP(
+        {
+          title: args.title,
+          ingredients: ingredients,
+          instructions: args.instructions,
+          imageUrl: args.imageUrl,
+          servings: typeof args.servings === "string"
+            ? parseInt(args.servings) || undefined
+            : args.servings,
+        },
+        apiKey,
+        environment
+      );
+
+      if (instacartUrl) {
+        console.log(`[INSTACART MCP] ✅ Successfully created recipe page: ${instacartUrl}`);
+        return instacartUrl;
+      }
+
+      console.error("[INSTACART MCP] ❌ No URL returned from MCP");
+      throw new Error("No Instacart URL returned from MCP");
+    } catch (error: any) {
+      console.error("[INSTACART] ❌ Fatal error creating recipe link:", {
+        message: error.message,
+        status: error.status,
+        fullError: error.toString(),
+      });
+      // Don't use fallback - throw the error so user can see what went wrong
+      throw error;
+    }
+  },
+});
+
+/**
+ * Fallback: Generate simple Instacart search URL for a recipe
+ */
+function generateRecipeFallbackUrl(ingredients: string[]): string {
+  const items = ingredients.join(", ");
+  const encodedItems = encodeURIComponent(items);
+  return `https://www.instacart.com/store/search?query=${encodedItems}`;
+}
 
 /**
  * Fallback: Generate simple Instacart search URL

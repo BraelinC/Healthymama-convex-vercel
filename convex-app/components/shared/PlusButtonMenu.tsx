@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import { Heart, BookOpen, X } from "lucide-react";
+import { Heart, BookOpen, X, Video } from "lucide-react";
 
 interface PlusButtonMenuProps {
   isOpen: boolean;
   onClose: () => void;
   onAddRecipe: () => void;
   onViewFavorites: () => void;
+  onImportVideo: () => void;
 }
 
 interface MenuItem {
@@ -22,8 +23,18 @@ export function PlusButtonMenu({
   onClose,
   onAddRecipe,
   onViewFavorites,
+  onImportVideo,
 }: PlusButtonMenuProps) {
   const menuItems: MenuItem[] = [
+    {
+      icon: <Video className="w-5 h-5" />,
+      title: "Import from Anywhere",
+      description: "YouTube, Instagram, TikTok & more",
+      onClick: () => {
+        onImportVideo();
+        onClose();
+      },
+    },
     {
       icon: <Heart className="w-5 h-5" />,
       title: "Favorites",
@@ -66,15 +77,15 @@ export function PlusButtonMenu({
       />
 
       {/* Floating Menu Card - Positioned above FAB button */}
-      <div className="fixed bottom-44 right-8 z-50 w-80 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="fixed bottom-44 right-8 z-50 w-80 bg-white rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">
             Quick Actions
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            className="text-gray-400 hover:text-gray-600 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -86,16 +97,16 @@ export function PlusButtonMenu({
             <button
               key={index}
               onClick={item.onClick}
-              className="w-full flex items-start gap-4 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left"
+              className="w-full flex items-start gap-4 p-3 rounded-lg hover:bg-red-50 transition-colors text-left"
             >
-              <div className="flex-shrink-0 mt-0.5 text-gray-600 dark:text-gray-400">
+              <div className="flex-shrink-0 mt-0.5 text-healthymama-red">
                 {item.icon}
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-base text-gray-900 dark:text-gray-100">
+                <h3 className="font-semibold text-base text-gray-900">
                   {item.title}
                 </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                <p className="text-sm text-gray-600 mt-0.5">
                   {item.description}
                 </p>
               </div>

@@ -120,11 +120,56 @@ export function GroceryListPanel({ isOpen, onClose, userId }: GroceryListPanelPr
     }
   };
 
-  // Handle opening Instacart
-  const handleOpenInstacart = () => {
-    const url = instacartUrl || groceryList?.instacartUrl;
-    if (url) {
-      window.open(url, '_blank');
+  // Handle opening Instacart - auto-generate if needed
+  const handleOpenInstacart = async () => {
+    try {
+      // Check if we already have an Instacart URL
+      const existingUrl = instacartUrl || groceryList?.instacartUrl;
+
+      // Check if list is stale (meal plan changed since list was generated)
+      const isStale = isGroceryListStale();
+
+      if (existingUrl && !isStale) {
+        // List is fresh, reuse existing URL
+        console.log('[GROCERY LIST] Using cached Instacart URL (list is fresh)');
+        window.open(existingUrl, '_blank');
+        return;
+      }
+
+      if (isStale) {
+        console.log('[GROCERY LIST] Grocery list is stale, regenerating...');
+      } else {
+        console.log('[GROCERY LIST] No grocery list exists, generating...');
+      }
+
+      // Need to generate list first (either stale or missing)
+      setIsGenerating(true);
+      setError(null);
+
+      const response = await fetch("/api/groceries/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate grocery list");
+      }
+
+      const data = await response.json();
+
+      if (data.instacartUrl) {
+        setInstacartUrl(data.instacartUrl);
+        // Open Instacart in new tab
+        window.open(data.instacartUrl, '_blank');
+      } else {
+        throw new Error("No Instacart URL generated");
+      }
+    } catch (err: any) {
+      console.error("Error opening Instacart:", err);
+      setError(err.message || "Failed to open Instacart");
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -153,6 +198,39 @@ export function GroceryListPanel({ isOpen, onClose, userId }: GroceryListPanelPr
 
   const hasIngredients = Object.keys(categorizedIngredients).length > 0;
   const checkedItems = new Set(groceryList?.checkedItems || []);
+
+  // Check if grocery list is stale (meal plan has changed since list was generated)
+  const isGroceryListStale = () => {
+    if (!groceryList || !mealPlan || mealPlan.length === 0) {
+      return false;
+    }
+
+    // Extract current recipe IDs from meal plan
+    const currentRecipeIds = mealPlan
+      .map((entry: any) => entry.userRecipeId)
+      .sort();
+
+    // Extract snapshot recipe IDs from grocery list
+    const snapshotRecipeIds = [...(groceryList.mealPlanSnapshot || [])].sort();
+
+    // Compare arrays - check length first
+    if (currentRecipeIds.length !== snapshotRecipeIds.length) {
+      console.log('[GROCERY LIST] Stale detected: length mismatch', {
+        current: currentRecipeIds.length,
+        snapshot: snapshotRecipeIds.length
+      });
+      return true;
+    }
+
+    // Check if any IDs differ
+    const isDifferent = currentRecipeIds.some((id: string, index: number) => id !== snapshotRecipeIds[index]);
+
+    if (isDifferent) {
+      console.log('[GROCERY LIST] Stale detected: recipe IDs differ');
+    }
+
+    return isDifferent;
+  };
 
   return (
     <>
@@ -218,16 +296,6 @@ export function GroceryListPanel({ isOpen, onClose, userId }: GroceryListPanelPr
               </div>
             ) : (
               <div className="space-y-6">
-                {/* Regenerate button */}
-                <button
-                  onClick={handleGenerateList}
-                  disabled={isGenerating}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg transition-colors text-sm"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Regenerate List
-                </button>
-
                 {/* Categorized ingredients */}
                 {Object.entries(categorizedIngredients).map(([category, items]) => (
                   <div key={category}>
@@ -274,16 +342,25 @@ export function GroceryListPanel({ isOpen, onClose, userId }: GroceryListPanelPr
           </div>
         </div>
 
-        {/* Footer */}
-        {hasIngredients && (
+        {/* Footer - Always show if we have a meal plan */}
+        {mealPlan && mealPlan.length > 0 && (
           <div className="absolute bottom-0 left-0 right-0 p-4 border-t dark:border-gray-800 bg-white dark:bg-gray-900">
             <button
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
               onClick={handleOpenInstacart}
-              disabled={!instacartUrl && !groceryList?.instacartUrl}
+              disabled={isGenerating}
             >
-              <ExternalLink className="w-4 h-4" />
-              Open in Instacart
+              {isGenerating ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Generating List...
+                </>
+              ) : (
+                <>
+                  <ExternalLink className="w-4 h-4" />
+                  Shop on Instacart
+                </>
+              )}
             </button>
           </div>
         )}

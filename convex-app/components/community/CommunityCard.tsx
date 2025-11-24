@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { ImageWithFallback } from "../shared/ImageWithFallback";
 
 interface CommunityCardProps {
+  id?: string;
   name: string;
   image: string;
   rating: number;
@@ -13,13 +14,16 @@ interface CommunityCardProps {
   nationalities: string[];
   creator: {
     name: string;
-    avatar: string;
+    avatar?: string;
   };
-  price: number;
-  priceType: "month" | "year" | "free";
+  // Multi-tier pricing (in cents)
+  monthlyPrice?: number;
+  yearlyPrice?: number;
+  lifetimePrice?: number;
 }
 
 export function CommunityCard({
+  id,
   name,
   image,
   rating,
@@ -27,9 +31,24 @@ export function CommunityCard({
   memberCount,
   nationalities,
   creator,
-  price,
-  priceType,
+  monthlyPrice,
+  yearlyPrice,
+  lifetimePrice,
 }: CommunityCardProps) {
+  // Determine lowest price for display
+  const getLowestPrice = () => {
+    const prices = [
+      monthlyPrice ? { amount: monthlyPrice, label: "/mo" } : null,
+      yearlyPrice ? { amount: Math.round(yearlyPrice / 12), label: "/mo" } : null,
+      lifetimePrice ? { amount: lifetimePrice, label: " lifetime" } : null,
+    ].filter(Boolean) as Array<{ amount: number; label: string }>;
+
+    if (prices.length === 0) return null;
+
+    return prices.reduce((min, curr) => (curr.amount < min.amount ? curr : min));
+  };
+
+  const lowestPrice = getLowestPrice();
   return (
     <div className="overflow-hidden rounded-lg bg-white shadow-md hover:shadow-xl hover:scale-105 transition-all duration-300 cursor-pointer">
       {/* Image Section */}
@@ -86,13 +105,14 @@ export function CommunityCard({
           </div>
 
           <div className="flex items-center gap-1 text-red-500 font-medium">
-            {price === 0 ? (
+            {!lowestPrice ? (
               <span className="text-sm">Free</span>
             ) : (
               <>
                 <DollarSign className="h-4 w-4" />
                 <span className="text-sm">
-                  {price}/{priceType === "month" ? "mo" : "yr"}
+                  {(lowestPrice.amount / 100).toFixed(2)}
+                  {lowestPrice.label}
                 </span>
               </>
             )}

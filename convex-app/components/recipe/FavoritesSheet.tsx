@@ -41,17 +41,17 @@ export function FavoritesSheet({
   return (
     <>
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="bottom" className="h-[90vh] rounded-t-2xl">
+      <SheetContent side="bottom" className="h-[90vh] rounded-t-2xl bg-white">
         <SheetHeader className="mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-              <Heart className="w-5 h-5 text-red-600 dark:text-red-400 fill-red-600 dark:fill-red-400" />
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-50 to-pink-50 flex items-center justify-center">
+              <Heart className="w-5 h-5 text-healthymama-red fill-healthymama-red" />
             </div>
-            <SheetTitle className="text-left text-2xl">
+            <SheetTitle className="text-left text-2xl text-gray-900">
               Your Favorites
             </SheetTitle>
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+          <p className="text-sm text-gray-600 mt-2">
             {favoriteRecipes.length} {favoriteRecipes.length === 1 ? 'recipe' : 'recipes'} saved
           </p>
         </SheetHeader>
@@ -60,11 +60,11 @@ export function FavoritesSheet({
         <div className="overflow-y-auto h-[calc(90vh-140px)] pb-6">
           {favoriteRecipes.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center">
-              <Heart className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              <Heart className="w-16 h-16 text-red-200 mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
                 No favorites yet
               </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
+              <p className="text-sm text-gray-600 max-w-sm">
                 Start favoriting recipes by clicking the heart icon on any recipe card
               </p>
             </div>

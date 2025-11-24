@@ -210,9 +210,7 @@ function createRecipeEmbeddingTextWithEnrichedTags(recipe: {
     difficulty?: string;
     timeCommitment?: string;
     flavorProfile: string[];
-    texture: string[];
     mainIngredients: string[];
-    equipment: string[];
     makeAhead: boolean;
     mealPrepFriendly: boolean;
   };
@@ -220,75 +218,122 @@ function createRecipeEmbeddingTextWithEnrichedTags(recipe: {
   const parts: string[] = [];
   const meta = recipe.enrichedMetadata;
 
-  // 1. Rich semantic introduction with cuisine context
+  // 1. Natural intro (NO labels, NO filler - matches query format)
   if (meta.cuisine) {
-    parts.push(`This is a ${meta.cuisine} recipe for ${recipe.title}.`);
+    parts.push(`${meta.cuisine} ${recipe.title}`);
   } else {
-    parts.push(`This is a recipe for ${recipe.title}.`);
+    parts.push(recipe.title);
   }
 
-  // 2. Description
+  // 2. Description (natural language)
   if (recipe.description) {
     parts.push(recipe.description);
   }
 
-  // 3. Comprehensive dietary & allergen info
+  // 3. Diet tags (direct keywords, NO labels)
   if (meta.dietTags.length > 0) {
-    parts.push(`\nDietary: ${meta.dietTags.join(", ")}`);
+    parts.push(meta.dietTags.join(", "));
   }
+
+  // 4. Allergens (direct keywords)
   if (meta.allergens.length > 0) {
-    parts.push(`Allergens: Contains ${meta.allergens.join(", ")}`);
+    parts.push(`contains ${meta.allergens.join(", ")}`);
   }
 
-  // 4. Meal context (AI-enhanced)
+  // 5. Meal types (direct keywords, NO labels)
   if (meta.mealTypes.length > 0) {
-    parts.push(`Meal Type: ${meta.mealTypes.join(", ")}`);
+    parts.push(meta.mealTypes.join(", "));
   }
 
-  // 5. Cooking characteristics
+  // 6. Cooking methods (direct keywords, NO labels)
   if (meta.cookingMethods.length > 0) {
-    parts.push(`\nCooking Methods: ${meta.cookingMethods.join(", ")}`);
+    parts.push(meta.cookingMethods.join(", "));
   }
+
+  // 7. Difficulty (direct keyword)
   if (meta.difficulty) {
-    parts.push(`Difficulty: ${meta.difficulty}`);
+    parts.push(meta.difficulty);
   }
+
+  // 8. Time commitment (direct keyword)
   if (meta.timeCommitment) {
-    parts.push(`Time Commitment: ${meta.timeCommitment}`);
+    parts.push(meta.timeCommitment);
   }
 
-  // 6. Flavor & texture (AI-identified)
+  // 9. Flavor profile (direct keywords, NO labels)
   if (meta.flavorProfile.length > 0) {
-    parts.push(`Flavor Profile: ${meta.flavorProfile.join(", ")}`);
-  }
-  if (meta.texture.length > 0) {
-    parts.push(`Texture: ${meta.texture.join(", ")}`);
+    parts.push(meta.flavorProfile.join(", "));
   }
 
-  // 7. Equipment needed
-  if (meta.equipment.length > 0) {
-    parts.push(`Equipment: ${meta.equipment.join(", ")}`);
-  }
-
-  // 8. Meal prep flags
+  // 10. Meal prep flags (direct keywords)
   const prepFlags: string[] = [];
-  if (meta.makeAhead) prepFlags.push("can be made ahead");
+  if (meta.makeAhead) prepFlags.push("make ahead");
   if (meta.mealPrepFriendly) prepFlags.push("meal prep friendly");
   if (prepFlags.length > 0) {
-    parts.push(`\nMeal Prep: ${prepFlags.join(", ")}`);
+    parts.push(prepFlags.join(", "));
   }
 
-  // 9. Key ingredients (AI-identified)
+  // 11. Main ingredients (direct keywords, NO labels)
   if (meta.mainIngredients.length > 0) {
-    parts.push(`\nMain Ingredients: ${meta.mainIngredients.join(", ")}`);
+    parts.push(meta.mainIngredients.join(", "));
   }
 
-  // 10. Full ingredient list
-  parts.push(`\nFull Ingredient List: ${recipe.ingredients.join(", ")}`);
+  // 12. Full ingredient list (direct keywords)
+  parts.push(recipe.ingredients.join(", "));
 
-  // 11. Instructions
-  parts.push(`\nPreparation Instructions: ${recipe.instructions.join(" ")}`);
+  // 13. Instructions (natural language)
+  parts.push(recipe.instructions.join(" "));
 
-  return parts.join("\n");
+  // Join with periods for natural flow (matches query style)
+  return parts.join(". ");
+}
+
+/**
+ * Generate individual embeddings for ingredients
+ * Creates separate embeddings for main ingredients and combined embedding for others
+ */
+async function generateIngredientEmbeddings(recipe: {
+  ingredients: string[];
+  enrichedMetadata: {
+    mainIngredients: string[];
+  };
+}): Promise<Array<{ ingredient: string; type: "main" | "other"; embedding: number[] }>> {
+  const embeddings: Array<{ ingredient: string; type: "main" | "other"; embedding: number[] }> = [];
+
+  const mainIngredients = recipe.enrichedMetadata.mainIngredients;
+  const allIngredients = recipe.ingredients;
+
+  // Generate individual embeddings for each main ingredient
+  for (const mainIngredient of mainIngredients) {
+    const embeddingText = `Ingredient: ${mainIngredient}`;
+    const embedding = await generateEmbedding(embeddingText);
+    embeddings.push({
+      ingredient: mainIngredient,
+      type: "main",
+      embedding,
+    });
+  }
+
+  // Find remaining ingredients (all ingredients not in main ingredients)
+  const mainIngredientSet = new Set(mainIngredients.map(ing => ing.toLowerCase().trim()));
+  const otherIngredients = allIngredients.filter(ing => {
+    // Check if this ingredient is one of the main ones
+    const ingLower = ing.toLowerCase().trim();
+    return !mainIngredientSet.has(ingLower);
+  });
+
+  // Generate one combined embedding for all other ingredients
+  if (otherIngredients.length > 0) {
+    const otherIngredientsText = `Other Ingredients: ${otherIngredients.join(", ")}`;
+    const embedding = await generateEmbedding(otherIngredientsText);
+    embeddings.push({
+      ingredient: otherIngredients.join(", "),
+      type: "other",
+      embedding,
+    });
+  }
+
+  return embeddings;
 }
 
 /**
@@ -302,7 +347,7 @@ export const embedExtractedRecipe = action({
   },
   handler: async (ctx, args) => {
     // Get the extracted recipe
-    const extractedRecipe = await ctx.runQuery(internal.recipeQueries.getExtractedRecipeById, {
+    const extractedRecipe = await ctx.runQuery(internal["recipes/recipeQueries"].getExtractedRecipeById, {
       recipeId: args.extractedRecipeId,
     });
 
@@ -329,7 +374,11 @@ export const embedExtractedRecipe = action({
         enrichedMetadata: extractedRecipe.enrichedMetadata,
       });
 
-      dietTags = extractedRecipe.enrichedMetadata.dietTags;
+      // Merge dietTags and mealTypes for filtering (e.g., "vegan", "breakfast", "lunch")
+      dietTags = [
+        ...extractedRecipe.enrichedMetadata.dietTags,
+        ...extractedRecipe.enrichedMetadata.mealTypes,
+      ];
     } else {
       console.log(`⚙️ [RECIPE EMBEDDING] Using keyword inference for "${extractedRecipe.title}"`);
 
@@ -356,7 +405,7 @@ export const embedExtractedRecipe = action({
     console.log(`✅ [RECIPE EMBEDDING] Generated embedding for "${extractedRecipe.title}" (${embedding.length} dims)`);
 
     // Store in recipes table
-    const recipeId = await ctx.runMutation(internal.recipeMutations.storeRecipeWithEmbedding, {
+    const recipeId = await ctx.runMutation(internal["recipes/recipeMutations"].storeRecipeWithEmbedding, {
       name: extractedRecipe.title,
       description: extractedRecipe.description || "",
       ingredients: extractedRecipe.ingredients,
@@ -370,6 +419,29 @@ export const embedExtractedRecipe = action({
     });
 
     console.log(`💾 [RECIPE EMBEDDING] Stored recipe in vector database with ID: ${recipeId}`);
+
+    // Generate and store ingredient embeddings if enriched metadata exists
+    if (extractedRecipe.enrichedMetadata && extractedRecipe.enrichedMetadata.mainIngredients.length > 0) {
+      console.log(`🔍 [INGREDIENT EMBEDDING] Generating individual ingredient embeddings for "${extractedRecipe.title}"`);
+
+      try {
+        const ingredientEmbeddings = await generateIngredientEmbeddings({
+          ingredients: extractedRecipe.ingredients,
+          enrichedMetadata: extractedRecipe.enrichedMetadata,
+        });
+
+        console.log(`✅ [INGREDIENT EMBEDDING] Generated ${ingredientEmbeddings.length} ingredient embeddings (${extractedRecipe.enrichedMetadata.mainIngredients.length} main + others)`);
+
+        // Store ingredient embeddings
+        await ctx.runMutation(internal["recipes/recipeMutations"].storeIngredientEmbeddings, {
+          recipeId,
+          ingredientEmbeddings,
+        });
+      } catch (error: any) {
+        console.error(`🚨 [INGREDIENT EMBEDDING] Failed to generate ingredient embeddings for "${extractedRecipe.title}":`, error.message);
+        // Don't fail the whole operation if ingredient embeddings fail
+      }
+    }
 
     return {
       recipeId,
@@ -393,8 +465,8 @@ export const batchEmbedExtractedRecipes = action({
     let successCount = 0;
     let failureCount = 0;
 
-    // Process embeddings in parallel batches for maximum speed
-    const concurrency = 50; // ULTRA mode: Generate 50 embeddings simultaneously
+    // Process embeddings in parallel batches (reduced to avoid rate limits)
+    const concurrency = 5; // Process 5 embeddings simultaneously to avoid OpenAI rate limits
     console.log(`⚡ [BATCH EMBEDDING] Processing ${args.extractedRecipeIds.length} recipes with concurrency ${concurrency}...`);
 
     for (let i = 0; i < args.extractedRecipeIds.length; i += concurrency) {
@@ -408,7 +480,7 @@ export const batchEmbedExtractedRecipes = action({
       const batchResults = await Promise.allSettled(
         batch.map(async (recipeId) => {
           try {
-            const result = await ctx.runAction(internal.recipeEmbeddings.embedExtractedRecipe, {
+            const result = await ctx.runAction(internal["recipes/recipeEmbeddings"].embedExtractedRecipe, {
               extractedRecipeId: recipeId,
             });
             return { recipeId, success: true, result };
@@ -460,7 +532,7 @@ export const embedJobRecipes = action({
     console.log(`🔄 [JOB EMBEDDING] Embedding all recipes from job: ${args.jobId}`);
 
     // Get all extracted recipes for this job
-    const extractedRecipes = await ctx.runQuery(internal.recipeQueries.listExtractedRecipesByJob, {
+    const extractedRecipes = await ctx.runQuery(internal["recipes/recipeQueries"].listExtractedRecipesByJob, {
       jobId: args.jobId,
     });
 
@@ -477,7 +549,7 @@ export const embedJobRecipes = action({
 
     // Batch embed all recipes
     const recipeIds = extractedRecipes.map((r) => r._id);
-    const result = await ctx.runAction(internal.recipeEmbeddings.batchEmbedExtractedRecipes, {
+    const result = await ctx.runAction(internal["recipes/recipeEmbeddings"].batchEmbedExtractedRecipes, {
       extractedRecipeIds: recipeIds,
     });
 

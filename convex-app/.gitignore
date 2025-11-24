@@ -2,6 +2,7 @@
 node_modules/
 .pnp
 .pnp.js
+package-lock.json
 
 # Testing
 /coverage
@@ -16,6 +17,12 @@ node_modules/
 # Misc
 .DS_Store
 *.pem
+
+# Video processing binaries and temp files
+bin/
+*.mp4
+*.webm
+*.mov
 
 # Debug
 npm-debug.log*
@@ -38,8 +45,18 @@ next-env.d.ts
 .convex/
 _generated/
 
-# Replit
-.replit
-replit.nix
-.config/
-replit.md
+# UI Preview Lab - Generated Components (Experimental)
+# AI-generated components stay here until explicitly approved for production.
+# Only commit when you move them to components/ directory.
+app/ui-preview/components/*.tsx
+app/ui-preview/components/*.ts
+app/ui-preview/components/*.jsx
+app/ui-preview/components/*.js
+app/ui-preview/pages/
+
+# Keep UI Preview infrastructure and docs
+!app/ui-preview/components/README.md
+!app/ui-preview/page.tsx
+!app/ui-preview/layout.tsx
+instagram-service/
+nul

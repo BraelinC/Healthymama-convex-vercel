@@ -22,7 +22,7 @@ export const enrichRecipe = action({
     console.log(`🔄 [ENRICHMENT] Starting enrichment for recipe: ${args.recipeId}`);
 
     // Get recipe from database
-    const recipe = await ctx.runQuery(internal.recipeQueries.getExtractedRecipeById, {
+    const recipe = await ctx.runQuery(internal.recipes.recipeQueries.getExtractedRecipeById, {
       recipeId: args.recipeId,
     });
 
@@ -31,7 +31,7 @@ export const enrichRecipe = action({
     }
 
     // Mark as enriching
-    await ctx.runMutation(internal.recipeMutations.updateEnrichmentStatus, {
+    await ctx.runMutation(internal.recipes.recipeMutations.updateEnrichmentStatus, {
       recipeId: args.recipeId,
       status: "enriching",
     });
@@ -47,7 +47,7 @@ export const enrichRecipe = action({
       });
 
       // Update recipe with enriched metadata
-      await ctx.runMutation(internal.recipeMutations.updateEnrichmentStatus, {
+      await ctx.runMutation(internal.recipes.recipeMutations.updateEnrichmentStatus, {
         recipeId: args.recipeId,
         status: "completed",
         enrichedMetadata: enrichedTags,
@@ -64,7 +64,7 @@ export const enrichRecipe = action({
       console.error(`🚨 [ENRICHMENT] Failed to enrich recipe ${recipe.title}:`, error.message);
 
       // Mark as failed
-      await ctx.runMutation(internal.recipeMutations.updateEnrichmentStatus, {
+      await ctx.runMutation(internal.recipes.recipeMutations.updateEnrichmentStatus, {
         recipeId: args.recipeId,
         status: "failed",
         error: error.message,
@@ -94,7 +94,7 @@ export const batchEnrichRecipes = action({
     // Get all recipes from database
     const recipes = await Promise.all(
       args.recipeIds.map(async (recipeId) => {
-        const recipe = await ctx.runQuery(internal.recipeQueries.getExtractedRecipeById, {
+        const recipe = await ctx.runQuery(internal.recipes.recipeQueries.getExtractedRecipeById, {
           recipeId,
         });
         return recipe ? { ...recipe, id: recipeId } : null;
@@ -123,7 +123,7 @@ export const batchEnrichRecipes = action({
     // Mark all as enriching
     await Promise.all(
       validRecipes.map((recipe) =>
-        ctx.runMutation(internal.recipeMutations.updateEnrichmentStatus, {
+        ctx.runMutation(internal.recipes.recipeMutations.updateEnrichmentStatus, {
           recipeId: recipe.id,
           status: "enriching",
         })
@@ -149,14 +149,14 @@ export const batchEnrichRecipes = action({
         const recipeId = result.id as Id<"extractedRecipes">;
 
         if (result.success && result.tags) {
-          await ctx.runMutation(internal.recipeMutations.updateEnrichmentStatus, {
+          await ctx.runMutation(internal.recipes.recipeMutations.updateEnrichmentStatus, {
             recipeId,
             status: "completed",
             enrichedMetadata: result.tags,
           });
           return { recipeId, success: true };
         } else {
-          await ctx.runMutation(internal.recipeMutations.updateEnrichmentStatus, {
+          await ctx.runMutation(internal.recipes.recipeMutations.updateEnrichmentStatus, {
             recipeId,
             status: "failed",
             error: result.error || "Unknown error",
@@ -192,7 +192,7 @@ export const enrichJobRecipes = action({
     console.log(`🔄 [JOB ENRICHMENT] Starting enrichment for job: ${args.jobId}`);
 
     // Get all recipes from the job
-    const recipes = await ctx.runQuery(internal.recipeQueries.listExtractedRecipesByJob, {
+    const recipes = await ctx.runQuery(internal.recipes.recipeQueries.listExtractedRecipesByJob, {
       jobId: args.jobId,
     });
 

@@ -183,7 +183,7 @@ const ExtractedRecipeDisplay = ({ recipe }: ExtractedRecipeDisplayProps) => {
           href={recipe.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-blue-400 hover:text-blue-300 underline break-all"
+          className="text-xs text-rose-400 hover:text-rose-300 underline break-all"
         >
           View original recipe
         </a>

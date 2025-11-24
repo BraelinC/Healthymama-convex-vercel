@@ -5,7 +5,9 @@ import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { ClerkProvider, useAuth } from "@clerk/nextjs";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ConvexQueryCacheProvider } from "convex-helpers/react/cache/provider";
 import { GlobalCacheWarmer } from "./GlobalCacheWarmer";
+import { UserJotIdentifier } from "./UserJotIdentifier";
 
 type Props = {
   children: ReactNode;
@@ -53,8 +55,11 @@ function ConvexProviderWithDebug({ children }: Props) {
 
   return (
     <ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
-      <GlobalCacheWarmer />
-      {children}
+      <ConvexQueryCacheProvider>
+        <GlobalCacheWarmer />
+        <UserJotIdentifier />
+        {children}
+      </ConvexQueryCacheProvider>
     </ConvexProviderWithClerk>
   );
 }
