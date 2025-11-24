@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Heart, BookOpen, X, Video } from "lucide-react";
+import { Heart, X, Video } from "lucide-react";
 
 interface PlusButtonMenuProps {
   isOpen: boolean;
@@ -41,15 +41,6 @@ export function PlusButtonMenu({
       description: "View your saved recipes",
       onClick: () => {
         onViewFavorites();
-        onClose();
-      },
-    },
-    {
-      icon: <BookOpen className="w-5 h-5" />,
-      title: "DIY Recipe",
-      description: "Build recipes from scratch",
-      onClick: () => {
-        onAddRecipe();
         onClose();
       },
     },

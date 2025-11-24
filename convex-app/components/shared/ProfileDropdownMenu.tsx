@@ -6,10 +6,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { User, Users, Shield, FileText } from "lucide-react";
+import { User, Users } from "lucide-react";
 
 interface ProfileDropdownMenuProps {
   children: React.ReactNode;
@@ -47,23 +46,6 @@ export function ProfileDropdownMenu({ children }: ProfileDropdownMenuProps) {
         >
           <Users className="w-4 h-4 mr-2" />
           Social
-        </DropdownMenuItem>
-
-        <DropdownMenuSeparator />
-
-        <DropdownMenuItem
-          onClick={() => router.push("/privacy")}
-          className="cursor-pointer"
-        >
-          <Shield className="w-4 h-4 mr-2" />
-          Privacy Policy
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => router.push("/terms")}
-          className="cursor-pointer"
-        >
-          <FileText className="w-4 h-4 mr-2" />
-          Terms of Service
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

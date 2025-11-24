@@ -1,4 +1,5 @@
 import YTDlpWrap from 'yt-dlp-wrap';
+import ytdl from 'ytdl-core';
 import fs from 'fs';
 import path from 'path';
 import { tmpdir } from 'os';
@@ -68,13 +69,119 @@ export function extractVideoId(url: string, platform: VideoPlatform): string | u
 }
 
 /**
- * Downloads video from any supported platform using yt-dlp
+ * Downloads YouTube video using ytdl-core (more reliable than yt-dlp for YouTube)
+ */
+async function downloadYouTubeVideoWithYtdl(url: string, videoId: string): Promise<DownloadedVideo> {
+  console.log(`[VideoDownloader] Using ytdl-core for YouTube video: ${videoId}`);
+
+  // Create temp directory
+  const tempDir = path.join(tmpdir(), 'healthymama-videos');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  const timestamp = Date.now();
+  const outputPath = path.join(tempDir, `${timestamp}.mp4`);
+
+  try {
+    // Get video info first
+    console.log(`[VideoDownloader] Fetching YouTube video info...`);
+    const info = await ytdl.getInfo(url);
+
+    const title = info.videoDetails.title;
+    const description = info.videoDetails.description || '';
+    const duration = parseInt(info.videoDetails.lengthSeconds);
+    const thumbnail = info.videoDetails.thumbnails[info.videoDetails.thumbnails.length - 1]?.url || '';
+    const uploader = info.videoDetails.author?.name || '';
+
+    console.log(`[VideoDownloader] Video: "${title}" (${duration}s)`);
+
+    // Get best format with video+audio
+    const format = ytdl.chooseFormat(info.formats, {
+      quality: 'highest',
+      filter: 'videoandaudio',
+    });
+
+    if (!format) {
+      throw new Error('No suitable video format found');
+    }
+
+    console.log(`[VideoDownloader] Selected format: ${format.qualityLabel} (${format.container})`);
+
+    // Download to file
+    console.log(`[VideoDownloader] Downloading to ${outputPath}...`);
+
+    await new Promise<void>((resolve, reject) => {
+      const writeStream = fs.createWriteStream(outputPath);
+      const videoStream = ytdl.downloadFromInfo(info, { format });
+
+      videoStream.pipe(writeStream);
+
+      videoStream.on('error', reject);
+      writeStream.on('error', reject);
+      writeStream.on('finish', resolve);
+    });
+
+    // Read file into buffer
+    const buffer = fs.readFileSync(outputPath);
+    const fileSizeMB = (buffer.length / 1024 / 1024).toFixed(2);
+
+    console.log(`[VideoDownloader] Download completed: ${fileSizeMB}MB`);
+
+    return {
+      filePath: outputPath,
+      buffer,
+      platform: 'youtube',
+      videoId,
+      metadata: {
+        title,
+        description,
+        duration,
+        thumbnail,
+        uploader,
+      },
+    };
+  } catch (error: any) {
+    console.error(`[VideoDownloader] ytdl-core error:`, error.message);
+
+    // Cleanup on error
+    if (fs.existsSync(outputPath)) {
+      fs.unlinkSync(outputPath);
+    }
+
+    // Provide specific error messages
+    if (error.message.includes('Video unavailable')) {
+      throw new Error('YouTube video is unavailable or private');
+    } else if (error.message.includes('copyright')) {
+      throw new Error('YouTube video is blocked due to copyright');
+    } else if (error.message.includes('age')) {
+      throw new Error('YouTube video is age-restricted');
+    } else if (error.message.includes('Sign in')) {
+      throw new Error('YouTube requires sign-in for this video');
+    }
+
+    throw new Error(`Failed to download YouTube video: ${error.message}`);
+  }
+}
+
+/**
+ * Downloads video from any supported platform
+ * - YouTube: Uses ytdl-core (more reliable)
+ * - Other platforms: Uses yt-dlp
  */
 export async function downloadVideo(url: string): Promise<DownloadedVideo> {
   const platform = detectPlatform(url);
   const videoId = extractVideoId(url, platform);
 
   console.log(`[VideoDownloader] Detected platform: ${platform}, Video ID: ${videoId}`);
+
+  // Use ytdl-core for YouTube (more reliable)
+  if (platform === 'youtube' && videoId) {
+    return downloadYouTubeVideoWithYtdl(url, videoId);
+  }
+
+  // Use yt-dlp for other platforms (Instagram, TikTok, etc.)
+  console.log(`[VideoDownloader] Using yt-dlp for ${platform}...`);
 
   // Ensure yt-dlp binary is available (downloads automatically if needed)
   const binaryPath = await ensureYtDlpBinary();

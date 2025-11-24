@@ -1,6 +1,6 @@
 /**
  * Pinterest Pin Data Extractor
- * Extracts recipe data from Pinterest pins using Pinterest API v5
+ * Extracts recipe data from Pinterest pins using ScrapeCreators API
  */
 
 export interface PinterestPin {
@@ -47,78 +47,77 @@ export function isPinterestUrl(url: string): boolean {
 }
 
 /**
- * Fetch Pinterest pin data using Pinterest API v5
+ * Fetch Pinterest pin data using ScrapeCreators API
  */
-export async function fetchPinterestPin(pinId: string): Promise<PinterestPin> {
-  const accessToken = process.env.PINTEREST_ACCESS_TOKEN;
+export async function fetchPinterestPin(pinUrl: string): Promise<PinterestPin> {
+  const apiKey = process.env.SCRAPECREATORS_API_KEY;
 
-  if (!accessToken) {
-    throw new Error('Pinterest access token not configured');
+  if (!apiKey) {
+    throw new Error('ScrapeCreators API key not configured. Set SCRAPECREATORS_API_KEY in environment.');
   }
 
-  // Pinterest API v5 endpoint
-  const apiUrl = `https://api.pinterest.com/v5/pins/${pinId}`;
+  // ScrapeCreators Pinterest pin endpoint
+  const apiUrl = `https://api.scrapecreators.com/v1/pinterest/pin?url=${encodeURIComponent(pinUrl)}`;
 
   const response = await fetch(apiUrl, {
     headers: {
-      'Authorization': `Bearer ${accessToken}`,
+      'x-api-key': apiKey,
       'Content-Type': 'application/json',
     },
   });
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Pinterest API error: ${response.status} - ${error}`);
+    throw new Error(`ScrapeCreators API error: ${response.status} - ${error}`);
   }
 
   const data = await response.json();
+  const pin = data.pin || data;
 
-  // Determine pin type
+  // Determine pin type and extract media
   let type: 'image' | 'video' | 'carousel' = 'image';
   const imageUrls: string[] = [];
   let videoUrl: string | undefined;
 
   // Check for video
-  if (data.media?.video_url) {
+  if (pin.video || pin.videos?.video_list) {
     type = 'video';
-    videoUrl = data.media.video_url;
-    // Also get thumbnail
-    if (data.media?.images?.['600x']) {
-      imageUrls.push(data.media.images['600x'].url);
-    }
+    videoUrl = pin.video || pin.videos?.video_list?.V_720P?.url || pin.videos?.video_list?.V_EXP7?.url;
   }
-  // Check for carousel (multiple images)
-  else if (data.media?.carousel_media && data.media.carousel_media.length > 1) {
+
+  // Extract images - try multiple possible paths in API response
+  if (pin.images?.orig?.url) {
+    imageUrls.push(pin.images.orig.url);
+  } else if (pin.image_url) {
+    imageUrls.push(pin.image_url);
+  } else if (pin.images?.['736x']?.url) {
+    imageUrls.push(pin.images['736x'].url);
+  }
+
+  // Check for carousel
+  if (pin.carousel_data?.carousel_slots?.length > 1) {
     type = 'carousel';
-    data.media.carousel_media.forEach((item: any) => {
-      if (item.images?.['600x']) {
-        imageUrls.push(item.images['600x'].url);
-      } else if (item.images?.orig) {
-        imageUrls.push(item.images.orig.url);
+    // Clear and repopulate with carousel images
+    imageUrls.length = 0;
+    pin.carousel_data.carousel_slots.forEach((slot: any) => {
+      if (slot.images?.orig?.url) {
+        imageUrls.push(slot.images.orig.url);
+      } else if (slot.images?.['736x']?.url) {
+        imageUrls.push(slot.images['736x'].url);
       }
     });
   }
-  // Single image
-  else if (data.media?.images) {
-    type = 'image';
-    // Prefer original, fall back to 600x
-    if (data.media.images.orig) {
-      imageUrls.push(data.media.images.orig.url);
-    } else if (data.media.images['600x']) {
-      imageUrls.push(data.media.images['600x'].url);
-    }
-  }
 
   return {
-    pinId: data.id,
+    pinId: pin.id || pin.node_id || '',
     type,
-    title: data.title || '',
-    description: data.description || '',
+    title: pin.title || pin.grid_title || '',
+    description: pin.description || '',
     imageUrls,
     videoUrl,
-    username: data.creator_username || data.pinner?.username,
-    boardName: data.board?.name,
-    createdAt: data.created_at ? new Date(data.created_at).getTime() : undefined,
+    username: pin.pinner?.username,
+    boardName: pin.board?.name,
+    createdAt: pin.created_at ? new Date(pin.created_at).getTime() : undefined,
   };
 }
 
@@ -126,19 +125,8 @@ export async function fetchPinterestPin(pinId: string): Promise<PinterestPin> {
  * Extract Pinterest pin from URL
  */
 export async function extractPinterestPin(url: string): Promise<PinterestPin> {
-  // Handle pin.it shortened URLs by following redirect
-  if (url.includes('pin.it')) {
-    const response = await fetch(url, { redirect: 'follow' });
-    url = response.url;
-  }
-
-  const pinId = extractPinIdFromUrl(url);
-
-  if (!pinId) {
-    throw new Error('Invalid Pinterest URL format');
-  }
-
-  return await fetchPinterestPin(pinId);
+  // ScrapeCreators API handles URL resolution internally (including pin.it)
+  return await fetchPinterestPin(url);
 }
 
 /**
