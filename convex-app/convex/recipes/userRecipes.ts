@@ -281,8 +281,17 @@ export const saveRecipeWithParsedIngredients = action({
       try {
         console.log(`[SAVE RECIPE] Parsing ${args.ingredients.length} ingredients with AI`);
         const parsed = await parseIngredientsWithAI(args.ingredients, openRouterKey);
-        parsedIngredients = parsed;
-        console.log(`[SAVE RECIPE] ✅ Successfully parsed ${parsed.length} ingredients`);
+
+        // Keep measurements array format to match schema
+        // AI returns: {name, display_text, measurements: [{quantity, unit}]}
+        // Schema expects: {name, display_text, measurements: [{quantity, unit}]}
+        parsedIngredients = parsed.map((ing: any) => ({
+          name: ing.name,
+          display_text: ing.display_text,
+          measurements: ing.measurements || [{ quantity: 1, unit: "each" }],
+        }));
+
+        console.log(`[SAVE RECIPE] ✅ Successfully parsed ${parsedIngredients.length} ingredients`);
       } catch (error: any) {
         console.error(`[SAVE RECIPE] ❌ Failed to parse ingredients:`, error.message);
         // Continue without parsed ingredients - they'll be parsed later if needed
@@ -365,8 +374,10 @@ export const saveRecipeToUserCookbookWithParsed = mutation({
     parsedIngredients: v.optional(v.array(v.object({
       name: v.string(),
       display_text: v.string(),
-      quantity: v.number(),
-      unit: v.string(),
+      measurements: v.array(v.object({
+        quantity: v.number(),
+        unit: v.string(),
+      })),
     }))),
 
     // Optional metadata
@@ -485,8 +496,10 @@ export const updateUserRecipe = mutation({
     parsedIngredients: v.optional(v.array(v.object({
       name: v.string(),
       display_text: v.string(),
-      quantity: v.number(),
-      unit: v.string(),
+      measurements: v.array(v.object({
+        quantity: v.number(),
+        unit: v.string(),
+      })),
     }))),
   },
   handler: async (ctx, args) => {

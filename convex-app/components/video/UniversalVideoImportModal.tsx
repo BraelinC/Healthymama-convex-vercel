@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Video, Youtube, Instagram, AlertCircle, CheckCircle2, Image, Upload, Link, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { UniversalRecipeCard } from "@/components/recipe/UniversalRecipeCard";
+import { CookbookSelectionSheet } from "@/components/cookbook/CookbookSelectionSheet";
 
 interface UniversalVideoImportModalProps {
   isOpen: boolean;
@@ -25,39 +27,51 @@ interface UniversalVideoImportModalProps {
 interface ExtractedRecipe {
   title: string;
   description?: string;
-  ingredients: Array<{
-    name: string;
-    quantity?: string;
-    unit?: string;
-  }>;
-  instructions: Array<{
-    step: number;
-    description: string;
-    timestamp?: string;
-    keyActions?: string[];
-  }>;
+  ingredients: string[];
+  instructions: string[];
   servings?: string;
   prep_time?: string;
   cook_time?: string;
   cuisine?: string;
   difficulty?: "easy" | "medium" | "hard";
-  keyFrames?: Array<{
-    timestamp: string;
-    description: string;
-    thumbnailUrl: string;
-    actionType: "ingredient_prep" | "cooking_technique" | "final_plating" | "other";
-  }>;
 }
 
 type ImportStep = "input" | "downloading" | "uploading" | "analyzing" | "preview" | "saving" | "success" | "error";
-type Platform = "youtube" | "instagram" | "tiktok" | "other" | null;
+type Platform = "youtube" | "instagram" | "tiktok" | "pinterest" | "other" | null;
 type ImportMode = "url" | "image";
 
+/**
+ * Detect platform from URL using strict regex patterns
+ */
 function detectPlatform(url: string): Platform {
-  const lowerUrl = url.toLowerCase();
-  if (lowerUrl.includes("youtube.com") || lowerUrl.includes("youtu.be")) return "youtube";
-  if (lowerUrl.includes("instagram.com")) return "instagram";
-  if (lowerUrl.includes("tiktok.com")) return "tiktok";
+  // Instagram patterns
+  const instagramPatterns = [
+    /^https?:\/\/(www\.)?instagram\.com\/(reel|p|tv)\/[A-Za-z0-9_-]+/i,
+    /^https?:\/\/(www\.)?instagram\.com\/stories\/[^/]+\/\d+/i,
+  ];
+  if (instagramPatterns.some(pattern => pattern.test(url))) return "instagram";
+
+  // Pinterest patterns
+  const pinterestPatterns = [
+    /^https?:\/\/(www\.)?pinterest\.com\/pin\/\d+/i,
+    /^https?:\/\/pin\.it\/[A-Za-z0-9]+/i,
+  ];
+  if (pinterestPatterns.some(pattern => pattern.test(url))) return "pinterest";
+
+  // YouTube patterns
+  const youtubePatterns = [
+    /^https?:\/\/(www\.|m\.)?youtube\.com\/(watch|embed|v|shorts)/i,
+    /^https?:\/\/youtu\.be\/[a-zA-Z0-9_-]+/i,
+  ];
+  if (youtubePatterns.some(pattern => pattern.test(url))) return "youtube";
+
+  // TikTok patterns
+  const tiktokPatterns = [
+    /^https?:\/\/(www\.|vm\.)?tiktok\.com\/@[^/]+\/video\/\d+/i,
+    /^https?:\/\/(www\.)?tiktok\.com\/t\/[A-Za-z0-9]+/i,
+  ];
+  if (tiktokPatterns.some(pattern => pattern.test(url))) return "tiktok";
+
   if (url.trim()) return "other";
   return null;
 }
@@ -68,6 +82,8 @@ function getPlatformIcon(platform: Platform) {
       return <Youtube className="w-5 h-5 text-red-600" />;
     case "instagram":
       return <Instagram className="w-5 h-5 text-pink-600" />;
+    case "pinterest":
+      return <Image className="w-5 h-5 text-red-700" />;
     case "tiktok":
       return <Video className="w-5 h-5 text-black" />;
     default:
@@ -97,6 +113,8 @@ export function UniversalVideoImportModal({
   const [errorMessage, setErrorMessage] = useState("");
   const [platform, setPlatform] = useState<Platform>(null);
   const [imageRecipeData, setImageRecipeData] = useState<any>(null);
+  const [videoSegments, setVideoSegments] = useState<any[] | null>(null);
+  const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
 
   // Convex mutations and actions
   const saveVideoRecipeToCookbook = useMutation(api.videoRecipes.saveVideoRecipeToCookbook);
@@ -118,6 +136,8 @@ export function UniversalVideoImportModal({
     setPlatform(null);
     setImportMode("url");
     setImageRecipeData(null);
+    setVideoSegments(null);
+    setIsCookbookSelectionOpen(false);
     onClose();
   };
 
@@ -185,12 +205,32 @@ export function UniversalVideoImportModal({
       return;
     }
 
+    const detectedPlatform = detectPlatform(videoUrl);
+
+    // Check for unsupported platforms
+    if (detectedPlatform === "youtube") {
+      toast({
+        title: "YouTube Temporarily Disabled",
+        description: "YouTube import is temporarily disabled. Please use Instagram or Pinterest URLs.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setStep("downloading");
     setErrorMessage("");
 
     try {
-      // Call Next.js API route
-      const response = await fetch("/api/video/import", {
+      // Route to correct API based on platform
+      // Instagram and Pinterest use /api/instagram/import (HikerAPI + Gemini)
+      // Other platforms use /api/video/import (yt-dlp) - currently disabled
+      const apiEndpoint = (detectedPlatform === "instagram" || detectedPlatform === "pinterest")
+        ? "/api/instagram/import"
+        : "/api/video/import";
+
+      console.log(`[Video Import] Using endpoint: ${apiEndpoint} for platform: ${detectedPlatform}`);
+
+      const response = await fetch(apiEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -204,10 +244,11 @@ export function UniversalVideoImportModal({
         throw new Error(data.error || "Failed to import video");
       }
 
-      // Store extracted data
+      // Store extracted data (handle both API response formats)
       setExtractedRecipe(data.recipe);
-      setMuxPlaybackId(data.muxPlaybackId);
-      setMuxThumbnailUrl(data.muxThumbnailUrl);
+      setMuxPlaybackId(data.recipe?.muxPlaybackId || data.muxPlaybackId);
+      setMuxThumbnailUrl(data.recipe?.instagramThumbnailUrl || data.muxThumbnailUrl);
+      setVideoSegments(data.recipe?.videoSegments || null);
       setJobId(data.jobId);
       setStep("preview");
 
@@ -284,63 +325,45 @@ export function UniversalVideoImportModal({
     }
   };
 
-  // Step 2: Save recipe to cookbook
-  const handleSaveToCookbook = async () => {
-    // Handle image recipe save
-    if (importMode === "image" && imageRecipeData) {
-      setStep("saving");
-      try {
-        await importRecipe({
-          title: imageRecipeData.title,
-          description: imageRecipeData.description || undefined,
-          ingredients: imageRecipeData.ingredients || [],
-          instructions: imageRecipeData.instructions || [],
-          servings: imageRecipeData.servings || undefined,
-          prep_time: imageRecipeData.prep_time || undefined,
-          cook_time: imageRecipeData.cook_time || undefined,
-          cuisine: imageRecipeData.cuisine || undefined,
-          source: "image",
-          instagramThumbnailUrl: imageRecipeData.uploadedImageUrl,
-        });
+  // Step 2: Open cookbook selector
+  const handleAddToCookbook = () => {
+    setIsCookbookSelectionOpen(true);
+  };
 
-        setStep("success");
-        toast({
-          title: "Recipe Saved!",
-          description: "Recipe has been added to your cookbook",
-        });
-
-        setTimeout(() => {
-          handleClose();
-        }, 2000);
-      } catch (error: any) {
-        console.error("[Image Import] Save error:", error);
-        setErrorMessage(error.message || "Failed to save recipe");
-        setStep("error");
-        toast({
-          title: "Save Failed",
-          description: error.message || "Could not save recipe to cookbook",
-          variant: "destructive",
-        });
-      }
-      return;
-    }
-
-    // Handle video recipe save
-    if (!jobId) return;
-
+  // Step 3: Save recipe to selected cookbook
+  const handleSelectCookbook = async (cookbookId: string, cookbookName: string) => {
+    setIsCookbookSelectionOpen(false);
     setStep("saving");
 
     try {
-      await saveVideoRecipeToCookbook({
-        videoRecipeId: jobId as any,
-        cookbookCategory: "uncategorized",
+      // Get recipe data from either image or video import
+      const recipeData = importMode === "image" ? imageRecipeData : extractedRecipe;
+
+      if (!recipeData) {
+        throw new Error("No recipe data to save");
+      }
+
+      await importRecipe({
+        title: recipeData.title,
+        description: recipeData.description || undefined,
+        ingredients: recipeData.ingredients || [],
+        instructions: recipeData.instructions || [],
+        servings: recipeData.servings || undefined,
+        prep_time: recipeData.prep_time || undefined,
+        cook_time: recipeData.cook_time || undefined,
+        cuisine: recipeData.cuisine || undefined,
+        cookbookCategory: cookbookId, // User-selected cookbook
+        instagramThumbnailUrl: importMode === "image"
+          ? imageRecipeData?.uploadedImageUrl
+          : muxThumbnailUrl || undefined,
+        muxPlaybackId: importMode === "url" ? muxPlaybackId || undefined : undefined,
+        videoSegments: importMode === "url" ? videoSegments || undefined : undefined,
       });
 
       setStep("success");
-
       toast({
         title: "Recipe Saved!",
-        description: "Recipe has been added to your cookbook",
+        description: `Recipe added to ${cookbookName}`,
       });
 
       // Close modal after 2 seconds
@@ -351,7 +374,6 @@ export function UniversalVideoImportModal({
       console.error("[Video Import] Save error:", error);
       setErrorMessage(error.message || "Failed to save recipe");
       setStep("error");
-
       toast({
         title: "Save Failed",
         description: error.message || "Could not save recipe to cookbook",
@@ -529,182 +551,49 @@ export function UniversalVideoImportModal({
           {/* Step 3: Recipe Preview - Video */}
           {step === "preview" && importMode === "url" && extractedRecipe && (
             <div className="space-y-4">
-              <div className="rounded-lg border border-gray-200 overflow-hidden">
-                {/* Video Player - Show Mux thumbnail for now */}
-                {muxThumbnailUrl && (
-                  <div className="relative aspect-video bg-gray-900">
-                    <img
-                      src={muxThumbnailUrl}
-                      alt={extractedRecipe.title}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="bg-black/50 rounded-full p-4">
-                        <Video className="w-8 h-8 text-white" />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Recipe Details */}
-                <div className="p-4 space-y-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">{extractedRecipe.title}</h3>
-                    {extractedRecipe.description && (
-                      <p className="text-sm text-gray-600 mt-1">{extractedRecipe.description}</p>
-                    )}
-                  </div>
-
-                  {/* Metadata */}
-                  <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-                    {extractedRecipe.servings && <span>🍽️ {extractedRecipe.servings}</span>}
-                    {extractedRecipe.prep_time && <span>⏱️ Prep: {extractedRecipe.prep_time}</span>}
-                    {extractedRecipe.cook_time && <span>🔥 Cook: {extractedRecipe.cook_time}</span>}
-                    {extractedRecipe.difficulty && <span>📊 {extractedRecipe.difficulty}</span>}
-                  </div>
-
-                  {/* Ingredients */}
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">Ingredients ({extractedRecipe.ingredients.length})</h4>
-                    <ul className="space-y-1">
-                      {extractedRecipe.ingredients.slice(0, 5).map((ing, idx) => (
-                        <li key={idx} className="text-sm text-gray-700">
-                          • {ing.quantity} {ing.unit} {ing.name}
-                        </li>
-                      ))}
-                      {extractedRecipe.ingredients.length > 5 && (
-                        <li className="text-sm text-gray-500 italic">
-                          + {extractedRecipe.ingredients.length - 5} more...
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-
-                  {/* Instructions */}
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">Instructions ({extractedRecipe.instructions.length})</h4>
-                    <ol className="space-y-2">
-                      {extractedRecipe.instructions.slice(0, 3).map((inst) => (
-                        <li key={inst.step} className="text-sm text-gray-700">
-                          <span className="font-medium">{inst.step}.</span> {inst.description}
-                          {inst.timestamp && (
-                            <span className="text-xs text-healthymama-red ml-2">@ {inst.timestamp}</span>
-                          )}
-                        </li>
-                      ))}
-                      {extractedRecipe.instructions.length > 3 && (
-                        <li className="text-sm text-gray-500 italic">
-                          + {extractedRecipe.instructions.length - 3} more steps...
-                        </li>
-                      )}
-                    </ol>
-                  </div>
-                </div>
-              </div>
-
-              <Button
-                onClick={handleSaveToCookbook}
-                className="w-full bg-healthymama-red hover:bg-healthymama-red/90"
-              >
-                Save to Cookbook
-              </Button>
+              <UniversalRecipeCard
+                recipe={{
+                  title: extractedRecipe.title,
+                  description: extractedRecipe.description,
+                  ingredients: extractedRecipe.ingredients,
+                  instructions: extractedRecipe.instructions,
+                  muxPlaybackId: muxPlaybackId || undefined,
+                  imageUrl: muxThumbnailUrl || undefined,
+                  cuisine: extractedRecipe.cuisine,
+                  videoSegments: videoSegments || undefined,
+                }}
+                onAddToCookbook={handleAddToCookbook}
+                onShare={() => {
+                  navigator.clipboard.writeText(videoUrl);
+                  toast({
+                    title: "Link Copied!",
+                    description: "Recipe link copied to clipboard",
+                  });
+                }}
+              />
             </div>
           )}
 
           {/* Step 3: Recipe Preview - Image */}
           {step === "preview" && importMode === "image" && imageRecipeData && (
             <div className="space-y-4">
-              <div className="rounded-lg border border-gray-200 overflow-hidden">
-                {/* Show uploaded image */}
-                {imageRecipeData.uploadedImageUrl && (
-                  <div className="relative aspect-video bg-gray-100">
-                    <img
-                      src={imageRecipeData.uploadedImageUrl}
-                      alt={imageRecipeData.title}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute top-2 right-2 bg-emerald-500 text-white text-xs px-2 py-1 rounded-full">
-                      From Image
-                    </div>
-                  </div>
-                )}
-
-                {/* Recipe Details */}
-                <div className="p-4 space-y-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">{imageRecipeData.title}</h3>
-                    {imageRecipeData.description && (
-                      <p className="text-sm text-gray-600 mt-1">{imageRecipeData.description}</p>
-                    )}
-                  </div>
-
-                  {/* Metadata */}
-                  <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-                    {imageRecipeData.servings && <span>🍽️ {imageRecipeData.servings}</span>}
-                    {imageRecipeData.prep_time && <span>⏱️ Prep: {imageRecipeData.prep_time}</span>}
-                    {imageRecipeData.cook_time && <span>🔥 Cook: {imageRecipeData.cook_time}</span>}
-                    {imageRecipeData.cuisine && <span>🍳 {imageRecipeData.cuisine}</span>}
-                  </div>
-
-                  {/* Ingredients */}
-                  {imageRecipeData.ingredients?.length > 0 && (
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-2">
-                        Ingredients ({imageRecipeData.ingredients.length})
-                      </h4>
-                      <ul className="space-y-1">
-                        {imageRecipeData.ingredients.slice(0, 5).map((ing: string, idx: number) => (
-                          <li key={idx} className="text-sm text-gray-700">
-                            • {ing}
-                          </li>
-                        ))}
-                        {imageRecipeData.ingredients.length > 5 && (
-                          <li className="text-sm text-gray-500 italic">
-                            + {imageRecipeData.ingredients.length - 5} more...
-                          </li>
-                        )}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Instructions */}
-                  {imageRecipeData.instructions?.length > 0 && (
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-2">
-                        Instructions ({imageRecipeData.instructions.length})
-                      </h4>
-                      <ol className="space-y-2">
-                        {imageRecipeData.instructions.slice(0, 3).map((inst: string, idx: number) => (
-                          <li key={idx} className="text-sm text-gray-700">
-                            <span className="font-medium">{idx + 1}.</span> {inst}
-                          </li>
-                        ))}
-                        {imageRecipeData.instructions.length > 3 && (
-                          <li className="text-sm text-gray-500 italic">
-                            + {imageRecipeData.instructions.length - 3} more steps...
-                          </li>
-                        )}
-                      </ol>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setStep("input")}
-                  className="flex-1"
-                >
-                  Try Again
-                </Button>
-                <Button
-                  onClick={handleSaveToCookbook}
-                  className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
-                >
-                  Save to Cookbook
-                </Button>
-              </div>
+              <UniversalRecipeCard
+                recipe={{
+                  title: imageRecipeData.title || "Untitled Recipe",
+                  description: imageRecipeData.description,
+                  ingredients: imageRecipeData.ingredients || [],
+                  instructions: imageRecipeData.instructions || [],
+                  imageUrl: imageRecipeData.uploadedImageUrl,
+                  cuisine: imageRecipeData.cuisine,
+                }}
+                onAddToCookbook={handleAddToCookbook}
+                onShare={() => {
+                  toast({
+                    title: "Share",
+                    description: "Recipe ready to share!",
+                  });
+                }}
+              />
             </div>
           )}
 
@@ -755,6 +644,17 @@ export function UniversalVideoImportModal({
           )}
         </div>
       </SheetContent>
+
+      {/* Cookbook Selection Sheet */}
+      <CookbookSelectionSheet
+        isOpen={isCookbookSelectionOpen}
+        onClose={() => setIsCookbookSelectionOpen(false)}
+        recipe={{
+          title: extractedRecipe?.title || imageRecipeData?.title || "Recipe",
+          imageUrl: muxThumbnailUrl || imageRecipeData?.uploadedImageUrl,
+        }}
+        onSelectCookbook={handleSelectCookbook}
+      />
     </Sheet>
   );
 }

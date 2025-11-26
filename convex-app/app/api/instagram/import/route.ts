@@ -402,9 +402,17 @@ export async function POST(request: NextRequest) {
     const isYouTube = isYouTubeUrl(url);
     const isPinterest = isPinterestUrl(url);
 
-    if (!isInstagram && !isYouTube && !isPinterest) {
+    // YouTube is temporarily disabled
+    if (isYouTube) {
       return NextResponse.json(
-        { error: 'Invalid URL - must be Instagram, YouTube, or Pinterest URL' },
+        { error: 'YouTube import is temporarily disabled. Please use Instagram or Pinterest URLs.' },
+        { status: 400 }
+      );
+    }
+
+    if (!isInstagram && !isPinterest) {
+      return NextResponse.json(
+        { error: 'Invalid URL - must be Instagram or Pinterest URL' },
         { status: 400 }
       );
     }

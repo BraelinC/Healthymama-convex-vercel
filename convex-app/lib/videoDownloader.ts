@@ -25,16 +25,40 @@ export interface DownloadedVideo {
 }
 
 /**
- * Detects the video platform from URL
+ * Detects the video platform from URL using strict regex patterns
+ *
+ * This prevents false positives (e.g., Instagram URL being detected as YouTube)
  */
 export function detectPlatform(url: string): VideoPlatform {
-  const lowerUrl = url.toLowerCase();
+  // YouTube patterns - must start with youtube.com or youtu.be
+  const youtubePatterns = [
+    /^https?:\/\/(www\.|m\.)?youtube\.com\/(watch|embed|v|shorts)/i,
+    /^https?:\/\/youtu\.be\/[a-zA-Z0-9_-]+/i,
+    /^https?:\/\/(www\.)?youtube-nocookie\.com\/embed/i,
+  ];
 
-  if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
-    return 'youtube';
-  } else if (lowerUrl.includes('instagram.com')) {
+  // Instagram patterns - must be instagram.com with /reel/, /p/, /tv/, or /stories/
+  const instagramPatterns = [
+    /^https?:\/\/(www\.)?instagram\.com\/(reel|p|tv)\/[A-Za-z0-9_-]+/i,
+    /^https?:\/\/(www\.)?instagram\.com\/stories\/[^/]+\/\d+/i,
+  ];
+
+  // TikTok patterns
+  const tiktokPatterns = [
+    /^https?:\/\/(www\.|vm\.)?tiktok\.com\/@[^/]+\/video\/\d+/i,
+    /^https?:\/\/(www\.)?tiktok\.com\/t\/[A-Za-z0-9]+/i,
+  ];
+
+  // Check patterns in order (most specific first)
+  if (instagramPatterns.some(pattern => pattern.test(url))) {
     return 'instagram';
-  } else if (lowerUrl.includes('tiktok.com')) {
+  }
+
+  if (youtubePatterns.some(pattern => pattern.test(url))) {
+    return 'youtube';
+  }
+
+  if (tiktokPatterns.some(pattern => pattern.test(url))) {
     return 'tiktok';
   }
 

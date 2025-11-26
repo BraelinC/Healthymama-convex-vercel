@@ -41,9 +41,19 @@ export function extractPinIdFromUrl(url: string): string | null {
 
 /**
  * Check if URL is a Pinterest URL
+ *
+ * Valid Pinterest URL formats:
+ * - https://www.pinterest.com/pin/123456789/
+ * - https://pinterest.com/pin/123456789/
+ * - https://pin.it/SHORTCODE
  */
 export function isPinterestUrl(url: string): boolean {
-  return url.includes('pinterest.com') || url.includes('pin.it');
+  const pinterestPatterns = [
+    /^https?:\/\/(www\.)?pinterest\.com\/pin\/\d+/i,
+    /^https?:\/\/pin\.it\/[A-Za-z0-9]+/i,
+  ];
+
+  return pinterestPatterns.some(pattern => pattern.test(url));
 }
 
 /**
