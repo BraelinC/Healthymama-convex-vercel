@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"bunx convex dev\" \"bun --bun next dev --webpack -H 0.0.0.0 -p 5000\"",
-    "postinstall": "bun scripts/install-ytdlp.js",
-    "prebuild": "bun scripts/install-ytdlp.js && bunx convex codegen",
+    "postinstall": "node scripts/install-ytdlp.js",
+    "prebuild": "node scripts/install-ytdlp.js && bunx convex codegen",
     "build": "bun --bun next build",
     "start": "bun --bun next start",
     "lint": "next lint",
