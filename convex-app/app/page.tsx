@@ -119,6 +119,12 @@ function HomePageContent() {
   const searchParams = useSearchParams();
   const { user, isLoaded, isSignedIn } = useUser();
 
+  // Track mounting state to avoid hydration mismatches
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Check URL parameters
   const discoverMode = searchParams.get("discover") === "true";
   const tabParam = searchParams.get("tab");
@@ -319,7 +325,8 @@ function HomePageContent() {
               </div>
 
               {/* Right side - User profile button (only when signed in) */}
-              {isSignedIn && user && (
+              {/* Render nothing during SSR, show content only after mounting */}
+              {isMounted && isLoaded && isSignedIn && user && (
                 <ProfileDropdownMenu>
                   <Button
                     variant="ghost"

@@ -9,6 +9,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        dancing: ["var(--font-dancing)", "cursive"],
+      },
       colors: {
         "recipeai-bg": "#0f172a",
         "recipeai-panel": "#1e293b",

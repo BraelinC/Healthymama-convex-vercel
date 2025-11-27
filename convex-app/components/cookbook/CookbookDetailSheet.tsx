@@ -23,7 +23,7 @@ interface CookbookDetailSheetProps {
 }
 
 const COOKBOOK_EMOJIS: Record<string, string> = {
-  uncategorized: "📦",
+  favorites: "❤️",
   breakfast: "🍳",
   lunch: "🥗",
   dinner: "🍽️",
@@ -32,7 +32,7 @@ const COOKBOOK_EMOJIS: Record<string, string> = {
 };
 
 const COOKBOOK_GRADIENTS: Record<string, string> = {
-  uncategorized: "from-gray-400 to-gray-600",
+  favorites: "from-red-400 to-pink-500",
   breakfast: "from-amber-400 to-orange-500",
   lunch: "from-green-400 to-emerald-500",
   dinner: "from-purple-400 to-indigo-500",

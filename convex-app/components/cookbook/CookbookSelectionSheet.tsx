@@ -30,7 +30,7 @@ interface CookbookSelectionSheetProps {
 }
 
 const COOKBOOKS = [
-  { id: "uncategorized", name: "Uncategorized", emoji: "📦" },
+  { id: "favorites", name: "Favorites", emoji: "❤️" },
   { id: "breakfast", name: "Breakfast", emoji: "🍳" },
   { id: "lunch", name: "Lunch", emoji: "🥗" },
   { id: "dinner", name: "Dinner", emoji: "🍽️" },

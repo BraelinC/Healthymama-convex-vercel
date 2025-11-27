@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, cloneElement, isValidElement } from "react";
 import { useRouter } from "next/navigation";
 import {
   DropdownMenu,
@@ -22,8 +22,16 @@ export function ProfileDropdownMenu({ children }: ProfileDropdownMenuProps) {
     setMounted(true);
   }, []);
 
-  // Render children without dropdown wrapper during SSR to avoid hydration mismatch
+  // During SSR/hydration, render just the children without Radix wrapper
+  // to avoid ID mismatch issues
   if (!mounted) {
+    // Clone the child and add a key to help React reconcile
+    if (isValidElement(children)) {
+      return cloneElement(children as React.ReactElement<any>, {
+        "aria-haspopup": "menu",
+        "aria-expanded": false,
+      });
+    }
     return <>{children}</>;
   }
 

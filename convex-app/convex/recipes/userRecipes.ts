@@ -740,7 +740,7 @@ export const getCookbookStats = query({
 
     // Get first 4 recipe images for each cookbook
     const cookbookCategories = [
-      "uncategorized",
+      "favorites",
       "breakfast",
       "lunch",
       "dinner",

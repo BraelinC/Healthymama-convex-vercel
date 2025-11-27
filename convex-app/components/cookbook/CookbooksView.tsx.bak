@@ -5,7 +5,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@clerk/nextjs";
 import { Id } from "@/convex/_generated/dataModel";
-import { CookbookCategoryCard } from "./CookbookCategoryCard";
+import { CookbookCategoryCard, NewCookbookCard } from "./CookbookCategoryCard";
 import { SharedCookbookCard } from "./SharedCookbookCard";
 import { AddCookbookCard } from "./AddCookbookCard";
 import { CreateRecipe } from "../recipe/CreateRecipe";
@@ -19,15 +19,15 @@ import { InstagramImportModal } from "../instagram/InstagramImportModal";
 import { UniversalVideoImportModal } from "../video/UniversalVideoImportModal";
 import { GroceryListPanel } from "@/components/grocery/GroceryListPanel";
 import { Button } from "@/components/ui/button";
-import { ShoppingCart, Users } from "lucide-react";
+import { Plus, ShoppingCart, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { StoriesRow } from "../stories/StoriesRow";
 
 export function CookbooksView() {
   const { userId } = useAuth();
   const { toast } = useToast();
 
   const [viewMode, setViewMode] = useState<"cookbooks" | "meal-plan">("cookbooks");
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCreateRecipeOpen, setIsCreateRecipeOpen] = useState(false);
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
@@ -186,9 +186,6 @@ export function CookbooksView() {
     <div className="min-h-screen bg-[#FAFAFA]">
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-6">
-          {/* Stories Section */}
-          <StoriesRow />
-
           {/* Cookbooks/Meal Plan Section */}
           <div>
             <div className="flex items-center justify-between mb-6">
@@ -219,10 +216,6 @@ export function CookbooksView() {
               <>
                 {/* Personal Cookbooks */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {/* Add Cookbook Card - First Item */}
-                  <AddCookbookCard
-                    onImportVideo={handleImportVideo}
-                  />
                   {cookbookStats ? (
                     <>
                       {cookbookStats.map((category: any) => (
@@ -234,7 +227,8 @@ export function CookbooksView() {
                           onClick={() => handleCategoryClick(category.id)}
                         />
                       ))}
-                      
+                      {/* New Cookbook Card */}
+                      <NewCookbookCard onClick={handleNewCookbook} />
                     </>
                   ) : (
                     <div className="col-span-full text-center py-8 text-gray-500">
@@ -281,6 +275,25 @@ export function CookbooksView() {
           </div>
         </div>
       </main>
+
+      {/* Floating Add Button (bottom right) - Positioned above bottom nav */}
+      <Button
+        variant={null}
+        onClick={() => setIsMenuOpen(true)}
+        className="fixed bottom-24 right-8 w-16 h-16 rounded-full shadow-lg bg-gradient-to-br from-[#dc2626] to-[#ec4899] hover:shadow-red-glow text-white z-40 transition-all inline-flex items-center justify-center whitespace-nowrap text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+        size="icon"
+      >
+        <Plus className="w-8 h-8" />
+      </Button>
+
+      {/* Plus Button Menu */}
+      <PlusButtonMenu
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        onAddRecipe={handleAddRecipe}
+        onViewFavorites={handleViewFavorites}
+        onImportVideo={handleImportVideo}
+      />
 
       {/* Create Recipe Modal */}
       <CreateRecipe

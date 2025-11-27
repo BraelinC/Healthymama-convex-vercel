@@ -376,11 +376,13 @@ export default defineSchema({
     // NEW: Universal source reference (replaces extractedRecipeId/communityRecipeId)
     sourceRecipeId: v.optional(v.union(
       v.id("recipes"),           // Community recipes
-      v.id("extractedRecipes")   // Extracted recipes
+      v.id("extractedRecipes"),  // Extracted recipes
+      v.id("userRecipes")        // User recipes (for saving from stories)
     )),
     sourceRecipeType: v.optional(v.union(
       v.literal("community"),
-      v.literal("extracted")
+      v.literal("extracted"),
+      v.literal("userRecipe")    // From another user's recipe
     )),
 
     // OLD: Legacy reference fields (keep for migration, will be removed)
@@ -1159,5 +1161,61 @@ export default defineSchema({
     .index("by_recipe", ["recipeId"])
     .index("by_cookbook_recipe", ["cookbookId", "recipeId"]) // Prevent duplicates
     .index("by_added_by", ["addedByUserId"]),
-});
 
+
+
+
+  // ========== INSTAGRAM-STYLE STORIES ==========
+
+  // Stories: User-posted images/videos with attached recipes (24-hour expiry)
+  stories: defineTable({
+    userId: v.string(), // Clerk user ID of story creator
+
+    // Media content
+    mediaStorageId: v.id("_storage"), // Image or video in Convex storage
+    mediaType: v.union(v.literal("image"), v.literal("video")),
+
+    // Attached recipe (optional)
+    recipeId: v.optional(v.id("userRecipes")),
+    recipeTitle: v.optional(v.string()), // Denormalized for quick display
+    recipeImageUrl: v.optional(v.string()),
+
+    // Story content
+    caption: v.optional(v.string()),
+
+    // Image transform (for positioning/cropping in 9:16 frame)
+    imageTransform: v.optional(v.object({
+      scale: v.number(),  // 1 = fit, >1 = zoomed in
+      x: v.number(),      // X offset from center
+      y: v.number(),      // Y offset from center
+    })),
+
+    // Text overlays (rich text on image)
+    textOverlays: v.optional(v.array(v.object({
+      id: v.string(),
+      text: v.string(),
+      x: v.number(),      // Position as percentage (0-100)
+      y: v.number(),      // Position as percentage (0-100)
+      font: v.string(),   // 'sans' | 'serif' | 'handwritten'
+      color: v.string(),  // Hex color
+      size: v.number(),   // Font size in px
+    }))),
+
+    // Timing (24-hour expiry)
+    createdAt: v.number(),
+    expiresAt: v.number(), // createdAt + 24 hours
+  })
+    .index("by_userId", ["userId"])
+    .index("by_expiresAt", ["expiresAt"])
+    .index("by_userId_createdAt", ["userId", "createdAt"]),
+
+  // Story Views: Track who has viewed each story
+  storyViews: defineTable({
+    storyId: v.id("stories"),
+    viewerId: v.string(), // Clerk user ID of viewer
+    viewedAt: v.number(),
+  })
+    .index("by_story", ["storyId"])
+    .index("by_viewer", ["viewerId"])
+    .index("by_viewer_story", ["viewerId", "storyId"]), // Check if user viewed
+});

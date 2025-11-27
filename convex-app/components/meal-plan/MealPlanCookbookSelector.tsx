@@ -23,7 +23,7 @@ interface MealPlanCookbookSelectorProps {
 }
 
 const COOKBOOK_EMOJIS: Record<string, string> = {
-  uncategorized: "📦",
+  favorites: "❤️",
   breakfast: "🍳",
   lunch: "🥗",
   dinner: "🍽️",

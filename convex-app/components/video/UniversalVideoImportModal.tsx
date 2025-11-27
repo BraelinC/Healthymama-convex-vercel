@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Video, Youtube, Instagram, AlertCircle, CheckCircle2, Image, Upload, Link, X } from "lucide-react";
+import { Loader2, Video, Youtube, Instagram, AlertCircle, CheckCircle2, Image, Upload, Link, X, Camera, ImageIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { UniversalRecipeCard } from "@/components/recipe/UniversalRecipeCard";
 import { CookbookSelectionSheet } from "@/components/cookbook/CookbookSelectionSheet";
@@ -98,6 +98,8 @@ export function UniversalVideoImportModal({
 }: UniversalVideoImportModalProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   // State
   const [importMode, setImportMode] = useState<ImportMode>("url");
@@ -186,6 +188,8 @@ export function UniversalVideoImportModal({
     setImageFile(null);
     setImagePreview("");
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+    if (galleryInputRef.current) galleryInputRef.current.value = "";
   };
 
   // Handle URL input change
@@ -407,7 +411,7 @@ export function UniversalVideoImportModal({
             Import from Anywhere
           </SheetTitle>
           <SheetDescription>
-            Paste a video URL or upload a photo
+            Paste any URL or upload a photo
           </SheetDescription>
         </SheetHeader>
 
@@ -420,13 +424,13 @@ export function UniversalVideoImportModal({
                 <div className="flex items-center gap-2">
                   <Video className="w-4 h-4 text-healthymama-red" />
                   <label className="text-sm font-medium text-gray-700">
-                    Paste a video URL
+                    Paste a URL
                   </label>
                 </div>
                 <div className="relative">
                   <Input
                     type="url"
-                    placeholder="YouTube, Instagram, or TikTok URL..."
+                    placeholder="Instagram, Pinterest, or Website URL..."
                     value={videoUrl}
                     onChange={(e) => handleUrlChange(e.target.value)}
                     className="pr-10"
@@ -442,7 +446,7 @@ export function UniversalVideoImportModal({
                   disabled={!videoUrl.trim()}
                   className="w-full bg-healthymama-red hover:bg-healthymama-red/90"
                 >
-                  Import from Video
+                  Import
                 </Button>
               </div>
 
@@ -467,26 +471,69 @@ export function UniversalVideoImportModal({
 
                 {/* Image Upload Area */}
                 {!imageFile ? (
-                  <div
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors"
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                    <Upload className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-600">
-                      Drop image here or click to browse
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Food photos or recipe screenshots
-                    </p>
+                  <div className="space-y-3">
+                    {/* Three buttons for upload options */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* Camera button */}
+                      <button
+                        onClick={() => cameraInputRef.current?.click()}
+                        className="flex flex-col items-center gap-2 p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors"
+                      >
+                        <input
+                          ref={cameraInputRef}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                        <Camera className="w-6 h-6 text-emerald-500" />
+                        <span className="text-xs text-gray-600 font-medium">Camera</span>
+                      </button>
+
+                      {/* Gallery button */}
+                      <button
+                        onClick={() => galleryInputRef.current?.click()}
+                        className="flex flex-col items-center gap-2 p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors"
+                      >
+                        <input
+                          ref={galleryInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                        <ImageIcon className="w-6 h-6 text-emerald-500" />
+                        <span className="text-xs text-gray-600 font-medium">Gallery</span>
+                      </button>
+
+                      {/* Upload/Browse button */}
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex flex-col items-center gap-2 p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors"
+                      >
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                        <Upload className="w-6 h-6 text-emerald-500" />
+                        <span className="text-xs text-gray-600 font-medium">Upload</span>
+                      </button>
+                    </div>
+
+                    {/* Drop zone */}
+                    <div
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={handleDrop}
+                      className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center"
+                    >
+                      <p className="text-xs text-gray-400">
+                        or drag & drop an image here
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-3">

@@ -204,7 +204,7 @@ export default function CommunityPage({ params }: CommunityPageProps) {
       const recipeId = await saveRecipe({
         userId: user.id,
         recipeType: "community",
-        cookbookCategory: "uncategorized", // Default category, it will be in shared cookbook
+        cookbookCategory: "favorites", // Default category, it will be in shared cookbook
         title: selectedRecipeForCookbook.name,
         description: selectedRecipeForCookbook.description,
         imageUrl: selectedRecipeForCookbook.imageUrl,

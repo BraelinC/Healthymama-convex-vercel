@@ -47,6 +47,12 @@ import { formatRecipeWithGPT } from '@/lib/openai-formatter';
 import { downloadYouTubeVideo } from '@/lib/youtube-download';
 import { extractPinterestPin, isPinterestUrl } from '@/lib/pinterest-extractor';
 import { extractRecipeFromPinterestImage } from '@/lib/gemini-video-analysis';
+import {
+  extractJsonLdFromHtml,
+  validateRecipeCompleteness,
+  transformJsonLdRecipe,
+} from '@/convex/lib/recipeExtractor';
+import { extractRecipeWithOpenRouter } from '@/convex/lib/openRouterExtractor';
 
 // Define return type for Railway service
 interface InstagramExtractionResult {
@@ -373,6 +379,338 @@ Return ONLY the JSON object.`;
 }
 
 /**
+ * Extract recipe from external website URL using 3-method approach
+ *
+ * This function implements the same extraction flow used for direct website scraping:
+ * 1. JSON-LD extraction (fastest, most reliable)
+ * 2. Gemini AI extraction from HTML
+ * 3. Puppeteer fallback for JavaScript-rendered pages
+ *
+ * @param url - External recipe website URL
+ * @param fallbackImageUrl - Image URL to use if website doesn't have one
+ * @returns Parsed recipe or null if extraction fails
+ */
+async function extractRecipeFromWebsite(url: string, fallbackImageUrl?: string): Promise<ParsedRecipe | null> {
+  console.log(`[Website Extraction] Starting 3-method extraction for: ${url}`);
+
+  try {
+    // METHOD 1: Try direct fetch + JSON-LD extraction (fastest)
+    console.log('[Website Extraction] METHOD 1: Trying JSON-LD extraction...');
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+      },
+      signal: AbortSignal.timeout(15000), // 15 second timeout
+    });
+
+    if (!response.ok) {
+      console.warn(`[Website Extraction] Fetch failed: ${response.status}`);
+      throw new Error(`Website returned ${response.status}`);
+    }
+
+    const html = await response.text();
+    console.log(`[Website Extraction] Fetched ${html.length} chars of HTML`);
+
+    // Try JSON-LD first
+    const jsonLdRecipe = extractJsonLdFromHtml(html);
+    if (jsonLdRecipe) {
+      const validation = validateRecipeCompleteness(jsonLdRecipe);
+      if (validation.isComplete) {
+        console.log('[Website Extraction] ✅ JSON-LD extraction successful!');
+        const transformed = transformJsonLdRecipe(jsonLdRecipe, fallbackImageUrl);
+        return {
+          title: transformed.title,
+          description: transformed.description,
+          ingredients: transformed.ingredients,
+          instructions: transformed.instructions,
+          servings: transformed.servings,
+          prep_time: transformed.prep_time,
+          cook_time: transformed.cook_time,
+          cuisine: transformed.category,
+        };
+      }
+      console.log(`[Website Extraction] JSON-LD incomplete: ${validation.reason}`);
+    }
+
+    // METHOD 2: Try Gemini extraction from HTML
+    console.log('[Website Extraction] METHOD 2: Trying Gemini AI extraction...');
+
+    try {
+      const geminiRecipe = await extractRecipeWithOpenRouter(html, fallbackImageUrl);
+      if (geminiRecipe?.title && geminiRecipe?.ingredients?.length > 0 && geminiRecipe?.instructions?.length > 0) {
+        console.log('[Website Extraction] ✅ Gemini extraction successful!');
+        return {
+          title: geminiRecipe.title,
+          description: geminiRecipe.description || '',
+          ingredients: geminiRecipe.ingredients,
+          instructions: geminiRecipe.instructions,
+          servings: geminiRecipe.servings,
+          prep_time: geminiRecipe.prep_time,
+          cook_time: geminiRecipe.cook_time,
+          cuisine: geminiRecipe.category,
+        };
+      }
+      console.log('[Website Extraction] Gemini extraction incomplete');
+    } catch (error: any) {
+      console.warn('[Website Extraction] Gemini extraction failed:', error.message);
+    }
+
+    // METHOD 3: Puppeteer fallback for JavaScript-rendered pages
+    console.log('[Website Extraction] METHOD 3: Trying Puppeteer fallback...');
+
+    try {
+      // Get the base URL for API call
+      const baseUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+      const puppeteerResponse = await fetch(`${baseUrl}/api/scrape-recipe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+        signal: AbortSignal.timeout(30000), // 30 second timeout for Puppeteer
+      });
+
+      if (puppeteerResponse.ok) {
+        const puppeteerData = await puppeteerResponse.json();
+
+        // Check if Puppeteer found JSON-LD data
+        if (puppeteerData.jsonLdData) {
+          const validation = validateRecipeCompleteness(puppeteerData.jsonLdData);
+          if (validation.isComplete) {
+            console.log('[Website Extraction] ✅ Puppeteer JSON-LD extraction successful!');
+            const transformed = transformJsonLdRecipe(puppeteerData.jsonLdData, fallbackImageUrl);
+            return {
+              title: transformed.title,
+              description: transformed.description,
+              ingredients: transformed.ingredients,
+              instructions: transformed.instructions,
+              servings: transformed.servings,
+              prep_time: transformed.prep_time,
+              cook_time: transformed.cook_time,
+              cuisine: transformed.category,
+            };
+          }
+        }
+
+        // Try Gemini on Puppeteer-rendered HTML
+        if (puppeteerData.html) {
+          const geminiRecipe = await extractRecipeWithOpenRouter(
+            puppeteerData.html,
+            puppeteerData.imageUrls?.[0] || fallbackImageUrl
+          );
+          if (geminiRecipe?.title && geminiRecipe?.ingredients?.length > 0) {
+            console.log('[Website Extraction] ✅ Puppeteer + Gemini extraction successful!');
+            return {
+              title: geminiRecipe.title,
+              description: geminiRecipe.description || '',
+              ingredients: geminiRecipe.ingredients,
+              instructions: geminiRecipe.instructions,
+              servings: geminiRecipe.servings,
+              prep_time: geminiRecipe.prep_time,
+              cook_time: geminiRecipe.cook_time,
+              cuisine: geminiRecipe.category,
+            };
+          }
+        }
+
+        // METHOD 4: Gemini 2.5 Flash Vision on multiple screenshots (for React/JS-heavy sites)
+        if (puppeteerData.screenshots && puppeteerData.screenshots.length > 0) {
+          console.log(`[Website Extraction] METHOD 4: Trying Gemini 2.5 Flash Vision on ${puppeteerData.screenshots.length} screenshots...`);
+          try {
+            const visionRecipe = await extractRecipeFromScreenshots(puppeteerData.screenshots);
+            if (visionRecipe?.title && visionRecipe?.ingredients?.length > 0) {
+              console.log('[Website Extraction] ✅ Gemini 2.5 Flash Vision OCR extraction successful!');
+              return {
+                title: visionRecipe.title,
+                description: visionRecipe.description || '',
+                ingredients: visionRecipe.ingredients,
+                instructions: visionRecipe.instructions,
+                servings: visionRecipe.servings,
+                prep_time: visionRecipe.prep_time,
+                cook_time: visionRecipe.cook_time,
+                cuisine: visionRecipe.cuisine,
+              };
+            }
+          } catch (visionError: any) {
+            console.warn('[Website Extraction] Claude Haiku Vision failed:', visionError.message);
+          }
+        }
+
+        // FALLBACK: Single screenshot with Gemini (legacy support)
+        if (puppeteerData.screenshot) {
+          console.log('[Website Extraction] METHOD 4b: Trying Gemini Vision on single screenshot...');
+          try {
+            const { extractRecipeFromPinterestImage } = await import('@/lib/gemini-video-analysis');
+            const visionRecipe = await extractRecipeFromPinterestImage(
+              [puppeteerData.screenshot],
+              '',
+              undefined
+            );
+            if (visionRecipe?.title && visionRecipe?.ingredients?.length > 0) {
+              console.log('[Website Extraction] ✅ Gemini Vision OCR extraction successful!');
+              return {
+                title: visionRecipe.title,
+                description: visionRecipe.description || '',
+                ingredients: visionRecipe.ingredients,
+                instructions: visionRecipe.instructions,
+                servings: visionRecipe.servings,
+                prep_time: visionRecipe.prep_time,
+                cook_time: visionRecipe.cook_time,
+                cuisine: visionRecipe.cuisine,
+              };
+            }
+          } catch (visionError: any) {
+            console.warn('[Website Extraction] Gemini Vision failed:', visionError.message);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.warn('[Website Extraction] Puppeteer fallback failed:', error.message);
+    }
+
+    console.log('[Website Extraction] ❌ All methods failed');
+    return null;
+  } catch (error: any) {
+    console.error('[Website Extraction] Fatal error:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Extract recipe from multiple screenshots using Gemini 2.5 Flash Vision
+ *
+ * This function takes an array of base64 screenshots (captured while scrolling)
+ * and sends them to Gemini 2.5 Flash for OCR extraction of the complete recipe.
+ *
+ * @param screenshots - Array of base64 data URLs (data:image/jpeg;base64,...)
+ * @returns Parsed recipe or null if extraction fails
+ */
+async function extractRecipeFromScreenshots(screenshots: string[]): Promise<ParsedRecipe | null> {
+  const apiKey = process.env.OPEN_ROUTER_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('OpenRouter API key not configured');
+  }
+
+  console.log(`[Screenshot Extraction] Sending ${screenshots.length} screenshots to Gemini 2.5 Flash...`);
+
+  // Build content array with text prompt + all screenshots
+  const content: any[] = [
+    {
+      type: 'text',
+      text: `You are viewing ${screenshots.length} screenshots of a recipe webpage (scrolled from top to bottom).
+
+Extract the COMPLETE recipe including:
+- title (the main recipe name)
+- description (brief description if available)
+- ingredients (COMPLETE list with exact quantities - e.g., "1 cup flour", "2 large eggs")
+- instructions (step-by-step, numbered if possible)
+- servings, prep_time, cook_time if visible
+
+IMPORTANT:
+- The recipe content may be spread across multiple screenshots
+- Look carefully at ALL screenshots to find ALL ingredients and ALL instructions
+- If you see tabs or sections, extract content from all visible sections
+- Include ALL measurements and quantities exactly as shown
+
+If this is NOT a recipe page (e.g., CAPTCHA, error page, blocked), return:
+{"error": "Not a recipe page", "reason": "description of what you see"}
+
+Otherwise, return ONLY valid JSON:
+{
+  "title": "Recipe Name",
+  "description": "Brief description",
+  "ingredients": ["1 cup flour", "2 large eggs", ...],
+  "instructions": ["Step 1: Preheat oven...", "Step 2: Mix...", ...],
+  "servings": "4 servings",
+  "prep_time": "15 minutes",
+  "cook_time": "30 minutes",
+  "cuisine": "Italian"
+}`
+    }
+  ];
+
+  // Add all screenshots as images
+  screenshots.forEach((screenshot, i) => {
+    content.push({
+      type: 'image_url',
+      image_url: { url: screenshot }
+    });
+  });
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://healthymama.app',
+      'X-Title': 'HealthyMama Screenshot Recipe Extraction',
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-2.5-flash-preview-05-20', // Gemini 2.5 Flash - fast, cheap, excellent vision
+      messages: [{ role: 'user', content }],
+      temperature: 0.2, // Low temperature for consistent extraction
+      max_tokens: 4000, // Ensure we get complete recipe
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[Screenshot Extraction] API error (${response.status}):`, errorText);
+    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+    throw new Error('Invalid response format from Gemini');
+  }
+
+  const text = data.choices[0].message.content.trim();
+
+  // Remove markdown code blocks if present
+  let jsonText = text;
+  if (jsonText.startsWith('```json')) {
+    jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  } else if (jsonText.startsWith('```')) {
+    jsonText = jsonText.replace(/```\n?/g, '').trim();
+  }
+
+  const parsed = JSON.parse(jsonText);
+
+  // Check if Claude detected a non-recipe page
+  if (parsed.error) {
+    console.warn(`[Screenshot Extraction] Not a recipe page: ${parsed.reason}`);
+    return null;
+  }
+
+  // Validate required fields
+  if (!parsed.title || !parsed.ingredients || !parsed.instructions) {
+    console.warn('[Screenshot Extraction] Missing required fields');
+    return null;
+  }
+
+  console.log(`[Screenshot Extraction] ✅ Extracted: "${parsed.title}"`);
+  console.log(`[Screenshot Extraction] Ingredients: ${parsed.ingredients?.length || 0}`);
+  console.log(`[Screenshot Extraction] Instructions: ${parsed.instructions?.length || 0}`);
+
+  return {
+    title: parsed.title,
+    description: parsed.description || '',
+    ingredients: parsed.ingredients,
+    instructions: parsed.instructions,
+    servings: parsed.servings,
+    prep_time: parsed.prep_time,
+    cook_time: parsed.cook_time,
+    cuisine: parsed.cuisine,
+  };
+}
+
+/**
  * Main API route handler
  */
 export async function POST(request: NextRequest) {
@@ -441,6 +779,8 @@ export async function POST(request: NextRequest) {
       console.log(`[Pinterest Import] Title: ${title}`);
       console.log(`[Pinterest Import] Images: ${pinterestData.imageUrls.length}`);
       console.log(`[Pinterest Import] Description length: ${description?.length || 0} chars`);
+      console.log(`[Pinterest Import] External link: ${pinterestData.link || 'none'}`);
+      console.log(`[Pinterest Import] Domain: ${pinterestData.domain || 'none'}`);
     } else if (isInstagram) {
       // Extract Instagram data using HikerAPI
       const instagramData = await extractInstagramData(url);
@@ -506,34 +846,59 @@ export async function POST(request: NextRequest) {
     let recipe: ParsedRecipe;
 
     if (isPinterest) {
-      // PINTEREST FLOW: Image vision + description, or video extraction
+      // PINTEREST FLOW: External website → Video extraction → Gemini vision fallback
+      let pinterestRecipe: ParsedRecipe | null = null;
 
-      if (pinterestData!.type === 'video' && videoUrl) {
-        // Pinterest video pin - extract from video
-        console.log('[Pinterest Import] Extracting recipe from video pin...');
+      // ALWAYS try external website extraction first (if pin has external link)
+      if (pinterestData!.link) {
+        console.log(`[Pinterest Import] Found external link: ${pinterestData!.link}`);
+        console.log(`[Pinterest Import] Domain: ${pinterestData!.domain || 'unknown'}`);
+        console.log('[Pinterest Import] Attempting website extraction (3-method flow)...');
+
         try {
-          recipe = await extractRecipeFromVideo(videoUrl, title);
-          console.log(`[Pinterest Import] ✅ Extracted from video: ${recipe.instructions.length} instructions, ${recipe.ingredients.length} ingredients`);
-        } catch (error: any) {
-          console.warn('[Pinterest Import] ⚠️ Video extraction failed, falling back to image/description:', error.message);
-
-          // Fallback to image extraction if video fails
-          recipe = await extractRecipeFromPinterestImage(
-            pinterestData!.imageUrls,
-            description,
-            title
+          const websiteRecipe = await extractRecipeFromWebsite(
+            pinterestData!.link,
+            pinterestData!.imageUrls[0] // Use Pinterest image as fallback
           );
+
+          if (websiteRecipe && websiteRecipe.title && websiteRecipe.ingredients?.length > 0) {
+            pinterestRecipe = websiteRecipe;
+            console.log(`[Pinterest Import] ✅ Website extraction successful: "${pinterestRecipe.title}"`);
+            console.log(`[Pinterest Import] ✅ ${pinterestRecipe.ingredients.length} ingredients, ${pinterestRecipe.instructions.length} instructions`);
+          } else {
+            console.warn('[Pinterest Import] ⚠️ Website extraction returned incomplete data');
+          }
+        } catch (error: any) {
+          console.warn('[Pinterest Import] ⚠️ Website extraction failed:', error.message);
         }
       } else {
-        // Pinterest image pin (single or carousel) - use Gemini vision
-        console.log('[Pinterest Import] Extracting recipe from image pin with Gemini vision...');
-        recipe = await extractRecipeFromPinterestImage(
+        console.log('[Pinterest Import] No external link found on pin');
+      }
+
+      // FALLBACK 1: Video extraction (for video pins)
+      if (!pinterestRecipe && pinterestData!.type === 'video' && videoUrl) {
+        console.log('[Pinterest Import] Falling back to video extraction...');
+        try {
+          pinterestRecipe = await extractRecipeFromVideo(videoUrl, title);
+          console.log(`[Pinterest Import] ✅ Extracted from video: ${pinterestRecipe.instructions.length} instructions, ${pinterestRecipe.ingredients.length} ingredients`);
+        } catch (error: any) {
+          console.warn('[Pinterest Import] ⚠️ Video extraction failed:', error.message);
+        }
+      }
+
+      // FALLBACK 2: Gemini vision on images (last resort)
+      if (!pinterestRecipe) {
+        console.log('[Pinterest Import] Falling back to Gemini vision on images...');
+        pinterestRecipe = await extractRecipeFromPinterestImage(
           pinterestData!.imageUrls,
           description,
           title
         );
-        console.log(`[Pinterest Import] ✅ Extracted from image: ${recipe.instructions.length} instructions, ${recipe.ingredients.length} ingredients`);
+        console.log(`[Pinterest Import] ✅ Extracted from image: ${pinterestRecipe.instructions.length} instructions, ${pinterestRecipe.ingredients.length} ingredients`);
       }
+
+      // Assign to recipe
+      recipe = pinterestRecipe;
     } else if (isYouTube) {
       // YOUTUBE FLOW: Regex → GPT formatting → Video analysis (always)
 

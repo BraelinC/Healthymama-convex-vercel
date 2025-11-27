@@ -13,6 +13,10 @@ export interface PinterestPin {
   username?: string;
   boardName?: string;
   createdAt?: number;
+  // External link fields for recipe website extraction
+  link?: string;           // External recipe website URL
+  domain?: string;         // Domain name (e.g., "allrecipes.com")
+  trackedLink?: string;    // Alternative tracked link field from API
 }
 
 /**
@@ -118,6 +122,17 @@ export async function fetchPinterestPin(pinUrl: string): Promise<PinterestPin> {
     });
   }
 
+  // Extract external link (recipe source website)
+  const externalLink = pin.link || pin.trackedLink || pin.tracked_link || undefined;
+  let domain = pin.domain;
+  if (!domain && externalLink) {
+    try {
+      domain = new URL(externalLink).hostname.replace('www.', '');
+    } catch {
+      // Invalid URL, skip domain extraction
+    }
+  }
+
   return {
     pinId: pin.id || pin.node_id || '',
     type,
@@ -128,6 +143,10 @@ export async function fetchPinterestPin(pinUrl: string): Promise<PinterestPin> {
     username: pin.pinner?.username,
     boardName: pin.board?.name,
     createdAt: pin.created_at ? new Date(pin.created_at).getTime() : undefined,
+    // External link fields
+    link: externalLink,
+    domain,
+    trackedLink: pin.trackedLink || pin.tracked_link || undefined,
   };
 }
 

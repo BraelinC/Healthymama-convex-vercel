@@ -60,3 +60,6 @@ app/ui-preview/pages/
 !app/ui-preview/layout.tsx
 instagram-service/
 nul
+
+# clerk configuration (can include secrets)
+/.clerk/

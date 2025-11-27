@@ -213,13 +213,13 @@ const placeholderLibrary: Record<string, PlaceholderImage> = {
     iconColor: "text-indigo-600",
     bgColor: "bg-indigo-50",
   },
-  uncategorized: {
+  favorites: {
     url: "https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=400&h=300&fit=crop",
-    alt: "Uncategorized recipes",
-    gradient: "from-gray-400 to-gray-500",
-    icon: "LayoutGrid",
-    iconColor: "text-gray-600",
-    bgColor: "bg-gray-50",
+    alt: "Favorite recipes",
+    gradient: "from-red-400 to-pink-500",
+    icon: "Heart",
+    iconColor: "text-red-500",
+    bgColor: "bg-red-50",
   },
   default: {
     url: "https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=400&h=300&fit=crop",
