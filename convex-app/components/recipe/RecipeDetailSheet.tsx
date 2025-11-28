@@ -85,6 +85,13 @@ export function RecipeDetailSheet({
         communityRecipeId: recipe.communityRecipeId,
 
         isFavorited: recipe.isFavorited || false,
+
+        // Video fields
+        muxPlaybackId: recipe.muxPlaybackId,
+        muxAssetId: recipe.muxAssetId,
+        instagramVideoUrl: recipe.instagramVideoUrl,
+        instagramUsername: recipe.instagramUsername,
+        videoSegments: recipe.videoSegments,
       });
 
       toast({

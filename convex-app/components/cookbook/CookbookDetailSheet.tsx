@@ -116,6 +116,13 @@ export function CookbookDetailSheet({
         communityRecipeId: selectedRecipe.communityRecipeId,
 
         isFavorited: selectedRecipe.isFavorited,
+
+        // Video fields
+        muxPlaybackId: selectedRecipe.muxPlaybackId,
+        muxAssetId: selectedRecipe.muxAssetId,
+        instagramVideoUrl: selectedRecipe.instagramVideoUrl,
+        instagramUsername: selectedRecipe.instagramUsername,
+        videoSegments: selectedRecipe.videoSegments,
       });
 
       alert(`Recipe moved to ${newCookbookName}!`);

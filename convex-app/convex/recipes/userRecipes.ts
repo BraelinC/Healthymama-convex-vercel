@@ -69,18 +69,18 @@ async function enrichUserRecipeWithSource(ctx: any, userRecipe: any) {
   // Merge source recipe data with user metadata
   return {
     ...userRecipe,
-    title: sourceRecipe.name || sourceRecipe.title,
-    description: sourceRecipe.description,
-    imageUrl: sourceRecipe.imageUrl,
-    ingredients: sourceRecipe.ingredients,
-    instructions: sourceRecipe.steps || sourceRecipe.instructions,
-    servings: sourceRecipe.servings,
-    prep_time: sourceRecipe.prep_time,
-    cook_time: sourceRecipe.cook_time,
-    time_minutes: sourceRecipe.time_minutes,
-    cuisine: sourceRecipe.cuisine,
-    diet: sourceRecipe.diet,
-    category: sourceRecipe.category,
+    title: sourceRecipe?.name || sourceRecipe?.title || userRecipe.title || "Recipe",
+    description: sourceRecipe?.description || userRecipe.description,
+    imageUrl: sourceRecipe?.imageUrl || userRecipe.imageUrl,
+    ingredients: sourceRecipe?.ingredients || userRecipe.ingredients || [],
+    instructions: sourceRecipe?.steps || sourceRecipe?.instructions || userRecipe.instructions || [],
+    servings: sourceRecipe?.servings || userRecipe.servings,
+    prep_time: sourceRecipe?.prep_time || userRecipe.prep_time,
+    cook_time: sourceRecipe?.cook_time || userRecipe.cook_time,
+    time_minutes: sourceRecipe?.time_minutes || userRecipe.time_minutes,
+    cuisine: sourceRecipe?.cuisine || userRecipe.cuisine,
+    diet: sourceRecipe?.diet || userRecipe.diet,
+    category: sourceRecipe?.category || userRecipe.category,
   };
 }
 
@@ -903,9 +903,17 @@ export const getRecentRecipesForPrefetch = query({
       .order("desc")
       .take(limit);
 
-    // Enrich each recipe with source data
+    // Enrich each recipe with source data (with error handling)
     const enrichedRecipes = await Promise.all(
-      recipes.map((recipe) => enrichUserRecipeWithSource(ctx, recipe))
+      recipes.map(async (recipe) => {
+        try {
+          return await enrichUserRecipeWithSource(ctx, recipe);
+        } catch (error) {
+          console.error(`[Prefetch] Error enriching recipe ${recipe._id}:`, error);
+          // Return recipe as-is if enrichment fails
+          return recipe;
+        }
+      })
     );
 
     return enrichedRecipes;
