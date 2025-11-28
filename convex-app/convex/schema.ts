@@ -431,8 +431,8 @@ export default defineSchema({
     diet: v.optional(v.string()),
     category: v.optional(v.string()),
 
-    // Cookbook organization
-    cookbookCategory: v.string(), // "breakfast", "lunch", "dinner", "dessert", "snacks", "uncategorized"
+    // Cookbook organization (optional to allow "ghost" recipes before user selects cookbook)
+    cookbookCategory: v.optional(v.string()), // "breakfast", "lunch", "dinner", "dessert", "snacks", "uncategorized"
 
     // NEW: Cached data for fallback (when source recipe is deleted)
     cachedTitle: v.optional(v.string()),      // Fallback title if source deleted
