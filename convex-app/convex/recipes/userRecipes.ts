@@ -883,3 +883,31 @@ export const backfillParsedIngredients = action({
     };
   },
 });
+
+// ==================== PREFETCH QUERIES ====================
+
+/**
+ * Get top N recent recipes for cache prefetching
+ * Used by GlobalCacheWarmer to pre-load recipes on app start
+ */
+export const getRecentRecipesForPrefetch = query({
+  args: {
+    userId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit || 10;
+    const recipes = await ctx.db
+      .query("userRecipes")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .take(limit);
+
+    // Enrich each recipe with source data
+    const enrichedRecipes = await Promise.all(
+      recipes.map((recipe) => enrichUserRecipeWithSource(ctx, recipe))
+    );
+
+    return enrichedRecipes;
+  },
+});

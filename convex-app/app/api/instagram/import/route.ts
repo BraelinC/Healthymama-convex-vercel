@@ -44,7 +44,6 @@ import {
   isInstagramUrl
 } from '@/lib/youtube-parser';
 import { formatRecipeWithGPT } from '@/lib/openai-formatter';
-import { downloadYouTubeVideo } from '@/lib/youtube-download';
 import { extractPinterestPin, isPinterestUrl } from '@/lib/pinterest-extractor';
 import { extractRecipeFromPinterestImage } from '@/lib/gemini-video-analysis';
 import {
@@ -651,7 +650,7 @@ Otherwise, return ONLY valid JSON:
       'X-Title': 'HealthyMama Screenshot Recipe Extraction',
     },
     body: JSON.stringify({
-      model: 'google/gemini-2.5-flash-preview-05-20', // Gemini 2.5 Flash - fast, cheap, excellent vision
+      model: 'google/gemini-2.5-flash',
       messages: [{ role: 'user', content }],
       temperature: 0.2, // Low temperature for consistent extraction
       max_tokens: 4000, // Ensure we get complete recipe
@@ -805,27 +804,12 @@ export async function POST(request: NextRequest) {
       console.log(`[YouTube Import] Description length: ${description?.length || 0} chars`);
     }
 
-    // Step 2: Download YouTube video (if YouTube) and upload to Mux
+    // Step 2: Upload to Mux (YouTube download disabled - only Instagram/Pinterest supported)
     let muxData = null;
     let downloadedVideoUrl = videoUrl; // Default to original URL
 
-    if (isYouTube && videoId) {
-      try {
-        console.log('[YouTube Import] Downloading video for Mux upload...');
-        const downloadedVideo = await downloadYouTubeVideo(videoId);
-        downloadedVideoUrl = downloadedVideo.videoUrl;
-
-        // Override title if not set
-        if (!title) {
-          title = downloadedVideo.title;
-        }
-
-        console.log('[YouTube Import] ✅ Video download complete');
-      } catch (error: any) {
-        console.error('[YouTube Import] ⚠️ Video download failed:', error.message);
-        // Continue with YouTube watch URL (Gemini supports it)
-      }
-    }
+    // YouTube download disabled - frontend blocks YouTube URLs
+    // Only Instagram and Pinterest are currently supported
 
     // Upload to Mux for hosting (works for Instagram, YouTube, and Pinterest video pins)
     if (downloadedVideoUrl) {

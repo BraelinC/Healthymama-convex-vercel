@@ -136,7 +136,9 @@ export function HealthyMamaChatShell() {
         </div>
       </main>
 
+      {/* HIDDEN - will use later
       <HealthyMamaBottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
+      */}
 
       {activeTab === "home" && (
         <div className="fixed inset-x-0 bottom-20 z-20 flex justify-center md:bottom-6">

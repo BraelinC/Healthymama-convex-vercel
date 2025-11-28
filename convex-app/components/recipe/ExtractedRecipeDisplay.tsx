@@ -121,17 +121,14 @@ const ExtractedRecipeDisplay = ({ recipe }: ExtractedRecipeDisplayProps) => {
         )}
       </div>
 
-      {/* Tabs for Ingredients, Instructions, and Nutrition */}
+      {/* Tabs for Ingredients and Instructions */}
       <Tabs defaultValue="ingredients" className="w-full">
-        <TabsList className="w-full grid grid-cols-3 h-9 bg-gray-700 rounded-none">
+        <TabsList className="w-full grid grid-cols-2 h-9 bg-gray-700 rounded-none">
           <TabsTrigger value="ingredients" className="text-xs text-gray-300 data-[state=active]:bg-gray-600 data-[state=active]:text-white">
             Ingredients
           </TabsTrigger>
           <TabsTrigger value="instructions" className="text-xs text-gray-300 data-[state=active]:bg-gray-600 data-[state=active]:text-white">
             Instructions
-          </TabsTrigger>
-          <TabsTrigger value="nutrition" className="text-xs text-gray-300 data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-            Nutrition
           </TabsTrigger>
         </TabsList>
 
@@ -165,15 +162,6 @@ const ExtractedRecipeDisplay = ({ recipe }: ExtractedRecipeDisplayProps) => {
               <li className="text-gray-400 text-sm">No instructions available</li>
             )}
           </ol>
-        </TabsContent>
-
-        <TabsContent value="nutrition" className="p-4 pt-3">
-          <div className="text-center py-8 text-gray-400">
-            <p className="text-sm">Nutrition information not available</p>
-            <p className="text-xs mt-2 text-gray-500">
-              Future versions will calculate nutrition from ingredients
-            </p>
-          </div>
         </TabsContent>
       </Tabs>
 

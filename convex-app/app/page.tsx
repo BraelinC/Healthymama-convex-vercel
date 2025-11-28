@@ -13,7 +13,7 @@ import { CommunityCard } from "@/components/community/CommunityCard";
 import { CreateCommunityModal } from "@/components/community/CreateCommunityModal";
 import { CheckoutModal } from "@/components/community/CheckoutModal";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BookMarked, Users, Plus, HandPlatter } from "lucide-react";
 import { AuthBlockerModal } from "@/components/auth/AuthBlockerModal";
 import { ProfileDropdownMenu } from "@/components/shared/ProfileDropdownMenu";
@@ -155,6 +155,12 @@ function HomePageContent() {
     user?.id ? { userId: user.id } : "skip"
   ) || 0;
 
+  // Fetch user profile with image
+  const userProfileWithImage = useQuery(
+    api.userProfile.getUserProfileWithImage,
+    user?.id ? { userId: user.id } : "skip"
+  );
+
   // Check if user has completed onboarding
   const hasCompletedOnboarding = useConvexQuery(
     api.userProfile.hasCompletedOnboarding,
@@ -284,7 +290,7 @@ function HomePageContent() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        {/* Tab Navigation - Bottom Navigation Style */}
+{/* HIDDEN - Bottom Navigation - will use later
         <TabsList className="fixed bottom-0 left-0 right-0 z-50 w-full bg-white border-t border-gray-200 rounded-none h-20 grid grid-cols-2 p-0 shadow-lg">
           <TabsTrigger
             value="cookbooks"
@@ -301,6 +307,7 @@ function HomePageContent() {
             <span className="text-sm font-medium">Community</span>
           </TabsTrigger>
         </TabsList>
+        */}
 
         {/* Cookbooks Tab Content */}
         <TabsContent value="cookbooks" className="m-0 pb-24">
@@ -334,6 +341,9 @@ function HomePageContent() {
                   >
                     <div className="relative">
                       <Avatar className="w-8 h-8 bg-healthymama-logo-pink">
+                        {userProfileWithImage?.profileImageUrl && (
+                          <AvatarImage src={userProfileWithImage.profileImageUrl} alt="Profile" />
+                        )}
                         <AvatarFallback className="text-white text-sm">
                           {user?.firstName?.[0] || user?.emailAddresses[0]?.emailAddress[0].toUpperCase() || "U"}
                         </AvatarFallback>

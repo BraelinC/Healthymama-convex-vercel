@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Upload, Image, Video } from "lucide-react";
+import { Upload } from "lucide-react";
 import { StoryEditor } from "./StoryEditor";
 
 interface CreateStoryModalProps {
@@ -105,28 +105,15 @@ export function CreateStoryModal({ isOpen, onClose }: CreateStoryModalProps) {
             {...getRootProps()}
             className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
               isDragActive
-                ? "border-healthymama-red bg-red-50"
-                : "border-gray-300 hover:border-healthymama-red"
+                ? "border-healthymama-pink bg-pink-50"
+                : "border-healthymama-pink/50 hover:border-healthymama-pink hover:bg-pink-50/50"
             }`}
           >
             <input {...getInputProps()} />
-            <Upload className="w-10 h-10 mx-auto text-gray-400 mb-3" />
-            <p className="text-gray-600 font-medium">
-              {isDragActive
-                ? "Drop your image or video here"
-                : "Drag & drop an image or video"}
+            <Upload className="w-10 h-10 mx-auto text-healthymama-pink mb-3" />
+            <p className="text-healthymama-pink font-medium">
+              {isDragActive ? "Drop your image here" : "Insert an image"}
             </p>
-            <p className="text-sm text-gray-400 mt-1">or click to browse</p>
-            <div className="flex justify-center gap-4 mt-4">
-              <div className="flex items-center text-xs text-gray-400">
-                <Image className="w-4 h-4 mr-1" />
-                Images
-              </div>
-              <div className="flex items-center text-xs text-gray-400">
-                <Video className="w-4 h-4 mr-1" />
-                Videos
-              </div>
-            </div>
           </div>
 
           <p className="text-xs text-gray-500 text-center">

@@ -301,7 +301,7 @@ export function UniversalRecipeCard({
             ))}
           </div>
 
-          {/* Start Cooking Button - Only show if video segments are available */}
+          {/* Start Cooking Button - Temporarily disabled
           {recipe.muxPlaybackId && recipe.videoSegments && recipe.videoSegments.length > 0 && (
             <Button
               className="w-full bg-gradient-to-br from-[#dc2626] to-[#ec4899] hover:shadow-red-glow text-white"
@@ -311,6 +311,7 @@ export function UniversalRecipeCard({
               Start Step-by-Step Cooking
             </Button>
           )}
+          */}
         </TabsContent>
       </Tabs>
     </Card>

@@ -113,3 +113,180 @@ export const deleteUserProfile = mutation({
     return false;
   },
 });
+
+// ========== PROFILE IMAGE FUNCTIONS ==========
+
+/**
+ * Generate upload URL for profile image
+ */
+export const generateProfileImageUploadUrl = mutation(async (ctx) => {
+  return await ctx.storage.generateUploadUrl();
+});
+
+/**
+ * Update profile with uploaded image storage ID
+ */
+export const updateProfileImage = mutation({
+  args: {
+    userId: v.string(),
+    profileImageStorageId: v.id("_storage"),
+  },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+
+    if (!profile) {
+      // Create profile if it doesn't exist
+      await ctx.db.insert("userProfiles", {
+        userId: args.userId,
+        profileImageStorageId: args.profileImageStorageId,
+        allergens: [],
+        dietaryPreferences: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      return { success: true };
+    }
+
+    // Delete old image if exists
+    if (profile.profileImageStorageId) {
+      await ctx.storage.delete(profile.profileImageStorageId);
+    }
+
+    await ctx.db.patch(profile._id, {
+      profileImageStorageId: args.profileImageStorageId,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Delete profile image
+ */
+export const deleteProfileImage = mutation({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+
+    if (!profile || !profile.profileImageStorageId) {
+      return { success: false };
+    }
+
+    // Delete from storage
+    await ctx.storage.delete(profile.profileImageStorageId);
+
+    // Update profile
+    await ctx.db.patch(profile._id, {
+      profileImageStorageId: undefined,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Get user profile with resolved image URL
+ */
+export const getUserProfileWithImage = query({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+
+    if (!profile) {
+      return null;
+    }
+
+    // Get image URL from storage
+    let profileImageUrl: string | null = null;
+    if (profile.profileImageStorageId) {
+      profileImageUrl = await ctx.storage.getUrl(profile.profileImageStorageId);
+    }
+
+    return {
+      ...profile,
+      profileImageUrl,
+    };
+  },
+});
+
+// ========== AYRSHARE / INSTAGRAM FUNCTIONS ==========
+
+/**
+ * Save Ayrshare profile key for user
+ */
+export const saveAyrshareProfileKey = mutation({
+  args: {
+    userId: v.string(),
+    ayrshareProfileKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+
+    if (!profile) {
+      // Create profile if it doesn't exist
+      await ctx.db.insert("userProfiles", {
+        userId: args.userId,
+        ayrshareProfileKey: args.ayrshareProfileKey,
+        allergens: [],
+        dietaryPreferences: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      return { success: true };
+    }
+
+    await ctx.db.patch(profile._id, {
+      ayrshareProfileKey: args.ayrshareProfileKey,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Update Instagram connection status
+ */
+export const updateInstagramConnection = mutation({
+  args: {
+    userId: v.string(),
+    instagramConnected: v.boolean(),
+    instagramUsername: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+
+    if (!profile) {
+      return { success: false, error: "Profile not found" };
+    }
+
+    await ctx.db.patch(profile._id, {
+      instagramConnected: args.instagramConnected,
+      instagramUsername: args.instagramUsername,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});

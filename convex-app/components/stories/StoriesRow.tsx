@@ -12,6 +12,7 @@ interface StoryUser {
   userId: string;
   userName: string;
   userEmail?: string;
+  profileImageUrl?: string | null;
   stories: any[];
   hasUnviewed: boolean;
 }
@@ -40,6 +41,12 @@ export function StoriesRow() {
     userId ? { userId } : "skip"
   );
 
+  // Fetch my profile image
+  const myProfile = useQuery(
+    api.userProfile.getUserProfileWithImage,
+    userId ? { userId } : "skip"
+  );
+
   // Don't render until mounted to avoid hydration issues
   if (!isMounted || !isLoaded) {
     return (
@@ -65,6 +72,7 @@ export function StoriesRow() {
       setSelectedUserStories({
         userId: userId!,
         userName: "Your Story",
+        profileImageUrl: myProfile?.profileImageUrl || null,
         stories: myStories,
         hasUnviewed: false,
       });
@@ -89,35 +97,39 @@ export function StoriesRow() {
     <>
       <div className="mb-6">
         <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-          {/* My Story / Create Story Button */}
+          {/* Create Story Button - Simple + button */}
           <button
-            onClick={handleMyStoriesClick}
-            className="flex flex-col items-center flex-shrink-0"
+            onClick={() => setIsCreateModalOpen(true)}
+            className="flex flex-col items-center justify-center flex-shrink-0"
           >
-            <div
-              className={`relative w-16 h-16 rounded-full flex items-center justify-center ${
-                myStories && myStories.length > 0
-                  ? "bg-gradient-to-br from-healthymama-red to-healthymama-pink p-[2px]"
-                  : "bg-gray-200"
-              }`}
-            >
-              <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
-                {myStories && myStories.length > 0 ? (
-                  <span className="text-lg font-bold text-healthymama-red">
-                    {getInitials("You")}
-                  </span>
-                ) : (
-                  <Plus className="w-6 h-6 text-gray-500" />
-                )}
-              </div>
-              {/* Add badge if no stories */}
-              {(!myStories || myStories.length === 0) && (
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-healthymama-red rounded-full flex items-center justify-center">
-                  <Plus className="w-3 h-3 text-white" strokeWidth={3} />
-                </div>
-              )}
+            <div className="w-16 h-16 bg-white border-2 border-healthymama-pink rounded-full flex items-center justify-center">
+              <Plus className="w-8 h-8 text-healthymama-pink" strokeWidth={2.5} />
             </div>
           </button>
+
+          {/* My Stories (if I have any) - no colored border */}
+          {myStories && myStories.length > 0 && (
+            <button
+              onClick={handleMyStoriesClick}
+              className="flex items-center justify-center flex-shrink-0"
+            >
+              <div className="w-16 h-16 rounded-full overflow-hidden">
+                {myProfile?.profileImageUrl ? (
+                  <img
+                    src={myProfile.profileImageUrl}
+                    alt="Your story"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                    <span className="text-lg font-bold text-gray-600">
+                      {getInitials("You")}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </button>
+          )}
 
           {/* Friends' Stories */}
           {friendsStories?.map((storyUser: StoryUser) => (
@@ -134,8 +146,14 @@ export function StoriesRow() {
                 }`}
               >
                 <div className="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden">
-                  {/* First story thumbnail or initials */}
-                  {storyUser.stories[0]?.mediaUrl && storyUser.stories[0]?.mediaType === "image" ? (
+                  {/* Profile image, first story thumbnail, or initials */}
+                  {storyUser.profileImageUrl ? (
+                    <img
+                      src={storyUser.profileImageUrl}
+                      alt={storyUser.userName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : storyUser.stories[0]?.mediaUrl && storyUser.stories[0]?.mediaType === "image" ? (
                     <img
                       src={storyUser.stories[0].mediaUrl}
                       alt={storyUser.userName}
@@ -154,12 +172,6 @@ export function StoriesRow() {
             </button>
           ))}
 
-          {/* Empty state */}
-          {(!friendsStories || friendsStories.length === 0) && (
-            <div className="flex items-center text-sm text-gray-400 pl-4">
-              Add friends to see their stories
-            </div>
-          )}
         </div>
       </div>
 

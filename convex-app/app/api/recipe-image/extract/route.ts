@@ -74,7 +74,7 @@ export async function POST(request: Request) {
         'X-Title': 'HealthyMama Recipe Image Extraction',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-preview-05-20', // Gemini 2.5 Flash as requested
+        model: 'google/gemini-2.5-flash',
         messages: [
           {
             role: 'user',

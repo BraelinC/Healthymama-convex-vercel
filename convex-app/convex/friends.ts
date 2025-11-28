@@ -162,7 +162,7 @@ export const getFriends = query({
       ...friendships2.map((f) => f.userId1),
     ];
 
-    // Get friend user details
+    // Get friend user details with profile images
     const friends = await Promise.all(
       friendIds.map(async (friendId) => {
         const user = await ctx.db
@@ -170,10 +170,22 @@ export const getFriends = query({
           .withIndex("by_userId", (q) => q.eq("userId", friendId))
           .first();
 
+        // Get profile image
+        const profile = await ctx.db
+          .query("userProfiles")
+          .withIndex("by_user", (q) => q.eq("userId", friendId))
+          .first();
+
+        let profileImageUrl: string | null = null;
+        if (profile?.profileImageStorageId) {
+          profileImageUrl = await ctx.storage.getUrl(profile.profileImageStorageId);
+        }
+
         return {
           userId: friendId,
           name: user?.prefs?.profileName || user?.email || "Unknown",
           email: user?.email || "",
+          profileImageUrl,
         };
       })
     );
@@ -210,7 +222,7 @@ export const getPendingFriendRequests = query({
 
     const allRequests = [...requests1, ...requests2];
 
-    // Get requester details
+    // Get requester details with profile images
     const enriched = await Promise.all(
       allRequests.map(async (request) => {
         const requester = await ctx.db
@@ -218,11 +230,23 @@ export const getPendingFriendRequests = query({
           .withIndex("by_userId", (q) => q.eq("userId", request.requestedBy))
           .first();
 
+        // Get profile image
+        const profile = await ctx.db
+          .query("userProfiles")
+          .withIndex("by_user", (q) => q.eq("userId", request.requestedBy))
+          .first();
+
+        let profileImageUrl: string | null = null;
+        if (profile?.profileImageStorageId) {
+          profileImageUrl = await ctx.storage.getUrl(profile.profileImageStorageId);
+        }
+
         return {
           friendshipId: request._id,
           requesterId: request.requestedBy,
           requesterName: requester?.prefs?.profileName || requester?.email || "Unknown",
           requesterEmail: requester?.email || "",
+          profileImageUrl,
           createdAt: request.createdAt,
         };
       })
@@ -250,10 +274,22 @@ export const searchUserByEmail = query({
       return null;
     }
 
+    // Get profile image
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", user.userId))
+      .first();
+
+    let profileImageUrl: string | null = null;
+    if (profile?.profileImageStorageId) {
+      profileImageUrl = await ctx.storage.getUrl(profile.profileImageStorageId);
+    }
+
     return {
       userId: user.userId,
       name: user.prefs?.profileName || user.email,
       email: user.email,
+      profileImageUrl,
     };
   },
 });

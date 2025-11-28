@@ -139,11 +139,18 @@ export const getFriendsStories = query({
           })
         );
 
+        // Get profile image URL
+        let profileImageUrl: string | null = null;
+        if (userProfile?.profileImageStorageId) {
+          profileImageUrl = await ctx.storage.getUrl(userProfile.profileImageStorageId);
+        }
+
         storiesByUser.set(friendId, [
           {
             userId: friendId,
             userName: userProfile?.name || user?.prefs?.profileName || user?.email?.split("@")[0] || "User",
             userEmail: user?.email,
+            profileImageUrl,
             stories: storiesWithUrls,
             hasUnviewed: storiesWithUrls.some((s) => !s.isViewed),
           },
@@ -296,11 +303,18 @@ export const getStoryViewers = query({
           .withIndex("by_user", (q) => q.eq("userId", view.viewerId))
           .first();
 
+        // Get profile image URL
+        let profileImageUrl: string | null = null;
+        if (userProfile?.profileImageStorageId) {
+          profileImageUrl = await ctx.storage.getUrl(userProfile.profileImageStorageId);
+        }
+
         return {
           viewerId: view.viewerId,
           viewedAt: view.viewedAt,
           viewerName: userProfile?.name || user?.prefs?.profileName || user?.email?.split("@")[0] || "User",
           viewerEmail: user?.email,
+          profileImageUrl,
         };
       })
     );

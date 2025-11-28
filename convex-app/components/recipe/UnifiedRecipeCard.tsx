@@ -11,6 +11,7 @@ import { Plus, Share2, Heart, Clock, ShoppingCart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ShareRecipeSheet } from "@/components/shared/ShareRecipeSheet";
 import { Id } from "@/convex/_generated/dataModel";
+import MuxPlayer from "@mux/mux-player-react";
 
 // Helper function to select priority tags (max 2: 1 meal type + 1 diet type)
 function selectPriorityTags(
@@ -115,6 +116,7 @@ interface UnifiedRecipeCardProps {
       fiber_g?: number;
       sugar_g?: number;
     };
+    muxPlaybackId?: string;
   };
   isFavorited?: boolean;
   onToggleFavorite?: () => void;
@@ -230,10 +232,18 @@ export function UnifiedRecipeCard({
   return (
     <>
     <Card className="overflow-hidden shadow-lg max-w-2xl mx-auto bg-white">
-      {/* Image Section with Action Buttons Overlay */}
+      {/* Image/Video Section with Action Buttons Overlay */}
       <div className="relative">
         <div className="relative h-64 w-full bg-gray-200">
-          {recipe.imageUrl ? (
+          {recipe.muxPlaybackId ? (
+            <MuxPlayer
+              playbackId={recipe.muxPlaybackId}
+              className="w-full h-full object-cover"
+              streamType="on-demand"
+              muted={false}
+              autoPlay={false}
+            />
+          ) : recipe.imageUrl ? (
             <ImageWithFallback
               src={recipe.imageUrl}
               alt={recipe.name || recipe.title || "Recipe"}
@@ -363,9 +373,9 @@ export function UnifiedRecipeCard({
         </div>
       </div>
 
-      {/* Tabs Section - Ingredients, Instructions, and Nutrition */}
+      {/* Tabs Section - Ingredients and Instructions */}
       <Tabs defaultValue="ingredients" className="w-full">
-        <TabsList className="w-full grid grid-cols-3 rounded-none bg-gray-50">
+        <TabsList className="w-full grid grid-cols-2 rounded-none bg-gray-50">
           <TabsTrigger
             value="ingredients"
             className="data-[state=active]:bg-white data-[state=active]:text-pink-600"
@@ -377,12 +387,6 @@ export function UnifiedRecipeCard({
             className="data-[state=active]:bg-white data-[state=active]:text-pink-600"
           >
             Instructions
-          </TabsTrigger>
-          <TabsTrigger
-            value="nutrition"
-            className="data-[state=active]:bg-white data-[state=active]:text-pink-600"
-          >
-            Nutrition
           </TabsTrigger>
         </TabsList>
 
@@ -440,73 +444,6 @@ export function UnifiedRecipeCard({
           )}
         </TabsContent>
 
-        {/* Nutrition Tab */}
-        <TabsContent value="nutrition" className="p-6">
-          {recipe.nutrition_info && (
-            recipe.nutrition_info.calories ||
-            recipe.nutrition_info.protein_g ||
-            recipe.nutrition_info.carbs_g ||
-            recipe.nutrition_info.fat_g
-          ) ? (
-            <div className="grid grid-cols-2 gap-4">
-              {recipe.nutrition_info.calories !== undefined && (
-                <div className="bg-pink-50 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-pink-600">
-                    {recipe.nutrition_info.calories}
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">Calories</p>
-                </div>
-              )}
-              {recipe.nutrition_info.protein_g !== undefined && (
-                <div className="bg-rose-50 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-rose-600">
-                    {recipe.nutrition_info.protein_g}g
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">Protein</p>
-                </div>
-              )}
-              {recipe.nutrition_info.carbs_g !== undefined && (
-                <div className="bg-orange-50 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-orange-600">
-                    {recipe.nutrition_info.carbs_g}g
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">Carbs</p>
-                </div>
-              )}
-              {recipe.nutrition_info.fat_g !== undefined && (
-                <div className="bg-yellow-50 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-yellow-600">
-                    {recipe.nutrition_info.fat_g}g
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">Fat</p>
-                </div>
-              )}
-              {recipe.nutrition_info.fiber_g !== undefined && (
-                <div className="bg-green-50 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-green-600">
-                    {recipe.nutrition_info.fiber_g}g
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">Fiber</p>
-                </div>
-              )}
-              {recipe.nutrition_info.sugar_g !== undefined && (
-                <div className="bg-pink-50 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-pink-600">
-                    {recipe.nutrition_info.sugar_g}g
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">Sugar</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-400">
-              <p className="text-sm">Nutrition information not available</p>
-              <p className="text-xs mt-2 text-gray-500">
-                Nutrition data will be calculated from ingredients
-              </p>
-            </div>
-          )}
-        </TabsContent>
       </Tabs>
     </Card>
 

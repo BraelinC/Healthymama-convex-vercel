@@ -180,43 +180,83 @@ export function extractRecipeSection(html: string): string {
   // List of common recipe container patterns (in priority order)
   // Use regex to find WHERE marker is, then extract big chunk from that position
   const recipeSelectors = [
-    // Recipe plugin specific (WordPress)
-    { pattern: /<div[^>]*class="[^"]*wprm-recipe[^"]*"/i, name: 'WP Recipe Maker' },
-    { pattern: /<div[^>]*class="[^"]*tasty-recipes[^"]*"/i, name: 'Tasty Recipes' },
-    { pattern: /<div[^>]*class="[^"]*mv-create[^"]*"/i, name: 'Mediavine Create' },
-    { pattern: /<div[^>]*class="[^"]*easyrecipe[^"]*"/i, name: 'EasyRecipe' },
-    { pattern: /<div[^>]*class="[^"]*recipe-card[^"]*"/i, name: 'Recipe Card' },
+    // Recipe plugin specific (WordPress) - highest priority, always use first match
+    { pattern: /<div[^>]*class="[^"]*wprm-recipe-container[^"]*"/gi, name: 'WP Recipe Maker Container', priority: 1 },
+    { pattern: /<div[^>]*class="[^"]*wprm-recipe[^"]*"/gi, name: 'WP Recipe Maker', priority: 1 },
+    { pattern: /<div[^>]*class="[^"]*tasty-recipes[^"]*"/gi, name: 'Tasty Recipes', priority: 1 },
+    { pattern: /<div[^>]*class="[^"]*mv-create[^"]*"/gi, name: 'Mediavine Create', priority: 1 },
+    { pattern: /<div[^>]*class="[^"]*easyrecipe[^"]*"/gi, name: 'EasyRecipe', priority: 1 },
 
-    // Generic recipe markers
-    { pattern: /<article[^>]*class="[^"]*recipe[^"]*"/i, name: 'Article with recipe class' },
-    { pattern: /<div[^>]*class="[^"]*recipe[^"]*"/i, name: 'Div with recipe class' },
-    { pattern: /<section[^>]*class="[^"]*recipe[^"]*"/i, name: 'Section with recipe class' },
+    // Recipe card - prefer early in page
+    { pattern: /<div[^>]*class="[^"]*recipe-card[^"]*"/gi, name: 'Recipe Card', priority: 2 },
 
-    // Main content containers (WordPress and generic)
-    { pattern: /<main[^>]*>/i, name: 'Main tag' },
-    { pattern: /<article[^>]*>/i, name: 'Article tag' },
-    { pattern: /<div[^>]*class="[^"]*entry-content[^"]*"/i, name: 'Entry content' },
-    { pattern: /<div[^>]*class="[^"]*post-content[^"]*"/i, name: 'Post content' },
-    { pattern: /<div[^>]*class="[^"]*content[^"]*"/i, name: 'Content div' },
+    // Generic recipe markers - prefer early occurrences
+    { pattern: /<article[^>]*class="[^"]*recipe[^"]*"/gi, name: 'Article with recipe class', priority: 2 },
+    { pattern: /<div[^>]*class="[^"]*recipe-content[^"]*"/gi, name: 'Recipe content div', priority: 2 },
+    { pattern: /<div[^>]*class="[^"]*recipe[^"]*"/gi, name: 'Div with recipe class', priority: 3 },
+    { pattern: /<section[^>]*class="[^"]*recipe[^"]*"/gi, name: 'Section with recipe class', priority: 3 },
+
+    // Main content containers - last resort
+    { pattern: /<main[^>]*>/gi, name: 'Main tag', priority: 4 },
+    { pattern: /<article[^>]*>/gi, name: 'Article tag', priority: 4 },
+    { pattern: /<div[^>]*class="[^"]*entry-content[^"]*"/gi, name: 'Entry content', priority: 4 },
+    { pattern: /<div[^>]*class="[^"]*post-content[^"]*"/gi, name: 'Post content', priority: 4 },
   ];
 
-  // Try each selector in priority order
-  for (const selector of recipeSelectors) {
-    const match = html.match(selector.pattern);
-    if (match && match.index !== undefined) {
-      // Found the marker! Now extract a large chunk from this position
-      const startPosition = match.index;
-      const chunkSize = 50000; // 50K chars should cover any recipe card
-      const extractedHtml = html.slice(startPosition, startPosition + chunkSize);
+  // Try each selector in priority order, prefer matches in first half of page
+  let bestMatch: { position: number; name: string; priority: number } | null = null;
 
-      console.log(`✅ [SECTION] Found recipe section using: ${selector.name}`);
-      console.log(`📏 [SECTION] Extracted ${extractedHtml.length} chars from position ${startPosition} (vs ${html.length} original = ${Math.round(extractedHtml.length / html.length * 100)}% of page)`);
-      return extractedHtml;
+  for (const selector of recipeSelectors) {
+    const regex = new RegExp(selector.pattern);
+    let match;
+
+    // Find ALL matches for this pattern
+    const matches: Array<{ index: number }> = [];
+    while ((match = regex.exec(html)) !== null) {
+      matches.push({ index: match.index });
+    }
+
+    if (matches.length > 0) {
+      // For high priority patterns (1-2), take the FIRST match
+      // For lower priority patterns (3-4), prefer matches in first 50% of page
+      const halfwayPoint = html.length / 2;
+
+      let selectedMatch;
+      if (selector.priority <= 2) {
+        // High priority: use first occurrence
+        selectedMatch = matches[0];
+        console.log(`🎯 [SECTION] Found ${matches.length} "${selector.name}" matches, using first at position ${selectedMatch.index}`);
+      } else {
+        // Lower priority: prefer first half of page
+        const firstHalfMatches = matches.filter(m => m.index < halfwayPoint);
+        selectedMatch = firstHalfMatches.length > 0 ? firstHalfMatches[0] : matches[0];
+        console.log(`🎯 [SECTION] Found ${matches.length} "${selector.name}" matches, ${firstHalfMatches.length} in first half, using position ${selectedMatch.index}`);
+      }
+
+      // Update best match if this is higher priority or earlier in page
+      if (!bestMatch ||
+          selector.priority < bestMatch.priority ||
+          (selector.priority === bestMatch.priority && selectedMatch.index < bestMatch.position)) {
+        bestMatch = {
+          position: selectedMatch.index,
+          name: selector.name,
+          priority: selector.priority
+        };
+      }
     }
   }
 
-  console.log('⚠️ [SECTION] No recipe-specific markers found, returning full HTML');
-  return html;
+  if (bestMatch) {
+    const chunkSize = 100000; // 100K chars to ensure we get full recipe
+    const extractedHtml = html.slice(bestMatch.position, bestMatch.position + chunkSize);
+
+    console.log(`✅ [SECTION] Using best match: ${bestMatch.name} (priority ${bestMatch.priority})`);
+    console.log(`📏 [SECTION] Extracted ${extractedHtml.length} chars from position ${bestMatch.position} (${Math.round(bestMatch.position / html.length * 100)}% into page)`);
+    return extractedHtml;
+  }
+
+  console.log('⚠️ [SECTION] No recipe-specific markers found, returning first 150K chars');
+  return html.slice(0, 150000); // Return first 150K instead of full HTML
 }
 
 /**

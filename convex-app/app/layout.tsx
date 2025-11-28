@@ -47,7 +47,9 @@ export default function RootLayout({
         <HealthyMamaConvexProvider>
           {children}
           <Toaster />
+          {/* HIDDEN - will use later
           <CustomFeedbackButton />
+          */}
         </HealthyMamaConvexProvider>
       </body>
     </html>

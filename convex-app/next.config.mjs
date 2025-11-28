@@ -15,16 +15,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-
-  // Turbopack configuration for handling Node.js built-in modules
-  experimental: {
-    turbo: {
-      resolveAlias: {
-        // Polyfill/stub out node:crypto for client-side
-        'node:crypto': 'crypto-browserify',
-      },
-    },
-  },
 };
 
 export default nextConfig;

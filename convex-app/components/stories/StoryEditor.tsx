@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Trash2,
   Search,
+  Instagram,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -88,8 +89,20 @@ export function StoryEditor({
   // Caption
   const [caption, setCaption] = useState("");
 
+  // Instagram posting
+  const [postToInstagram, setPostToInstagram] = useState(false);
+  const [isPostingToInstagram, setIsPostingToInstagram] = useState(false);
+
   // Upload state
   const [isUploading, setIsUploading] = useState(false);
+
+  // Get user profile for Instagram connection status
+  const userProfile = useQuery(
+    api.userProfile.getUserProfileWithImage,
+    userId ? { userId } : "skip"
+  );
+
+  const instagramConnected = userProfile?.instagramConnected && userProfile?.ayrshareProfileKey;
 
   // Touch/drag state for image
   const [isDraggingImage, setIsDraggingImage] = useState(false);
@@ -312,6 +325,109 @@ export function StoryEditor({
     }
   }, [isDraggingText, handleTextDrag]);
 
+  // Get selected recipe details for Instagram caption
+  const selectedRecipe = displayRecipes?.find((r: any) => r._id === selectedRecipeId);
+
+  // Generate final image with text overlays baked in for Instagram
+  const generateFinalImage = async (): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Could not get canvas context"));
+        return;
+      }
+
+      // Instagram Story dimensions (9:16 aspect ratio)
+      const outputWidth = 1080;
+      const outputHeight = 1920;
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
+
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        // Calculate dimensions to cover canvas while maintaining aspect ratio
+        const imgAspect = img.width / img.height;
+        const canvasAspect = outputWidth / outputHeight;
+
+        let drawWidth, drawHeight, offsetX, offsetY;
+
+        if (imgAspect > canvasAspect) {
+          // Image is wider - fit to height
+          drawHeight = outputHeight;
+          drawWidth = outputHeight * imgAspect;
+          offsetX = (outputWidth - drawWidth) / 2;
+          offsetY = 0;
+        } else {
+          // Image is taller - fit to width
+          drawWidth = outputWidth;
+          drawHeight = outputWidth / imgAspect;
+          offsetX = 0;
+          offsetY = (outputHeight - drawHeight) / 2;
+        }
+
+        // Apply user transforms (scale and position)
+        const scaleFactor = outputWidth / (containerRef.current?.offsetWidth || 450);
+        const finalDrawWidth = drawWidth * imageScale;
+        const finalDrawHeight = drawHeight * imageScale;
+        const finalOffsetX = offsetX + (imagePosition.x * scaleFactor);
+        const finalOffsetY = offsetY + (imagePosition.y * scaleFactor);
+
+        // Fill background with black
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, outputWidth, outputHeight);
+
+        // Draw image with transforms
+        ctx.drawImage(img, finalOffsetX, finalOffsetY, finalDrawWidth, finalDrawHeight);
+
+        // Draw text overlays
+        textOverlays.forEach((overlay) => {
+          const x = (overlay.x / 100) * outputWidth;
+          const y = (overlay.y / 100) * outputHeight;
+          const fontSize = overlay.size * scaleFactor;
+
+          // Set font
+          let fontFamily = "sans-serif";
+          if (overlay.font === "serif") fontFamily = "Georgia, serif";
+          if (overlay.font === "handwritten") fontFamily = "'Dancing Script', cursive";
+
+          ctx.font = `${fontSize}px ${fontFamily}`;
+          ctx.fillStyle = overlay.color;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+
+          // Add text shadow
+          ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+          ctx.shadowBlur = 4;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 2;
+
+          ctx.fillText(overlay.text, x, y);
+
+          // Reset shadow
+          ctx.shadowColor = "transparent";
+          ctx.shadowBlur = 0;
+        });
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error("Failed to create blob"));
+            }
+          },
+          "image/jpeg",
+          0.9
+        );
+      };
+
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.src = previewUrl;
+    });
+  };
+
   // Handle post
   const handlePost = async () => {
     if (!userId) return;
@@ -356,6 +472,90 @@ export function StoryEditor({
           size: t.size,
         })),
       });
+
+      // Post to Instagram if enabled
+      if (postToInstagram && instagramConnected && mediaType === "image") {
+        setIsPostingToInstagram(true);
+        try {
+          // Generate final image with text overlays baked in
+          const finalImageBlob = await generateFinalImage();
+
+          // Get upload URL from Ayrshare
+          const uploadUrlRes = await fetch("/api/ayrshare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "get-upload-url",
+              profileKey: userProfile?.ayrshareProfileKey,
+              fileName: `story-${Date.now()}.jpg`,
+              contentType: "image/jpeg",
+            }),
+          });
+
+          const uploadUrlData = await uploadUrlRes.json();
+
+          if (!uploadUrlData.success) {
+            throw new Error(uploadUrlData.error || "Failed to get upload URL");
+          }
+
+          // Upload to Ayrshare
+          const ayrshareUploadRes = await fetch(uploadUrlData.uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": "image/jpeg" },
+            body: finalImageBlob,
+          });
+
+          if (!ayrshareUploadRes.ok) {
+            throw new Error("Failed to upload to Ayrshare");
+          }
+
+          // Build Instagram caption with recipe info
+          let instagramCaption = caption || "";
+          if (selectedRecipe) {
+            const recipeTitle = selectedRecipe.title || selectedRecipe.customRecipeData?.title || "Recipe";
+            instagramCaption += instagramCaption ? "\n\n" : "";
+            instagramCaption += `🍽️ ${recipeTitle}\n📱 Get it on HealthyMama!`;
+          }
+
+          // Post to Instagram Stories
+          const postRes = await fetch("/api/ayrshare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "post-to-instagram",
+              profileKey: userProfile?.ayrshareProfileKey,
+              mediaUrl: uploadUrlData.accessUrl,
+              caption: instagramCaption,
+              isStory: true,
+            }),
+          });
+
+          const postData = await postRes.json();
+
+          if (postData.success) {
+            toast({
+              title: "Posted to Instagram!",
+              description: "Your story was also shared to Instagram Stories.",
+            });
+          } else {
+            console.error("Instagram post error:", postData);
+            toast({
+              title: "Instagram post failed",
+              description: postData.error || "Could not post to Instagram, but your story was saved.",
+              variant: "destructive",
+            });
+          }
+        } catch (igError) {
+          console.error("Instagram posting error:", igError);
+          toast({
+            title: "Instagram post failed",
+            description: "Could not post to Instagram, but your story was saved.",
+            variant: "destructive",
+          });
+        } finally {
+          setIsPostingToInstagram(false);
+        }
+      }
 
       toast({
         title: "Story posted!",
@@ -472,6 +672,28 @@ export function StoryEditor({
               playsInline
             />
           )}
+
+          {/* Text and Recipe buttons - floating overlay */}
+          <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+            <button
+              onClick={handleAddText}
+              className="flex items-center gap-2 px-3 py-2 rounded-full bg-black/50 hover:bg-black/70 text-white text-sm backdrop-blur-sm"
+            >
+              <Type className="w-4 h-4" />
+              Text
+            </button>
+            <button
+              onClick={() => setShowRecipeSelector(true)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-full text-sm backdrop-blur-sm ${
+                selectedRecipeId
+                  ? "bg-healthymama-pink/80 text-white"
+                  : "bg-black/50 hover:bg-black/70 text-white"
+              }`}
+            >
+              <ChefHat className="w-4 h-4" />
+              {selectedRecipeId ? "Recipe ✓" : "Recipe"}
+            </button>
+          </div>
 
           {/* Text Overlays */}
           {textOverlays.map((overlay) => (
@@ -606,46 +828,41 @@ export function StoryEditor({
 
           {/* Bottom Toolbar */}
           <div className="bg-gray-800/50 p-3">
-            <div className="flex items-center justify-between">
-              {/* Left tools */}
-              <div className="flex gap-2">
+            <div className="flex items-center justify-between gap-3">
+              {/* Instagram toggle - inline */}
+              {mediaType === "image" && (
                 <button
-                  onClick={handleAddText}
-                  className="flex flex-col items-center text-white"
-                >
-                  <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center">
-                    <Type className="w-5 h-5" />
-                  </div>
-                  <span className="text-xs mt-1">Text</span>
-                </button>
-
-                <button
-                  onClick={() => setShowRecipeSelector(true)}
-                  className={`flex flex-col items-center ${
-                    selectedRecipeId ? "text-healthymama-pink" : "text-white"
+                  onClick={() => instagramConnected && setPostToInstagram(!postToInstagram)}
+                  disabled={!instagramConnected}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-full transition-all ${
+                    !instagramConnected
+                      ? "opacity-50 cursor-not-allowed"
+                      : postToInstagram
+                        ? "bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500"
+                        : "bg-gray-700 hover:bg-gray-600"
                   }`}
+                  title={!instagramConnected ? "Connect Instagram in Profile" : "Share to Instagram"}
                 >
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      selectedRecipeId ? "bg-healthymama-pink/20" : "bg-gray-700"
-                    }`}
-                  >
-                    <ChefHat className="w-5 h-5" />
-                  </div>
-                  <span className="text-xs mt-1">Recipe</span>
+                  <Instagram className="w-5 h-5 text-white" />
+                  <span className="text-white text-sm hidden sm:inline">
+                    {postToInstagram ? "Instagram ✓" : "Instagram"}
+                  </span>
                 </button>
-              </div>
+              )}
+
+              {/* Spacer when no Instagram toggle */}
+              {mediaType !== "image" && <div />}
 
               {/* Post button */}
               <Button
                 onClick={handlePost}
-                disabled={isUploading}
-                className="bg-gradient-to-r from-healthymama-red to-healthymama-pink text-white px-6"
+                disabled={isUploading || isPostingToInstagram}
+                className="bg-gradient-to-r from-healthymama-red to-healthymama-pink text-white px-8"
               >
-                {isUploading ? (
+                {isUploading || isPostingToInstagram ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Posting...
+                    {isPostingToInstagram ? "Posting to IG..." : "Posting..."}
                   </>
                 ) : (
                   <>

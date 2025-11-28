@@ -193,7 +193,7 @@ Return ONLY this JSON (no markdown, no extra text):
         'X-Title': 'HealthyMama Recipe Extraction',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-preview-05-20',
+        model: 'google/gemini-2.5-flash',
         messages: [
           {
             role: 'user',
@@ -402,7 +402,7 @@ CRITICAL: Segments array MUST be sorted by startTime (earliest to latest), regar
         'X-Title': 'HealthyMama Video Analysis',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-preview-05-20',
+        model: 'google/gemini-2.5-flash',
         messages: [
           {
             role: 'user',
@@ -670,7 +670,7 @@ Return ONLY this JSON (no markdown, no extra text):
         'X-Title': 'HealthyMama Pinterest Recipe Extraction',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-preview-05-20', // Supports vision
+        model: 'google/gemini-2.5-flash', // Supports vision
         messages: [
           {
             role: 'user',

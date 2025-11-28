@@ -925,6 +925,14 @@ export default defineSchema({
     kitchenEquipment: v.optional(v.array(v.string())), // ["air fryer", "instant pot"]
     defaultServings: v.optional(v.number()), // Default number of servings
 
+    // Profile image
+    profileImageStorageId: v.optional(v.id("_storage")), // Convex storage ID for profile image
+
+    // Ayrshare / Instagram integration
+    ayrshareProfileKey: v.optional(v.string()), // Ayrshare profile key for this user
+    instagramConnected: v.optional(v.boolean()), // Whether Instagram is connected
+    instagramUsername: v.optional(v.string()), // Connected Instagram username
+
     // Timestamps
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -1218,4 +1226,28 @@ export default defineSchema({
     .index("by_story", ["storyId"])
     .index("by_viewer", ["viewerId"])
     .index("by_viewer_story", ["viewerId", "storyId"]), // Check if user viewed
+
+  // ========== RECIPE EXTRACTION BLOCKLIST ==========
+
+  // Blocked Recipe Domains: Sites that block bot traffic (403 errors)
+  blockedRecipeDomains: defineTable({
+    domain: v.string(), // Domain name (e.g., "allrecipes.com")
+    reason: v.string(), // Why blocked (e.g., "403 Forbidden - Cloudflare protection")
+
+    // Auto-detection metadata
+    errorCount: v.number(), // How many 403 errors triggered this
+    lastErrorAt: v.number(), // Last time we saw a 403 from this domain
+
+    // Manual override
+    isManualBlock: v.boolean(), // true if manually added, false if auto-detected
+
+    // Status
+    isActive: v.boolean(), // Can be temporarily disabled for testing
+
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_domain", ["domain"])
+    .index("by_active", ["isActive"])
+    .index("by_last_error", ["lastErrorAt"]),
 });

@@ -7,14 +7,9 @@ import { Id } from "@/convex/_generated/dataModel";
 import {
   Sheet,
   SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
 } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Check, Loader2 } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Check, Loader2, Link2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ShareRecipeSheetProps {
@@ -33,13 +28,12 @@ export function ShareRecipeSheet({
   userId,
 }: ShareRecipeSheetProps) {
   const { toast } = useToast();
-  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
-  const [message, setMessage] = useState("");
-  const [isSharing, setIsSharing] = useState(false);
+  const [sharingToId, setSharingToId] = useState<string | null>(null);
+  const [recentlyShared, setRecentlyShared] = useState<Set<string>>(new Set());
 
-  // Get friends list
+  // Get friends sorted by most recently shared with
   const friends = useQuery(
-    api.friends.getFriends,
+    api.sharing.getFriendsForSharing,
     userId ? { userId } : "skip"
   );
 
@@ -52,175 +46,151 @@ export function ShareRecipeSheet({
   // Share recipe mutation
   const shareRecipeMutation = useMutation(api.sharing.shareRecipe);
 
-  // Handle share
-  const handleShare = async () => {
-    if (!selectedFriendId) {
-      toast({
-        title: "Please select a friend",
-        variant: "destructive",
-      });
-      return;
-    }
+  // Check if already shared with a friend
+  const isAlreadyShared = (friendId: string) => {
+    return existingShares?.some((share) => share.toUserId === friendId) || recentlyShared.has(friendId);
+  };
 
-    setIsSharing(true);
+  // Handle share to friend
+  const handleShareToFriend = async (friendId: string, friendName: string) => {
+    if (isAlreadyShared(friendId)) return;
+
+    setSharingToId(friendId);
     try {
       await shareRecipeMutation({
         fromUserId: userId,
-        toUserId: selectedFriendId,
+        toUserId: friendId,
         recipeId,
-        message: message.trim() || undefined,
       });
+
+      setRecentlyShared(prev => new Set(prev).add(friendId));
 
       toast({
-        title: "Recipe shared!",
-        description: `${recipeTitle} was shared successfully.`,
+        title: "Shared!",
+        description: `Sent to ${friendName}`,
       });
-
-      setSelectedFriendId(null);
-      setMessage("");
-      onClose();
     } catch (error: any) {
       toast({
-        title: "Error sharing recipe",
-        description: error.message || "Something went wrong",
+        title: "Error",
+        description: error.message || "Failed to share",
         variant: "destructive",
       });
     } finally {
-      setIsSharing(false);
+      setSharingToId(null);
     }
   };
 
-  // Check if already shared with a friend
-  const isAlreadyShared = (friendId: string) => {
-    return existingShares?.some((share) => share.toUserId === friendId);
+  // Handle copy link
+  const handleCopyLink = async () => {
+    const shareUrl = `${window.location.origin}/recipe/${recipeId}`;
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      toast({
+        title: "Link copied!",
+        description: "Recipe link copied to clipboard",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to copy link",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent side="bottom" className="w-full sm:max-w-md mx-auto overflow-y-auto rounded-t-2xl max-h-[90vh]">
-        <SheetHeader>
-          <SheetTitle>Share Recipe</SheetTitle>
-          <SheetDescription>
-            Share "{recipeTitle}" with your friends
-          </SheetDescription>
-        </SheetHeader>
+      <SheetContent
+        side="bottom"
+        className="w-full rounded-t-3xl px-4 pb-8 pt-2"
+      >
+        {/* Handle bar */}
+        <div className="flex justify-center mb-4">
+          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+        </div>
 
-        <div className="mt-6 space-y-6">
-          {/* Already Shared With Section */}
-          {existingShares && existingShares.length > 0 && (
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3">
-                Already shared with:
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {existingShares.map((share) => (
-                  <div
-                    key={share._id}
-                    className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-full"
-                  >
-                    <Avatar className="w-6 h-6 bg-healthymama-logo-pink">
-                      <AvatarFallback className="text-white text-xs">
-                        {share.recipientName[0].toUpperCase()}
+        {/* Title */}
+        <div className="text-center mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">Share</h3>
+        </div>
+
+        {/* Friends row - horizontal scrollable */}
+        <div className="mb-6">
+          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+            {/* Copy Link button - first item */}
+            <button
+              onClick={handleCopyLink}
+              className="flex flex-col items-center gap-2 min-w-[60px]"
+            >
+              <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
+                <Link2 className="w-6 h-6 text-gray-600" />
+              </div>
+              <span className="text-xs text-gray-600 truncate max-w-[60px]">Copy link</span>
+            </button>
+
+            {/* Friend avatars */}
+            {friends?.map((friend) => {
+              const shared = isAlreadyShared(friend.userId);
+              const isSharing = sharingToId === friend.userId;
+
+              return (
+                <button
+                  key={friend.userId}
+                  onClick={() => handleShareToFriend(friend.userId, friend.name)}
+                  disabled={shared || isSharing}
+                  className="flex flex-col items-center gap-2 min-w-[60px]"
+                >
+                  <div className="relative">
+                    <Avatar className={`w-14 h-14 border-2 transition-all ${
+                      shared
+                        ? "border-green-500"
+                        : "border-transparent hover:border-healthymama-pink"
+                    }`}>
+                      {friend.profileImageUrl ? (
+                        <AvatarImage src={friend.profileImageUrl} alt={friend.name} />
+                      ) : null}
+                      <AvatarFallback className="bg-gradient-to-br from-healthymama-pink to-healthymama-red text-white text-lg">
+                        {friend.name[0].toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-sm text-gray-700">{share.recipientName}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {/* Friends List */}
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-3">
-              Select a friend:
-            </h3>
-
-            {friends && friends.length > 0 ? (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {friends.map((friend) => {
-                  const alreadyShared = isAlreadyShared(friend.userId);
-                  return (
-                    <button
-                      key={friend.userId}
-                      onClick={() => !alreadyShared && setSelectedFriendId(friend.userId)}
-                      disabled={alreadyShared}
-                      className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-all ${
-                        selectedFriendId === friend.userId
-                          ? "border-healthymama-pink bg-pink-50"
-                          : alreadyShared
-                          ? "border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed"
-                          : "border-gray-200 hover:border-healthymama-pink hover:bg-pink-50"
-                      }`}
-                    >
-                      <Avatar className="w-10 h-10 bg-healthymama-logo-pink">
-                        <AvatarFallback className="text-white">
-                          {friend.name[0].toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 text-left">
-                        <p className="font-medium text-gray-900">{friend.name}</p>
-                        <p className="text-sm text-gray-500">{friend.email}</p>
+                    {/* Loading or check overlay */}
+                    {(isSharing || shared) && (
+                      <div className={`absolute inset-0 rounded-full flex items-center justify-center ${
+                        shared ? "bg-green-500/90" : "bg-black/50"
+                      }`}>
+                        {isSharing ? (
+                          <Loader2 className="w-5 h-5 text-white animate-spin" />
+                        ) : (
+                          <Check className="w-5 h-5 text-white" />
+                        )}
                       </div>
-                      {alreadyShared && (
-                        <Check className="w-5 h-5 text-green-600" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p>No friends yet</p>
-                <p className="text-sm mt-1">
-                  Add friends from the Social page to share recipes
-                </p>
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-600 truncate max-w-[60px]">
+                    {friend.name.split(" ")[0]}
+                  </span>
+                </button>
+              );
+            })}
+
+            {/* Empty state */}
+            {(!friends || friends.length === 0) && (
+              <div className="flex-1 text-center py-4 text-gray-500 text-sm">
+                Add friends to share recipes
               </div>
             )}
           </div>
-
-          {/* Optional Message */}
-          {selectedFriendId && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-2 block">
-                Add a message (optional)
-              </label>
-              <Textarea
-                placeholder="Hey, you should try this recipe!"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={3}
-                className="resize-none"
-              />
-            </div>
-          )}
-
-          {/* Share Button */}
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              className="flex-1"
-              disabled={isSharing}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleShare}
-              className="flex-1 bg-healthymama-pink hover:bg-healthymama-pink/90"
-              disabled={!selectedFriendId || isSharing}
-            >
-              {isSharing ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Sharing...
-                </>
-              ) : (
-                "Share Recipe"
-              )}
-            </Button>
-          </div>
         </div>
+
+        {/* Cancel button */}
+        <button
+          onClick={onClose}
+          className="w-full py-3 text-gray-500 font-medium hover:bg-gray-100 rounded-xl transition-colors"
+        >
+          Cancel
+        </button>
       </SheetContent>
     </Sheet>
   );

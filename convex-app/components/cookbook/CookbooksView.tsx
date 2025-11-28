@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
+import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@clerk/nextjs";
 import { Id } from "@/convex/_generated/dataModel";
@@ -40,6 +41,7 @@ export function CookbooksView() {
   const [selectedCookbook, setSelectedCookbook] = useState<{ id: string; name: string } | null>(null);
   const [isSharedCookbookDetailOpen, setIsSharedCookbookDetailOpen] = useState(false);
   const [selectedSharedCookbookId, setSelectedSharedCookbookId] = useState<Id<"sharedCookbooks"> | null>(null);
+  const [prefetchCookbookId, setPrefetchCookbookId] = useState<string | null>(null);
 
   // Fetch real data from Convex
   const cookbookStats = useQuery(
@@ -57,6 +59,15 @@ export function CookbooksView() {
     userId ? { userId } : "skip"
   );
 
+  // Prefetch recipes for clicked cookbook - warms cache before sheet opens
+  // This query runs when prefetchCookbookId is set, caching results via ConvexQueryCacheProvider
+  const _prefetchedRecipes = useQuery(
+    api.recipes.userRecipes.getUserRecipesByCookbook,
+    prefetchCookbookId && userId
+      ? { userId, cookbookCategory: prefetchCookbookId }
+      : "skip"
+  );
+
   // Mutations and actions
   const saveRecipe = useAction(api.recipes.userRecipes.saveRecipeWithParsedIngredients);
   const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
@@ -64,6 +75,8 @@ export function CookbooksView() {
   const handleCategoryClick = (categoryId: string) => {
     const category = cookbookStats?.find((c: any) => c.id === categoryId);
     if (category) {
+      // Start prefetching immediately - cache will be warm when sheet opens
+      setPrefetchCookbookId(categoryId);
       setSelectedCookbook({ id: categoryId, name: category.name });
       setIsCookbookDetailOpen(true);
     }

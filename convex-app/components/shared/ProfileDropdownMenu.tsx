@@ -8,7 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { User, Users } from "lucide-react";
+import { User, Users, MessageSquare } from "lucide-react";
 
 interface ProfileDropdownMenuProps {
   children: React.ReactNode;
@@ -54,6 +54,21 @@ export function ProfileDropdownMenu({ children }: ProfileDropdownMenuProps) {
         >
           <Users className="w-4 h-4 mr-2" />
           Social
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            if (typeof window !== 'undefined' && window.uj) {
+              try {
+                window.uj.showWidget();
+              } catch (error) {
+                console.error("Error opening UserJot widget:", error);
+              }
+            }
+          }}
+          className="cursor-pointer"
+        >
+          <MessageSquare className="w-4 h-4 mr-2" />
+          Feedback
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

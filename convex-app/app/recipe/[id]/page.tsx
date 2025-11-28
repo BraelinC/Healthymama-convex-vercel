@@ -3,7 +3,8 @@
 import { use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -119,6 +120,14 @@ export default function RecipePage({ params }: RecipePageProps) {
 
   // Handle add to cookbook
   const handleAddToCookbook = () => {
+    if (!recipe?._id) {
+      toast({
+        title: "Recipe Not Ready",
+        description: "This recipe hasn't been saved yet.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsCookbookSelectionOpen(true);
   };
 
@@ -205,18 +214,31 @@ export default function RecipePage({ params }: RecipePageProps) {
 
       {/* Recipe Content */}
       <div className="max-w-4xl mx-auto px-4 py-8">
-        <UnifiedRecipeCard
-          recipe={{
-            ...recipe,
-            name: recipe.title, // Map title to name for UnifiedRecipeCard
-            steps: recipe.instructions, // Map instructions to steps
-          }}
-          userId={user?.id}
-          isFavorited={recipe.isFavorited}
-          onToggleFavorite={handleToggleFavorite}
-          onAddToCookbook={handleAddToCookbook}
-          onShare={handleShare}
-        />
+        {recipe && (
+          <UnifiedRecipeCard
+            recipe={{
+              ...recipe,
+              name: recipe.title, // Map title to name for UnifiedRecipeCard
+              steps: recipe.instructions, // Map instructions to steps
+            }}
+            userId={user?.id}
+            isFavorited={recipe.isFavorited}
+            onToggleFavorite={handleToggleFavorite}
+            onAddToCookbook={recipe._id ? handleAddToCookbook : undefined}
+            onShare={handleShare}
+          />
+        )}
+        {!recipe && (
+          <div className="text-center py-12">
+            <p className="text-gray-600">Unable to load recipe data</p>
+            <Button
+              onClick={() => router.back()}
+              className="mt-4 bg-healthymama-pink hover:bg-healthymama-pink/90"
+            >
+              Go Back
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Cookbook Selection Sheet */}

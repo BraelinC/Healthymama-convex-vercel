@@ -1,11 +1,14 @@
 "use client";
 
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery } from "convex-helpers/react/cache/hooks";
+import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
 import {
   Sheet,
   SheetContent,
+  SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { CompactRecipeCard } from "../recipe/CompactRecipeCard";
@@ -52,6 +55,13 @@ export function CookbookDetailSheet({
   const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
   const [isRecipeDetailOpen, setIsRecipeDetailOpen] = useState(false);
   const [recipeForDetail, setRecipeForDetail] = useState<any>(null);
+  const [prefetchRecipeId, setPrefetchRecipeId] = useState<string | null>(null);
+
+  // Prefetch individual recipe - warms cache before navigation to recipe page
+  const _prefetchedRecipe = useQuery(
+    api.recipes.userRecipes.getUserRecipeById,
+    prefetchRecipeId ? { recipeId: prefetchRecipeId as Id<"userRecipes"> } : "skip"
+  );
 
   // Fetch recipes for this cookbook
   const recipes = useQuery(
@@ -121,6 +131,8 @@ export function CookbookDetailSheet({
   };
 
   const handleRecipeClick = (recipe: any) => {
+    // Start prefetching immediately - cache will be warm when recipe page loads
+    setPrefetchRecipeId(recipe._id);
     router.push(`/recipe/${recipe._id}`);
     onClose();
   };
@@ -132,6 +144,8 @@ export function CookbookDetailSheet({
     <>
       <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <SheetContent side="right" className="w-full sm:max-w-lg p-0">
+          {/* Visually hidden title for accessibility */}
+          <SheetTitle className="sr-only">{cookbookName} Cookbook</SheetTitle>
           {/* Header with gradient background */}
           <div className="relative">
             <div className={`h-32 bg-gradient-to-br ${gradient}`}>

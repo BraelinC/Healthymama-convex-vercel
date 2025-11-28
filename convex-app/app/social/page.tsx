@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Search, UserPlus, Check, X, Users, Shuffle } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -302,6 +302,9 @@ export default function SocialPage() {
                   <div className="mt-4 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <Avatar className="w-10 h-10 bg-healthymama-logo-pink">
+                        {searchUser.profileImageUrl && (
+                          <AvatarImage src={searchUser.profileImageUrl} alt={searchUser.name} />
+                        )}
                         <AvatarFallback className="text-white">
                           {searchUser.name[0].toUpperCase()}
                         </AvatarFallback>
@@ -337,6 +340,9 @@ export default function SocialPage() {
                     >
                       <div className="flex items-center gap-3">
                         <Avatar className="w-10 h-10 bg-healthymama-logo-pink">
+                          {request.profileImageUrl && (
+                            <AvatarImage src={request.profileImageUrl} alt={request.requesterName} />
+                          )}
                           <AvatarFallback className="text-white">
                             {request.requesterName[0].toUpperCase()}
                           </AvatarFallback>
@@ -385,6 +391,9 @@ export default function SocialPage() {
                         className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
                       >
                         <Avatar className="w-10 h-10 bg-healthymama-logo-pink">
+                          {friend.profileImageUrl && (
+                            <AvatarImage src={friend.profileImageUrl} alt={friend.name} />
+                          )}
                           <AvatarFallback className="text-white">
                             {friend.name[0].toUpperCase()}
                           </AvatarFallback>

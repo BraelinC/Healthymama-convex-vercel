@@ -218,3 +218,91 @@ export const markShareAsSaved = mutation({
     return { success: true };
   },
 });
+
+/**
+ * Get friends sorted by most recently shared with
+ */
+export const getFriendsForSharing = query({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Get all friendships where user is userId1
+    const friendships1 = await ctx.db
+      .query("friendships")
+      .withIndex("by_user1_status", (q) =>
+        q.eq("userId1", args.userId).eq("status", "accepted")
+      )
+      .collect();
+
+    // Get friendships where user is userId2
+    const friendships2 = await ctx.db
+      .query("friendships")
+      .withIndex("by_user2_status", (q) =>
+        q.eq("userId2", args.userId).eq("status", "accepted")
+      )
+      .collect();
+
+    // Get friend IDs
+    const friendIds: string[] = [
+      ...friendships1.map((f) => f.userId2),
+      ...friendships2.map((f) => f.userId1),
+    ];
+
+    // Get recent shares to these friends
+    const recentShares = await ctx.db
+      .query("sharedRecipes")
+      .withIndex("by_sender", (q) => q.eq("fromUserId", args.userId))
+      .order("desc")
+      .collect();
+
+    // Build a map of friendId -> most recent share timestamp
+    const lastShareMap = new Map<string, number>();
+    for (const share of recentShares) {
+      if (friendIds.includes(share.toUserId) && !lastShareMap.has(share.toUserId)) {
+        lastShareMap.set(share.toUserId, share.createdAt);
+      }
+    }
+
+    // Get friend details with profile images
+    const friends = await Promise.all(
+      friendIds.map(async (friendId) => {
+        const user = await ctx.db
+          .query("users")
+          .withIndex("by_userId", (q) => q.eq("userId", friendId))
+          .first();
+
+        // Get profile image
+        const profile = await ctx.db
+          .query("userProfiles")
+          .withIndex("by_user", (q) => q.eq("userId", friendId))
+          .first();
+
+        let profileImageUrl: string | null = null;
+        if (profile?.profileImageStorageId) {
+          profileImageUrl = await ctx.storage.getUrl(profile.profileImageStorageId);
+        }
+
+        return {
+          userId: friendId,
+          name: user?.prefs?.profileName || user?.email?.split("@")[0] || "Unknown",
+          email: user?.email || "",
+          profileImageUrl,
+          lastSharedAt: lastShareMap.get(friendId) || 0,
+        };
+      })
+    );
+
+    // Sort by most recently shared first, then by name
+    friends.sort((a, b) => {
+      if (a.lastSharedAt && b.lastSharedAt) {
+        return b.lastSharedAt - a.lastSharedAt;
+      }
+      if (a.lastSharedAt) return -1;
+      if (b.lastSharedAt) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return friends;
+  },
+});

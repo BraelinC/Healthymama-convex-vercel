@@ -12,6 +12,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ImageWithFallback } from "../shared/ImageWithFallback";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Plus, ChevronRight, Users } from "lucide-react";
@@ -109,13 +110,13 @@ export function CookbookSelectionSheet({
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="bottom" className="h-auto max-h-[80vh] rounded-t-2xl overflow-y-auto">
+      <SheetContent side="bottom" className="h-auto max-h-[80vh] rounded-t-2xl overflow-y-auto z-[100]">
         <SheetHeader>
           <SheetTitle className="text-left">Add to Cookbook</SheetTitle>
         </SheetHeader>
 
         {/* Recipe Preview */}
-        <div className="mt-6 mb-4 flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+        <div className="mt-6 mb-4 flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg relative">
           <div className="w-20 h-20 rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-700 flex-shrink-0">
             {recipe.imageUrl ? (
               <ImageWithFallback
@@ -137,6 +138,13 @@ export function CookbookSelectionSheet({
               Select a cookbook to save this recipe
             </p>
           </div>
+          {!recipe.id && (
+            <div className="absolute top-2 right-2">
+              <Badge variant="outline" className="border-orange-500 text-orange-600 bg-orange-50">
+                Not Saved
+              </Badge>
+            </div>
+          )}
         </div>
 
         {/* Cookbook List */}
@@ -174,8 +182,8 @@ export function CookbookSelectionSheet({
                 <button
                   key={cookbook._id}
                   onClick={() => handleSelectSharedCookbook(cookbook._id, cookbook.name)}
-                  disabled={isAdding === cookbook._id}
-                  className="w-full flex items-center justify-between p-4 rounded-lg hover:bg-pink-50 dark:hover:bg-pink-900/20 transition-colors text-left group border border-pink-100 dark:border-pink-900/30 bg-pink-50/30"
+                  disabled={isAdding === cookbook._id || !recipe.id}
+                  className="w-full flex items-center justify-between p-4 rounded-lg hover:bg-pink-50 dark:hover:bg-pink-900/20 transition-colors text-left group border border-pink-100 dark:border-pink-900/30 bg-pink-50/30 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="flex items-center gap-3">
                     {/* Cookbook Image or Placeholder */}

@@ -1,18 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useMutation } from "convex/react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@clerk/nextjs";
 import { Id } from "@/convex/_generated/dataModel";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { X, ChevronLeft, ChevronRight, ChefHat, Bookmark, Eye } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { CookbookSelectionSheet } from "@/components/cookbook/CookbookSelectionSheet";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { X, ChevronLeft, ChevronRight, ChefHat, Eye } from "lucide-react";
 
 // Text overlay interface
 interface TextOverlay {
@@ -58,6 +58,7 @@ interface StoryUser {
   userId: string;
   userName: string;
   userEmail?: string;
+  profileImageUrl?: string | null;
   stories: Story[];
   hasUnviewed: boolean;
 }
@@ -71,18 +72,30 @@ interface StoryViewerProps {
 const STORY_DURATION = 7500; // 7.5 seconds per story
 
 export function StoryViewer({ isOpen, onClose, storyUser }: StoryViewerProps) {
+  const router = useRouter();
   const { userId } = useAuth();
-  const { toast } = useToast();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [showCookbookSheet, setShowCookbookSheet] = useState(false);
 
   const markViewed = useMutation(api.stories.markStoryViewed);
-  const saveStoryRecipe = useMutation(api.stories.saveStoryRecipeToMyCookbook);
 
   const currentStory = storyUser.stories[currentIndex];
   const isOwnStory = storyUser.userId === userId;
+
+  // Prefetch recipe data when story has a recipe - this warms the cache
+  const _prefetchedRecipe = useQuery(
+    api.recipes.userRecipes.getUserRecipeById,
+    currentStory?.recipeId ? { recipeId: currentStory.recipeId } : "skip"
+  );
+
+  // Navigate to recipe page
+  const handleViewRecipe = useCallback(() => {
+    if (currentStory?.recipeId) {
+      onClose(); // Close the story viewer
+      router.push(`/recipe/${currentStory.recipeId}`);
+    }
+  }, [currentStory?.recipeId, onClose, router]);
 
   // Mark story as viewed
   useEffect(() => {
@@ -160,38 +173,6 @@ export function StoryViewer({ isOpen, onClose, storyUser }: StoryViewerProps) {
     }
   };
 
-  const handleSaveRecipe = () => {
-    if (currentStory?.recipeId) {
-      setIsPaused(true); // Pause the story while selecting cookbook
-      setShowCookbookSheet(true);
-    }
-  };
-
-  const handleCookbookSelected = async (cookbookId: string, cookbookName: string) => {
-    if (currentStory?.recipeId && userId) {
-      try {
-        await saveStoryRecipe({
-          userId,
-          recipeId: currentStory.recipeId,
-          cookbookCategory: cookbookId,
-        });
-        toast({
-          title: "Recipe saved!",
-          description: `"${currentStory.recipeTitle}" has been added to ${cookbookName}.`,
-        });
-      } catch (error) {
-        console.error("Failed to save recipe:", error);
-        toast({
-          title: "Error",
-          description: "Failed to save recipe. Please try again.",
-          variant: "destructive",
-        });
-      }
-    }
-    setShowCookbookSheet(false);
-    setIsPaused(false); // Resume the story
-  };
-
   const formatTimeAgo = (timestamp: number) => {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
     if (seconds < 60) return "Just now";
@@ -216,6 +197,9 @@ export function StoryViewer({ isOpen, onClose, storyUser }: StoryViewerProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-md p-0 bg-black border-none overflow-hidden h-[90vh] max-h-[800px]">
+        <VisuallyHidden>
+          <DialogTitle>{storyUser.userName}&apos;s Story</DialogTitle>
+        </VisuallyHidden>
         {/* Progress bars */}
         <div className="absolute top-0 left-0 right-0 z-20 flex gap-1 p-2">
           {storyUser.stories.map((_, index) => (
@@ -242,10 +226,18 @@ export function StoryViewer({ isOpen, onClose, storyUser }: StoryViewerProps) {
         <div className="absolute top-6 left-0 right-0 z-20 flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-healthymama-red to-healthymama-pink p-[2px]">
-              <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
-                <span className="text-sm font-bold text-healthymama-red">
-                  {getInitials(storyUser.userName)}
-                </span>
+              <div className="w-full h-full rounded-full bg-white flex items-center justify-center overflow-hidden">
+                {storyUser.profileImageUrl ? (
+                  <img
+                    src={storyUser.profileImageUrl}
+                    alt={storyUser.userName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-sm font-bold text-healthymama-red">
+                    {getInitials(storyUser.userName)}
+                  </span>
+                )}
               </div>
             </div>
             <div>
@@ -352,39 +344,34 @@ export function StoryViewer({ isOpen, onClose, storyUser }: StoryViewerProps) {
             <p className="text-white text-sm mb-3">{currentStory.caption}</p>
           )}
 
-          {/* Recipe attachment */}
+          {/* Recipe attachment - tap to view full recipe */}
           {currentStory.recipeId && (
-            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {currentStory.recipeImageUrl ? (
-                  <img
-                    src={currentStory.recipeImageUrl}
-                    alt={currentStory.recipeTitle}
-                    className="w-12 h-12 rounded-lg object-cover"
-                  />
-                ) : (
-                  <div className="w-12 h-12 rounded-lg bg-white/20 flex items-center justify-center">
-                    <ChefHat className="w-6 h-6 text-white" />
-                  </div>
-                )}
-                <div>
-                  <p className="text-white font-medium text-sm">
-                    {currentStory.recipeTitle || "Recipe"}
-                  </p>
-                  <p className="text-white/70 text-xs">Tap to view recipe</p>
+            <button
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent story tap navigation
+                handleViewRecipe();
+              }}
+              className="w-full bg-white/10 backdrop-blur-sm rounded-lg p-3 flex items-center gap-3 hover:bg-white/20 transition-colors active:scale-[0.98]"
+            >
+              {currentStory.recipeImageUrl ? (
+                <img
+                  src={currentStory.recipeImageUrl}
+                  alt={currentStory.recipeTitle}
+                  className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <ChefHat className="w-6 h-6 text-white" />
                 </div>
-              </div>
-              {!isOwnStory && (
-                <Button
-                  onClick={handleSaveRecipe}
-                  size="sm"
-                  className="bg-white text-healthymama-red hover:bg-white/90"
-                >
-                  <Bookmark className="w-4 h-4 mr-1" />
-                  Save
-                </Button>
               )}
-            </div>
+              <div className="flex-1 text-left">
+                <p className="text-white font-medium text-sm">
+                  {currentStory.recipeTitle || "Recipe"}
+                </p>
+                <p className="text-white/70 text-xs">Tap to view recipe</p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-white/70 flex-shrink-0" />
+            </button>
           )}
 
           {/* View count for own stories */}
@@ -396,23 +383,6 @@ export function StoryViewer({ isOpen, onClose, storyUser }: StoryViewerProps) {
           )}
         </div>
       </DialogContent>
-
-      {/* Cookbook Selection Sheet */}
-      {currentStory?.recipeId && (
-        <CookbookSelectionSheet
-          isOpen={showCookbookSheet}
-          onClose={() => {
-            setShowCookbookSheet(false);
-            setIsPaused(false);
-          }}
-          recipe={{
-            id: currentStory.recipeId,
-            title: currentStory.recipeTitle || "Recipe",
-            imageUrl: currentStory.recipeImageUrl,
-          }}
-          onSelectCookbook={handleCookbookSelected}
-        />
-      )}
     </Dialog>
   );
 }
