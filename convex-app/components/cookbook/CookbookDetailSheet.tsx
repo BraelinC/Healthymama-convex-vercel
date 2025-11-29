@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { CompactRecipeCard } from "../recipe/CompactRecipeCard";
 import { RecipeDetailSheet } from "../recipe/RecipeDetailSheet";
 import { CookbookSelectionSheet } from "./CookbookSelectionSheet";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { ArrowLeft, BookOpen } from "lucide-react";
 
 interface CookbookDetailSheetProps {
@@ -56,6 +56,7 @@ export function CookbookDetailSheet({
   const [isRecipeDetailOpen, setIsRecipeDetailOpen] = useState(false);
   const [recipeForDetail, setRecipeForDetail] = useState<any>(null);
   const [prefetchRecipeId, setPrefetchRecipeId] = useState<string | null>(null);
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
 
   // Prefetch individual recipe - warms cache before navigation to recipe page
   const _prefetchedRecipe = useQuery(
@@ -72,6 +73,7 @@ export function CookbookDetailSheet({
   // Mutations and actions
   const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
   const saveRecipe = useAction(api.recipes.userRecipes.saveRecipeWithParsedIngredients);
+  const removeRecipe = useMutation(api.recipes.userRecipes.removeRecipeFromCookbook);
 
   const handleToggleFavorite = async (recipeId: string) => {
     if (!userId) return;
@@ -137,6 +139,30 @@ export function CookbookDetailSheet({
     alert("Recipe name copied to clipboard!");
   };
 
+  const handleEnterDeleteMode = useCallback(() => {
+    setIsDeleteMode(true);
+  }, []);
+
+  const handleExitDeleteMode = useCallback(() => {
+    setIsDeleteMode(false);
+  }, []);
+
+  const handleDeleteRecipe = useCallback(
+    async (recipeId: string) => {
+      if (!userId) return;
+      try {
+        await removeRecipe({
+          userId,
+          userRecipeId: recipeId as Id<"userRecipes">,
+        });
+      } catch (error) {
+        console.error("Delete recipe error:", error);
+        alert("Failed to delete recipe");
+      }
+    },
+    [userId, removeRecipe]
+  );
+
   const handleRecipeClick = (recipe: any) => {
     // Start prefetching immediately - cache will be warm when recipe page loads
     setPrefetchRecipeId(recipe._id);
@@ -149,7 +175,12 @@ export function CookbookDetailSheet({
 
   return (
     <>
-      <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <Sheet open={isOpen} onOpenChange={(open) => {
+          if (!open) {
+            setIsDeleteMode(false);
+            onClose();
+          }
+        }}>
         <SheetContent side="right" className="w-full sm:max-w-lg p-0">
           {/* Visually hidden title for accessibility */}
           <SheetTitle className="sr-only">{cookbookName} Cookbook</SheetTitle>
@@ -182,9 +213,21 @@ export function CookbookDetailSheet({
             </div>
           </div>
 
-          {/* Recipe Count */}
+          {/* Recipe Count and Delete Mode Controls */}
           <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between">
+              {isDeleteMode ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleExitDeleteMode}
+                  className="text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Done
+                </Button>
+              ) : (
+                <div />
+              )}
               <div className="flex items-center gap-1 text-sm text-gray-500">
                 <BookOpen className="w-4 h-4" />
                 <span>
@@ -194,6 +237,11 @@ export function CookbookDetailSheet({
                 </span>
               </div>
             </div>
+            {isDeleteMode && (
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Tap the X to remove a recipe. Tap Done when finished.
+              </p>
+            )}
           </div>
 
           {/* Recipe Grid */}
@@ -219,6 +267,9 @@ export function CookbookDetailSheet({
                     key={recipe._id}
                     recipe={recipe}
                     onClick={() => handleRecipeClick(recipe)}
+                    isDeleteMode={isDeleteMode}
+                    onDelete={handleDeleteRecipe}
+                    onLongPress={handleEnterDeleteMode}
                   />
                 ))}
               </div>

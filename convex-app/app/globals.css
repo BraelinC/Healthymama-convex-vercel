@@ -58,3 +58,17 @@ body {
   color: rgb(15 23 42);
   font-family: var(--font-sans);
 }
+
+/* iOS-style shake/wiggle animation for delete mode */
+@keyframes shake {
+  0%, 100% {
+    transform: rotate(-1.5deg);
+  }
+  50% {
+    transform: rotate(1.5deg);
+  }
+}
+
+.shake-animation {
+  animation: shake 0.15s ease-in-out infinite;
+}
