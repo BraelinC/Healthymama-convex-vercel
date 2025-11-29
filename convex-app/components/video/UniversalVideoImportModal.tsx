@@ -247,8 +247,66 @@ export function UniversalVideoImportModal({
     onClose();
   };
 
+  // Compress image before upload to stay within Vercel's 4.5MB limit
+  const compressImage = async (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          // Max dimensions to reduce file size
+          const MAX_WIDTH = 1200;
+          const MAX_HEIGHT = 1200;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = (height * MAX_WIDTH) / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = (width * MAX_HEIGHT) / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const compressedFile = new File([blob], file.name, {
+                  type: 'image/jpeg',
+                  lastModified: Date.now(),
+                });
+                console.log('[Image Compress] Original:', Math.round(file.size / 1024), 'KB, Compressed:', Math.round(compressedFile.size / 1024), 'KB');
+                resolve(compressedFile);
+              } else {
+                reject(new Error('Failed to compress image'));
+              }
+            },
+            'image/jpeg',
+            0.85 // Quality 85%
+          );
+        };
+        img.onerror = () => reject(new Error('Failed to load image'));
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+    });
+  };
+
   // Handle image file selection
-  const handleImageSelect = (file: File) => {
+  const handleImageSelect = async (file: File) => {
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     if (!validTypes.includes(file.type)) {
       toast({
@@ -420,8 +478,12 @@ export function UniversalVideoImportModal({
     setErrorMessage("");
 
     try {
+      // Compress image before sending to stay within Vercel's 4.5MB limit
+      console.log("[Image Identify] Compressing image...");
+      const compressedImage = await compressImage(imageFile);
+
       const formData = new FormData();
-      formData.append("image", imageFile);
+      formData.append("image", compressedImage);
 
       const response = await fetch("/api/recipe-image/identify", {
         method: "POST",
