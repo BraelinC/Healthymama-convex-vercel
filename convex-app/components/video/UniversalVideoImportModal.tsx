@@ -54,6 +54,17 @@ interface ExtractedRecipe {
   imageUrl?: string;
   sourceUrl?: string;
   sourceTitle?: string;
+  // Platform-specific fields
+  source?: "instagram" | "youtube" | "pinterest";
+  pinterestThumbnailUrl?: string;
+  pinterestImageUrls?: string[];
+  muxPlaybackId?: string;
+  videoSegments?: Array<{
+    stepNumber: number;
+    instruction: string;
+    startTime: number;
+    endTime: number;
+  }>;
 }
 
 type ImportStep =
@@ -433,7 +444,10 @@ export function UniversalVideoImportModal({
           cook_time: recipe.cook_time || undefined,
           cuisine: recipe.cuisine || undefined,
           cookbookCategory: undefined, // NO COOKBOOK - ghost recipe
+          source: recipe.source || (detectedPlatform === "pinterest" ? "pinterest" : "instagram"),
           instagramThumbnailUrl: recipe.instagramThumbnailUrl || recipe.imageUrl,
+          pinterestThumbnailUrl: recipe.pinterestThumbnailUrl || recipe.instagramThumbnailUrl || recipe.imageUrl,
+          pinterestImageUrls: recipe.pinterestImageUrls,
           muxPlaybackId: recipe.muxPlaybackId || undefined,
           videoSegments: recipe.videoSegments || undefined,
         });
@@ -447,10 +461,20 @@ export function UniversalVideoImportModal({
           console.log("[URL Import] Recipe already exists, using existing ID:", result.recipeId);
         } else {
           console.error("[URL Import] Failed to save ghost recipe:", result.error);
+          // Show error toast so user knows why + button is disabled
+          toast({
+            title: "Save Issue",
+            description: "Recipe loaded but couldn't save. Try again.",
+            variant: "destructive",
+          });
         }
       } catch (saveError: any) {
         console.error("[URL Import] Error saving ghost recipe:", saveError);
-        // Don't show error - user can still see the preview
+        toast({
+          title: "Save Error",
+          description: saveError.message || "Couldn't save recipe",
+          variant: "destructive",
+        });
       }
     } catch (error: any) {
       console.error("[Video Import] Error:", error);
@@ -702,7 +726,10 @@ export function UniversalVideoImportModal({
         cook_time: recipe.cook_time || undefined,
         cuisine: recipe.cuisine || undefined,
         cookbookCategory: undefined, // NO COOKBOOK - ghost recipe
+        source: recipe.source as "instagram" | "youtube" | "pinterest" | undefined,
         instagramThumbnailUrl: recipe.instagramThumbnailUrl || recipe.imageUrl,
+        pinterestThumbnailUrl: recipe.pinterestThumbnailUrl || recipe.instagramThumbnailUrl || recipe.imageUrl,
+        pinterestImageUrls: recipe.pinterestImageUrls,
         muxPlaybackId: undefined,
         videoSegments: undefined,
       });
