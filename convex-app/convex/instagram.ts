@@ -83,6 +83,9 @@ export const importInstagramRecipe = action({
     cook_time: v.optional(v.string()),
     cuisine: v.optional(v.string()),
 
+    // User-selected cookbook category (overrides auto-detection if provided)
+    cookbookCategory: v.optional(v.string()),
+
     // Source platform
     source: v.optional(v.union(
       v.literal("instagram"),
@@ -157,10 +160,11 @@ export const importInstagramRecipe = action({
       videoSegments,
     } = args;
 
-    // Determine cookbook category and image URL based on source
+    // Determine cookbook category - use user selection if provided, otherwise auto-detect from source
     const isYouTube = source === "youtube";
     const isPinterest = source === "pinterest";
-    const cookbookCategory = isPinterest ? "pinterest" : (isYouTube ? "youtube" : "instagram");
+    const autoCategory = isPinterest ? "pinterest" : (isYouTube ? "youtube" : "instagram");
+    const cookbookCategory = args.cookbookCategory || autoCategory;
     const imageUrl = isPinterest ? pinterestThumbnailUrl :
                      (isYouTube ? youtubeThumbnailUrl : (instagramThumbnailUrl || instagramVideoUrl));
 
@@ -205,9 +209,6 @@ export const importInstagramRecipe = action({
       // User preferences
       isFavorited: false,
 
-      // Source platform
-      source,
-
       // Mux video hosting
       muxPlaybackId,
       muxAssetId,
@@ -215,19 +216,6 @@ export const importInstagramRecipe = action({
       // Instagram fields
       instagramVideoUrl,
       instagramUsername,
-
-      // YouTube fields
-      youtubeUrl,
-      youtubeVideoId,
-      youtubeThumbnailUrl,
-
-      // Pinterest fields
-      pinterestUrl,
-      pinterestPinId,
-      pinterestUsername,
-      pinterestBoardName,
-      pinterestImageUrls,
-      pinterestThumbnailUrl,
 
       // AI-analyzed video segments
       videoSegments,

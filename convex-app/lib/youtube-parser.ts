@@ -201,23 +201,47 @@ export function parseYouTubeDescription(
 /**
  * Detect if a URL is from YouTube
  *
+ * Valid YouTube URL formats:
+ * - https://www.youtube.com/watch?v=VIDEO_ID
+ * - https://youtube.com/watch?v=VIDEO_ID
+ * - https://m.youtube.com/watch?v=VIDEO_ID
+ * - https://youtu.be/VIDEO_ID
+ * - https://www.youtube.com/embed/VIDEO_ID
+ * - https://www.youtube.com/shorts/VIDEO_ID
+ * - https://youtube-nocookie.com/embed/VIDEO_ID
+ *
  * @param url - Any URL string
  * @returns true if YouTube URL
  */
 export function isYouTubeUrl(url: string): boolean {
-  return (
-    url.includes('youtube.com') ||
-    url.includes('youtu.be') ||
-    url.includes('youtube-nocookie.com')
-  );
+  const youtubePatterns = [
+    /^https?:\/\/(www\.|m\.)?youtube\.com\/(watch|embed|v|shorts)/i,
+    /^https?:\/\/youtu\.be\/[a-zA-Z0-9_-]+/i,
+    /^https?:\/\/(www\.)?youtube-nocookie\.com\/embed/i,
+  ];
+
+  return youtubePatterns.some(pattern => pattern.test(url));
 }
 
 /**
  * Detect if a URL is from Instagram
  *
+ * Valid Instagram URL formats:
+ * - https://www.instagram.com/reel/CODE/
+ * - https://instagram.com/reel/CODE/
+ * - https://www.instagram.com/p/CODE/
+ * - https://www.instagram.com/tv/CODE/
+ * - https://www.instagram.com/stories/USERNAME/ID/
+ *
  * @param url - Any URL string
  * @returns true if Instagram URL
  */
 export function isInstagramUrl(url: string): boolean {
-  return url.includes('instagram.com');
+  const instagramPatterns = [
+    /^https?:\/\/(www\.)?instagram\.com\/(reel|p|tv)\/[A-Za-z0-9_-]+/i,
+    /^https?:\/\/(www\.)?instagram\.com\/stories\/[^/]+\/\d+/i,
+  ];
+
+  return instagramPatterns.some(pattern => pattern.test(url));
 }
+
