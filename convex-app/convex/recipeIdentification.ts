@@ -18,29 +18,7 @@ export const identifyRecipeFromImage = action({
       throw new Error("Failed to get image URL from storage");
     }
 
-    console.log("[Recipe Identify] Fetching image from:", imageUrl);
-
-    // Fetch the image from Convex storage
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      throw new Error(`Failed to fetch image: ${imageResponse.status}`);
-    }
-
-    // Convert to base64
-    const arrayBuffer = await imageResponse.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-
-    // Convert to base64 without Buffer (which isn't available in Convex runtime)
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const base64Image = btoa(binary);
-
-    const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
-    const dataUrl = `data:${contentType};base64,${base64Image}`;
-
-    console.log("[Recipe Identify] Image size:", Math.round(arrayBuffer.byteLength / 1024), "KB");
+    console.log("[Recipe Identify] Using image URL:", imageUrl);
 
     // Call OpenRouter API
     const apiKey = process.env.OPEN_ROUTER_API_KEY;
@@ -85,7 +63,7 @@ IMPORTANT:
               {
                 type: 'image_url',
                 image_url: {
-                  url: dataUrl,
+                  url: imageUrl, // Send Convex storage URL directly
                 },
               },
             ],
