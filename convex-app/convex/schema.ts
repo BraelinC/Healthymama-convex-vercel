@@ -376,11 +376,13 @@ export default defineSchema({
     // NEW: Universal source reference (replaces extractedRecipeId/communityRecipeId)
     sourceRecipeId: v.optional(v.union(
       v.id("recipes"),           // Community recipes
-      v.id("extractedRecipes")   // Extracted recipes
+      v.id("extractedRecipes"),  // Extracted recipes
+      v.id("userRecipes")        // Self-references (for copied recipes)
     )),
     sourceRecipeType: v.optional(v.union(
       v.literal("community"),
-      v.literal("extracted")
+      v.literal("extracted"),
+      v.literal("userRecipe")  // Legacy: self-references
     )),
 
     // OLD: Legacy reference fields (keep for migration, will be removed)
@@ -922,6 +924,16 @@ export default defineSchema({
     // Legacy fields (deprecated)
     kitchenEquipment: v.optional(v.array(v.string())), // ["air fryer", "instant pot"]
     defaultServings: v.optional(v.number()), // Default number of servings
+
+    // Instagram integration
+    instagramConnected: v.optional(v.boolean()), // Whether Instagram is connected
+    instagramUsername: v.optional(v.string()), // Instagram username
+
+    // Profile image
+    profileImageStorageId: v.optional(v.id("_storage")), // Uploaded profile image
+
+    // Ayrshare social media integration
+    ayrshareProfileKey: v.optional(v.string()), // Ayrshare API profile key
 
     // Timestamps
     createdAt: v.number(),
