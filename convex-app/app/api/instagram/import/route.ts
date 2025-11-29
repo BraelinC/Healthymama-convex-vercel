@@ -816,6 +816,7 @@ export async function POST(request: NextRequest) {
       console.log(`[Pinterest Import] Type: ${pinterestData.type}`);
       console.log(`[Pinterest Import] Title: ${title}`);
       console.log(`[Pinterest Import] Images: ${pinterestData.imageUrls.length}`);
+      console.log(`[Pinterest Import] Video URL: ${videoUrl ? videoUrl.substring(0, 100) + '...' : 'none'}`);
       console.log(`[Pinterest Import] Description length: ${description?.length || 0} chars`);
       console.log(`[Pinterest Import] External link: ${pinterestData.link || 'none'}`);
       console.log(`[Pinterest Import] Domain: ${pinterestData.domain || 'none'}`);
