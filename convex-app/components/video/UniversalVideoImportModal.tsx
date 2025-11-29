@@ -185,6 +185,10 @@ export function UniversalVideoImportModal({
   const importRecipe = useAction(api.instagram.importInstagramRecipe);
   const updateCookbook = useMutation(api.recipes.userRecipes.updateRecipeCookbook);
   const deleteRecipe = useMutation(api.recipes.userRecipes.removeRecipeFromCookbook);
+  const generateUploadUrl = useMutation(api.communities.files.generateUploadUrl);
+  const getImageUrl = useQuery(api.communities.files.getImageUrl,
+    imageFile ? "skip" : "skip" // We'll use this after upload
+  );
 
   // Helper: Delete ghost recipe (recipe without cookbook category)
   const deleteGhostRecipe = async (recipeId: Id<"userRecipes">) => {
@@ -478,16 +482,27 @@ export function UniversalVideoImportModal({
     setErrorMessage("");
 
     try {
-      // Compress image before sending to stay within Vercel's 4.5MB limit
-      console.log("[Image Identify] Compressing image...");
-      const compressedImage = await compressImage(imageFile);
+      // Upload image to Convex storage first (faster, no size limit)
+      console.log("[Image Identify] Uploading to storage...");
+      const uploadUrl = await generateUploadUrl();
 
-      const formData = new FormData();
-      formData.append("image", compressedImage);
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": imageFile.type },
+        body: imageFile,
+      });
 
+      const { storageId } = await uploadResponse.json();
+      console.log("[Image Identify] Uploaded to storage:", storageId);
+
+      // Get the public URL for the uploaded image
+      const imageUrl = `${window.location.origin}/_storage/${storageId}`;
+
+      // Now send the URL to the AI API
       const response = await fetch("/api/recipe-image/identify", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl }),
       });
 
       console.log("[Image Identify] Response status:", response.status, response.statusText);

@@ -8,36 +8,18 @@ import { NextResponse } from 'next/server';
  * This is a faster, cheaper call than full extraction.
  *
  * POST /api/recipe-image/identify
- * Body: FormData with 'image' file
+ * Body: JSON with 'imageUrl' (Convex storage URL)
  * Returns: { dishName: string, ingredients: string[] }
  */
 
 export async function POST(request: Request) {
   try {
-    const formData = await request.formData();
-    const imageFile = formData.get('image') as File | null;
+    const body = await request.json();
+    const imageUrl = body.imageUrl as string | undefined;
 
-    if (!imageFile) {
+    if (!imageUrl) {
       return NextResponse.json(
-        { error: 'No image file provided' },
-        { status: 400 }
-      );
-    }
-
-    // Validate file type
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!validTypes.includes(imageFile.type)) {
-      return NextResponse.json(
-        { error: 'Invalid image type. Supported: JPEG, PNG, WebP, GIF' },
-        { status: 400 }
-      );
-    }
-
-    // Validate file size (max 10MB)
-    const maxSize = 10 * 1024 * 1024;
-    if (imageFile.size > maxSize) {
-      return NextResponse.json(
-        { error: 'Image too large. Maximum size is 10MB' },
+        { error: 'No image URL provided' },
         { status: 400 }
       );
     }
@@ -50,13 +32,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Convert image to base64
-    const arrayBuffer = await imageFile.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64Image = buffer.toString('base64');
-    const dataUrl = `data:${imageFile.type};base64,${base64Image}`;
-
-    console.log('[Recipe Identify] Processing image:', imageFile.name, 'Size:', Math.round(imageFile.size / 1024), 'KB');
+    console.log('[Recipe Identify] Processing image from URL:', imageUrl);
 
     // Lightweight prompt - only identify dish and ingredients
     const prompt = `Identify this food dish. Return ONLY a JSON object with:
@@ -97,7 +73,7 @@ IMPORTANT:
               {
                 type: 'image_url',
                 image_url: {
-                  url: dataUrl,
+                  url: imageUrl,
                 },
               },
             ],
