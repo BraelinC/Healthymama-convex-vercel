@@ -224,6 +224,79 @@ export const getUserProfileWithImage = query({
   },
 });
 
+// ========== UNIQUE PROFILE NAME FUNCTIONS ==========
+
+/**
+ * Update unique profile name
+ */
+export const updateUniqueProfileName = mutation({
+  args: {
+    userId: v.string(),
+    uniqueProfileName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Validate the profile name format (alphanumeric, underscores, 3-20 chars)
+    const nameRegex = /^[a-zA-Z0-9_]{3,20}$/;
+    if (!nameRegex.test(args.uniqueProfileName)) {
+      throw new Error("Profile name must be 3-20 characters and contain only letters, numbers, and underscores");
+    }
+
+    // Check if name is already taken by another user
+    const existing = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_unique_profile_name", (q) => q.eq("uniqueProfileName", args.uniqueProfileName.toLowerCase()))
+      .first();
+
+    if (existing && existing.userId !== args.userId) {
+      throw new Error("This profile name is already taken");
+    }
+
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+
+    if (!profile) {
+      // Create profile if it doesn't exist
+      await ctx.db.insert("userProfiles", {
+        userId: args.userId,
+        uniqueProfileName: args.uniqueProfileName.toLowerCase(),
+        allergens: [],
+        dietaryPreferences: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      return { success: true };
+    }
+
+    await ctx.db.patch(profile._id, {
+      uniqueProfileName: args.uniqueProfileName.toLowerCase(),
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Check if a unique profile name is available
+ */
+export const checkProfileNameAvailable = query({
+  args: {
+    uniqueProfileName: v.string(),
+    currentUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_unique_profile_name", (q) => q.eq("uniqueProfileName", args.uniqueProfileName.toLowerCase()))
+      .first();
+
+    // Available if no one has it, or if the current user has it
+    return !existing || existing.userId === args.currentUserId;
+  },
+});
+
 // ========== AYRSHARE / INSTAGRAM FUNCTIONS ==========
 
 /**

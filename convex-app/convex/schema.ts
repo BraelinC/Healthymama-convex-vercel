@@ -903,6 +903,7 @@ export default defineSchema({
 
     // Basic information
     name: v.optional(v.string()),
+    uniqueProfileName: v.optional(v.string()), // Unique searchable profile name for friend search
     country: v.optional(v.string()), // User's country/nationality
     familySize: v.optional(v.number()), // Number of people cooking for
     cookingSkillLevel: v.optional(v.union(
@@ -937,7 +938,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_user", ["userId"]),
+    .index("by_user", ["userId"])
+    .index("by_unique_profile_name", ["uniqueProfileName"]),
 
   // Tier 2: Learned Preferences (Dynamic - AI-Extracted from Conversations)
   learnedPreferences: defineTable({

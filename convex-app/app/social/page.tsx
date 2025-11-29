@@ -18,7 +18,7 @@ export default function SocialPage() {
   const router = useRouter();
   const { user } = useUser();
   const { toast } = useToast();
-  const [searchEmail, setSearchEmail] = useState("");
+  const [searchProfileName, setSearchProfileName] = useState("");
   const [searchResult, setSearchResult] = useState<any>(null);
 
   // Shared cookbook modal state
@@ -50,11 +50,11 @@ export default function SocialPage() {
     user?.id ? { userId: user.id } : "skip"
   );
 
-  // Mutations
+  // Search by profile name
   const searchUser = useQuery(
-    api.friends.searchUserByEmail,
-    user?.id && searchEmail.length > 3
-      ? { email: searchEmail, currentUserId: user.id }
+    api.friends.searchUserByProfileName,
+    user?.id && searchProfileName.length >= 3
+      ? { profileName: searchProfileName, currentUserId: user.id }
       : "skip"
   );
 
@@ -76,7 +76,7 @@ export default function SocialPage() {
         title: "Friend request sent!",
         description: "They'll be notified of your request.",
       });
-      setSearchEmail("");
+      setSearchProfileName("");
       setSearchResult(null);
     } catch (error: any) {
       toast({
@@ -288,11 +288,12 @@ export default function SocialPage() {
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <Input
-                      type="email"
-                      placeholder="Search by email..."
-                      value={searchEmail}
-                      onChange={(e) => setSearchEmail(e.target.value)}
+                      type="text"
+                      placeholder="Search by profile name..."
+                      value={searchProfileName}
+                      onChange={(e) => setSearchProfileName(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))}
                       className="pl-10"
+                      maxLength={20}
                     />
                   </div>
                 </div>
@@ -311,7 +312,7 @@ export default function SocialPage() {
                       </Avatar>
                       <div>
                         <p className="font-medium text-gray-900">{searchUser.name}</p>
-                        <p className="text-sm text-gray-500">{searchUser.email}</p>
+                        <p className="text-sm text-gray-500">@{searchUser.uniqueProfileName}</p>
                       </div>
                     </div>
                     <Button
@@ -322,6 +323,13 @@ export default function SocialPage() {
                       Add Friend
                     </Button>
                   </div>
+                )}
+
+                {/* No results message */}
+                {searchProfileName.length >= 3 && !searchUser && (
+                  <p className="mt-4 text-sm text-gray-500 text-center">
+                    No user found with that profile name
+                  </p>
                 )}
               </CardContent>
             </Card>
@@ -349,7 +357,9 @@ export default function SocialPage() {
                         </Avatar>
                         <div>
                           <p className="font-medium text-gray-900">{request.requesterName}</p>
-                          <p className="text-sm text-gray-500">{request.requesterEmail}</p>
+                          <p className="text-sm text-gray-500">
+                            {request.requesterUniqueProfileName ? `@${request.requesterUniqueProfileName}` : request.requesterEmail}
+                          </p>
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -400,7 +410,9 @@ export default function SocialPage() {
                         </Avatar>
                         <div className="flex-1">
                           <p className="font-medium text-gray-900">{friend.name}</p>
-                          <p className="text-sm text-gray-500">{friend.email}</p>
+                          <p className="text-sm text-gray-500">
+                            {friend.uniqueProfileName ? `@${friend.uniqueProfileName}` : friend.email}
+                          </p>
                         </div>
                         <Button
                           size="sm"
@@ -426,7 +438,7 @@ export default function SocialPage() {
                     <Users className="w-12 h-12 mx-auto text-gray-300 mb-2" />
                     <p className="text-gray-500">No friends yet</p>
                     <p className="text-sm text-gray-400 mt-1">
-                      Search for friends by email to get started
+                      Search for friends by their unique profile name to get started
                     </p>
                   </div>
                 )}
