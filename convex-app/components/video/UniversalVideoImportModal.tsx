@@ -186,9 +186,6 @@ export function UniversalVideoImportModal({
   const updateCookbook = useMutation(api.recipes.userRecipes.updateRecipeCookbook);
   const deleteRecipe = useMutation(api.recipes.userRecipes.removeRecipeFromCookbook);
   const generateUploadUrl = useMutation(api.communities.files.generateUploadUrl);
-  const getImageUrl = useQuery(api.communities.files.getImageUrl,
-    imageFile ? "skip" : "skip" // We'll use this after upload
-  );
 
   // Helper: Delete ghost recipe (recipe without cookbook category)
   const deleteGhostRecipe = async (recipeId: Id<"userRecipes">) => {
