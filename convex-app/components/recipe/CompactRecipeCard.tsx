@@ -2,6 +2,8 @@
 
 import { Card } from "@/components/ui/card";
 import { ImageWithFallback } from "@/components/shared/ImageWithFallback";
+import { X } from "lucide-react";
+import { useRef, useCallback } from "react";
 
 interface CompactRecipeCardProps {
   recipe: {
@@ -10,14 +12,84 @@ interface CompactRecipeCardProps {
     imageUrl?: string;
   };
   onClick: () => void;
+  isDeleteMode?: boolean;
+  onDelete?: (recipeId: string) => void;
+  onLongPress?: () => void;
 }
 
-export function CompactRecipeCard({ recipe, onClick }: CompactRecipeCardProps) {
+export function CompactRecipeCard({
+  recipe,
+  onClick,
+  isDeleteMode = false,
+  onDelete,
+  onLongPress,
+}: CompactRecipeCardProps) {
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const isLongPress = useRef(false);
+
+  const handleTouchStart = useCallback(() => {
+    isLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      isLongPress.current = true;
+      onLongPress?.();
+    }, 500); // 500ms for long press
+  }, [onLongPress]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      // If we're in delete mode and clicking the X, delete the recipe
+      if (isDeleteMode) {
+        // Don't navigate in delete mode - just exit delete mode on card click
+        return;
+      }
+      // Prevent navigation if this was a long press
+      if (isLongPress.current) {
+        e.preventDefault();
+        return;
+      }
+      onClick();
+    },
+    [isDeleteMode, onClick]
+  );
+
+  const handleDelete = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onDelete?.(recipe._id);
+    },
+    [onDelete, recipe._id]
+  );
+
   return (
     <Card
-      className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow group"
-      onClick={onClick}
+      className={`overflow-hidden cursor-pointer hover:shadow-lg transition-shadow group relative ${
+        isDeleteMode ? "shake-animation" : ""
+      }`}
+      onClick={handleClick}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+      onMouseDown={handleTouchStart}
+      onMouseUp={handleTouchEnd}
+      onMouseLeave={handleTouchEnd}
     >
+      {/* Delete button - Red X in top right corner */}
+      {isDeleteMode && (
+        <button
+          onClick={handleDelete}
+          className="absolute -top-1 -right-1 z-20 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors"
+        >
+          <X className="w-4 h-4 text-white" />
+        </button>
+      )}
+
       {/* Recipe Image */}
       <div className="relative h-40 w-full bg-gray-200 dark:bg-gray-800">
         {recipe.imageUrl ? (
