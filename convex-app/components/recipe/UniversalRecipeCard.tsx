@@ -174,10 +174,15 @@ export function UniversalRecipeCard({
           <Button
             size="icon"
             variant="secondary"
-            className="w-10 h-10 rounded-full bg-white/90 hover:bg-white shadow-md"
+            className={`w-10 h-10 rounded-full shadow-md transition-all ${
+              onAddToCookbook
+                ? "bg-white/90 hover:bg-white"
+                : "bg-white/50 cursor-not-allowed"
+            }`}
             onClick={onAddToCookbook}
+            disabled={!onAddToCookbook}
           >
-            <Plus className="w-5 h-5 text-orange-600" />
+            <Plus className={`w-5 h-5 ${onAddToCookbook ? "text-orange-600" : "text-gray-400"}`} />
           </Button>
 
           {/* Share Button */}

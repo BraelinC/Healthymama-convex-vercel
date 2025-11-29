@@ -53,6 +53,38 @@ import {
 } from '@/convex/lib/recipeExtractor';
 import { extractRecipeWithOpenRouter } from '@/convex/lib/openRouterExtractor';
 
+/**
+ * Extract URLs from text (captions/descriptions)
+ * Filters out social media URLs and returns only potential recipe website URLs
+ */
+function extractUrlsFromText(text: string): string[] {
+  if (!text) return [];
+
+  // URL regex pattern - matches http/https URLs
+  const urlPattern = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+  const matches = text.match(urlPattern) || [];
+
+  // Filter out social media and non-recipe URLs
+  const socialMediaDomains = [
+    'instagram.com', 'facebook.com', 'twitter.com', 'x.com',
+    'tiktok.com', 'youtube.com', 'youtu.be', 'pinterest.com',
+    'pin.it', 'linktr.ee', 'linkin.bio', 'bio.link', 'beacons.ai',
+    'stan.store', 'allmylinks.com', 'lnk.to', 'bit.ly', 't.co'
+  ];
+
+  return matches.filter(url => {
+    try {
+      const hostname = new URL(url).hostname.toLowerCase();
+      // Exclude social media and link-in-bio services
+      return !socialMediaDomains.some(domain =>
+        hostname === domain || hostname.endsWith('.' + domain)
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
 // Define return type for Railway service
 interface InstagramExtractionResult {
   success: boolean;
@@ -760,9 +792,9 @@ export async function POST(request: NextRequest) {
     // Step 1: Extract data based on platform
     let videoUrl: string | undefined;
     let videoId: string | undefined;
-    let thumbnailUrl: string;
+    let thumbnailUrl: string | undefined;
     let title: string | undefined;
-    let description: string;
+    let description: string = '';
     let pinterestData: Awaited<ReturnType<typeof extractPinterestPin>> | undefined;
 
     if (isPinterest) {
@@ -833,15 +865,30 @@ export async function POST(request: NextRequest) {
       // PINTEREST FLOW: External website → Video extraction → Gemini vision fallback
       let pinterestRecipe: ParsedRecipe | null = null;
 
+      // Get external link - check API link first, then search description for URLs
+      let externalLink = pinterestData!.link;
+
+      if (!externalLink) {
+        // Search description for recipe URLs
+        const descriptionUrls = extractUrlsFromText(pinterestData!.description);
+        if (descriptionUrls.length > 0) {
+          externalLink = descriptionUrls[0]; // Use first valid URL
+          console.log(`[Pinterest Import] Found URL in description: ${externalLink}`);
+        }
+      }
+
       // ALWAYS try external website extraction first (if pin has external link)
-      if (pinterestData!.link) {
-        console.log(`[Pinterest Import] Found external link: ${pinterestData!.link}`);
-        console.log(`[Pinterest Import] Domain: ${pinterestData!.domain || 'unknown'}`);
+      if (externalLink) {
+        console.log(`[Pinterest Import] Found external link: ${externalLink}`);
+        try {
+          const domain = new URL(externalLink).hostname.replace('www.', '');
+          console.log(`[Pinterest Import] Domain: ${domain}`);
+        } catch {}
         console.log('[Pinterest Import] Attempting website extraction (3-method flow)...');
 
         try {
           const websiteRecipe = await extractRecipeFromWebsite(
-            pinterestData!.link,
+            externalLink,
             pinterestData!.imageUrls[0] // Use Pinterest image as fallback
           );
 
@@ -856,7 +903,7 @@ export async function POST(request: NextRequest) {
           console.warn('[Pinterest Import] ⚠️ Website extraction failed:', error.message);
         }
       } else {
-        console.log('[Pinterest Import] No external link found on pin');
+        console.log('[Pinterest Import] No external link found on pin or in description');
       }
 
       // FALLBACK 1: Video extraction (for video pins)
@@ -933,19 +980,46 @@ export async function POST(request: NextRequest) {
         // No recipe in description - extract from video
         console.log('[YouTube Import] No recipe in description, extracting from video...');
 
+        if (!videoUrl) {
+          throw new Error('No video URL available for YouTube extraction');
+        }
+
         try {
           recipe = await extractRecipeFromVideo(videoUrl, title);
-          console.log(`[YouTube Import] ✅ Extracted from video: ${recipe.instructions.length} instructions, ${recipe.ingredients.length} ingredients`);
+          console.log(`[YouTube Import] ✅ Extracted from video: ${recipe.instructions.length} instructions, ${recipe.instructions.length} ingredients`);
         } catch (error: any) {
           throw new Error(`Failed to extract recipe from YouTube video: ${error.message}`);
         }
       }
     } else {
-      // INSTAGRAM FLOW: Video-first extraction
+      // INSTAGRAM FLOW: Website extraction → Video extraction → Caption parsing
 
-      if (downloadedVideoUrl) {
+      let instagramRecipe: ParsedRecipe | null = null;
+
+      // FIRST: Check if caption contains a recipe website URL
+      const captionUrls = extractUrlsFromText(description);
+      if (captionUrls.length > 0) {
+        console.log(`[Instagram Import] Found ${captionUrls.length} URLs in caption, trying website extraction...`);
+
+        for (const captionUrl of captionUrls.slice(0, 3)) { // Try up to 3 URLs
+          console.log(`[Instagram Import] Trying URL: ${captionUrl}`);
+          try {
+            const websiteRecipe = await extractRecipeFromWebsite(captionUrl, thumbnailUrl);
+            if (websiteRecipe && websiteRecipe.title && websiteRecipe.ingredients?.length > 0) {
+              instagramRecipe = websiteRecipe;
+              console.log(`[Instagram Import] ✅ Website extraction successful: "${instagramRecipe.title}"`);
+              break;
+            }
+          } catch (error: any) {
+            console.warn(`[Instagram Import] ⚠️ Website extraction failed for ${captionUrl}:`, error.message);
+          }
+        }
+      }
+
+      // SECOND: Try video extraction if no recipe from website
+      if (!instagramRecipe && downloadedVideoUrl) {
         try {
-          console.log('[Instagram Import] Extracting recipe from video (primary path)...');
+          console.log('[Instagram Import] Extracting recipe from video...');
 
           // Extract title from caption first (if available)
           let captionTitle: string | undefined;
@@ -962,31 +1036,28 @@ export async function POST(request: NextRequest) {
           }
 
           // Watch video and extract full recipe
-          recipe = await extractRecipeFromVideo(
+          instagramRecipe = await extractRecipeFromVideo(
             downloadedVideoUrl,
             captionTitle
           );
 
-          console.log(`[Instagram Import] ✅ Extracted from video: ${recipe.instructions.length} instructions, ${recipe.ingredients.length} ingredients`);
+          console.log(`[Instagram Import] ✅ Extracted from video: ${instagramRecipe.instructions.length} instructions, ${instagramRecipe.ingredients.length} ingredients`);
         } catch (error: any) {
-          console.warn('[Instagram Import] ⚠️ Video extraction failed, falling back to caption parsing:', error.message);
-
-          // Fallback: Try caption parsing
-          recipe = await parseRecipeWithAI(
-            description,
-            [],
-            ''
-          );
+          console.warn('[Instagram Import] ⚠️ Video extraction failed:', error.message);
         }
-      } else {
-        // No video - parse from caption only
-        console.log('[Instagram Import] No video found, parsing from caption...');
-        recipe = await parseRecipeWithAI(
+      }
+
+      // THIRD: Fallback to caption parsing
+      if (!instagramRecipe) {
+        console.log('[Instagram Import] Falling back to caption parsing...');
+        instagramRecipe = await parseRecipeWithAI(
           description,
           [],
           ''
         );
       }
+
+      recipe = instagramRecipe;
     }
 
     // Step 4: Analyze video to get timestamps for each instruction (ALWAYS for both platforms)

@@ -686,12 +686,10 @@ export function UniversalVideoImportModal({
 
   // Select a recipe from the carousel (Path B)
   const handleSelectExtractedRecipe = async (recipe: ExtractedRecipe) => {
-    console.log("[DEBUG] 1. Carousel card clicked, recipe:", recipe.title);
     setExtractedRecipe(recipe);
     setMuxThumbnailUrl(recipe.instagramThumbnailUrl || null);
     setImportMode("url"); // Set to url mode for carousel recipes
 
-    console.log("[DEBUG] 2. Saving ghost recipe to database...");
     // Save recipe WITHOUT cookbook category (ghost recipe) - WAIT for completion
     try {
       const result = await importRecipe({
@@ -710,23 +708,19 @@ export function UniversalVideoImportModal({
       });
 
       if (result.success && result.recipeId) {
-        console.log("[DEBUG] 3. Ghost recipe saved with ID:", result.recipeId);
         setSavedRecipeId(result.recipeId as Id<"userRecipes">);
-        console.log("[DEBUG] 4. Going to preview step");
-        setStep("preview"); // Only go to preview AFTER save completes
+        setStep("preview");
       } else if (result.recipeId) {
         // Recipe already exists - use existing ID
-        console.log("[DEBUG] 3. Recipe already exists, using existing ID:", result.recipeId);
         setSavedRecipeId(result.recipeId as Id<"userRecipes">);
-        console.log("[DEBUG] 4. Going to preview step");
         setStep("preview");
       } else {
-        console.error("[DEBUG] Failed to save ghost recipe:", result.error);
+        console.error("[Recipe Import] Failed to save recipe:", result.error);
         setErrorMessage("Failed to load recipe");
         setStep("error");
       }
     } catch (error: any) {
-      console.error("[DEBUG] Error saving ghost recipe:", error);
+      console.error("[Recipe Import] Error saving recipe:", error);
       setErrorMessage("Failed to load recipe");
       setStep("error");
     }
@@ -780,9 +774,7 @@ export function UniversalVideoImportModal({
 
   // Step 2: Open cookbook selector
   const handleAddToCookbook = () => {
-    console.log("[DEBUG] 6. + button clicked, savedRecipeId:", savedRecipeId);
     if (!savedRecipeId) {
-      console.log("[DEBUG] ERROR: No savedRecipeId, cannot open cookbook sheet");
       toast({
         title: "Recipe Not Ready",
         description: "Please wait while recipe loads...",
@@ -790,18 +782,14 @@ export function UniversalVideoImportModal({
       });
       return;
     }
-    console.log("[DEBUG] 7. Opening cookbook selection sheet");
     setIsCookbookSelectionOpen(true);
   };
 
   // Step 3: Save recipe to selected cookbook
   const handleSelectCookbook = async (cookbookId: string, cookbookName: string) => {
-    console.log("[DEBUG] 8. Cookbook selected:", cookbookName, "ID:", cookbookId);
-    console.log("[DEBUG] 9. Closing cookbook sheet and showing 'Importing Recipes...' loading");
     setIsCookbookSelectionOpen(false);
 
     if (!savedRecipeId || !user?.id) {
-      console.log("[DEBUG] ERROR: Missing savedRecipeId or user.id");
       toast({
         title: "Error",
         description: "Recipe not ready to save",
@@ -812,10 +800,7 @@ export function UniversalVideoImportModal({
 
     // CRITICAL: Mark that we're starting to save - this prevents premature modal close
     isSavingToCookbookRef.current = true;
-    console.log("[DEBUG] Set isSavingToCookbookRef to TRUE - save starting");
-
     setStep("saving");
-    console.log("[DEBUG] 10. Updating recipe with cookbook category...");
 
     try {
       // Update ghost recipe with cookbook category
@@ -825,10 +810,8 @@ export function UniversalVideoImportModal({
         newCookbookCategory: cookbookId,
       });
 
-      console.log("[DEBUG] 11. Recipe saved successfully to", cookbookName);
       recipeSavedToCookbookRef.current = true; // Mark as saved to prevent cleanup deletion
       isSavingToCookbookRef.current = false; // Save complete - allow close now
-      console.log("[DEBUG] Set recipeSavedToCookbookRef to true, isSavingToCookbookRef to false");
       setStep("success");
       toast({
         title: "Recipe Saved!",
@@ -837,13 +820,11 @@ export function UniversalVideoImportModal({
 
       // Close modal after save
       setTimeout(() => {
-        console.log("[DEBUG] 12. Closing modal");
         handleClose();
       }, 1500);
     } catch (error: any) {
-      console.error("[DEBUG] ERROR saving to cookbook:", error);
+      console.error("[Recipe Import] Error saving to cookbook:", error);
       isSavingToCookbookRef.current = false; // Save failed - allow close now
-      console.log("[DEBUG] Set isSavingToCookbookRef to false (error case)");
       setErrorMessage(error.message || "Failed to save to cookbook");
       setStep("error");
       toast({
@@ -1310,37 +1291,33 @@ export function UniversalVideoImportModal({
           )}
 
           {/* Step 3: Recipe Preview - Video */}
-          {console.log("[DEBUG] Preview check - step:", step, "importMode:", importMode, "extractedRecipe:", !!extractedRecipe, "savedRecipeId:", savedRecipeId)}
           {step === "preview" && importMode === "url" && extractedRecipe && (
             <div className="space-y-4">
-              {savedRecipeId ? (
-                <>
-                  {console.log("[DEBUG] 5. Rendering preview with recipe ID:", savedRecipeId, "imageUrl:", extractedRecipe.instagramThumbnailUrl || extractedRecipe.imageUrl)}
-                  <UniversalRecipeCard
-                    recipe={{
-                      _id: savedRecipeId,
-                      title: extractedRecipe.title,
-                      description: extractedRecipe.description,
-                      ingredients: extractedRecipe.ingredients,
-                      instructions: extractedRecipe.instructions,
-                      muxPlaybackId: muxPlaybackId || undefined,
-                      imageUrl: extractedRecipe.instagramThumbnailUrl || extractedRecipe.imageUrl || muxThumbnailUrl || undefined,
-                      cuisine: extractedRecipe.cuisine,
-                      videoSegments: videoSegments || undefined,
-                    }}
-                    onAddToCookbook={handleAddToCookbook}
-                    onShare={() => {
-                      navigator.clipboard.writeText(videoUrl);
-                      toast({
-                        title: "Link Copied!",
-                        description: "Recipe link copied to clipboard",
-                      });
-                    }}
-                  />
-                </>
-              ) : (
-                <div className="flex items-center justify-center py-12">
-                  <p className="text-gray-500">Loading recipe...</p>
+              <UniversalRecipeCard
+                recipe={{
+                  _id: savedRecipeId || undefined,
+                  title: extractedRecipe.title,
+                  description: extractedRecipe.description,
+                  ingredients: extractedRecipe.ingredients,
+                  instructions: extractedRecipe.instructions,
+                  muxPlaybackId: muxPlaybackId || undefined,
+                  imageUrl: extractedRecipe.instagramThumbnailUrl || extractedRecipe.imageUrl || muxThumbnailUrl || undefined,
+                  cuisine: extractedRecipe.cuisine,
+                  videoSegments: videoSegments || undefined,
+                }}
+                onAddToCookbook={savedRecipeId ? handleAddToCookbook : undefined}
+                onShare={() => {
+                  navigator.clipboard.writeText(videoUrl);
+                  toast({
+                    title: "Link Copied!",
+                    description: "Recipe link copied to clipboard",
+                  });
+                }}
+              />
+              {!savedRecipeId && (
+                <div className="flex items-center justify-center gap-2 py-2 text-sm text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Preparing recipe...</span>
                 </div>
               )}
             </div>
