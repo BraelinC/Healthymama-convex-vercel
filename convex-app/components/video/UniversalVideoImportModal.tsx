@@ -428,7 +428,21 @@ export function UniversalVideoImportModal({
         body: formData,
       });
 
-      const data = await response.json();
+      console.log("[Image Identify] Response status:", response.status, response.statusText);
+
+      // Get response text first to handle non-JSON responses
+      const responseText = await response.text();
+      console.log("[Image Identify] Response text (first 200 chars):", responseText.substring(0, 200));
+
+      // Try to parse as JSON
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("[Image Identify] JSON parse error:", parseError);
+        console.error("[Image Identify] Full response:", responseText);
+        throw new Error("Unexpected response from server. Please try again.");
+      }
 
       if (!response.ok || !data.success) {
         throw new Error(data.error || "Failed to identify dish from image");
