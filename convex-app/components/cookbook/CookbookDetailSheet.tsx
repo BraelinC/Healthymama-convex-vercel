@@ -181,7 +181,7 @@ export function CookbookDetailSheet({
             onClose();
           }
         }}>
-        <SheetContent side="right" className="w-full sm:max-w-lg p-0">
+        <SheetContent side="right" className="w-full sm:max-w-lg p-0" hideCloseButton>
           {/* Visually hidden title for accessibility */}
           <SheetTitle className="sr-only">{cookbookName} Cookbook</SheetTitle>
           {/* Header with gradient background */}
