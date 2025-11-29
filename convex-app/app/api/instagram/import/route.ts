@@ -108,6 +108,7 @@ interface ParsedRecipe {
   prep_time?: string;
   cook_time?: string;
   cuisine?: string;
+  imageUrl?: string; // Recipe image from website extraction
   videoSegments?: VideoSegment[]; // AI-analyzed timestamps for each step
 }
 
@@ -461,6 +462,7 @@ async function extractRecipeFromWebsite(url: string, fallbackImageUrl?: string):
           prep_time: transformed.prep_time,
           cook_time: transformed.cook_time,
           cuisine: transformed.category,
+          imageUrl: transformed.imageUrl || fallbackImageUrl,
         };
       }
       console.log(`[Website Extraction] JSON-LD incomplete: ${validation.reason}`);
@@ -482,6 +484,7 @@ async function extractRecipeFromWebsite(url: string, fallbackImageUrl?: string):
           prep_time: geminiRecipe.prep_time,
           cook_time: geminiRecipe.cook_time,
           cuisine: geminiRecipe.category,
+          imageUrl: geminiRecipe.imageUrl || fallbackImageUrl,
         };
       }
       console.log('[Website Extraction] Gemini extraction incomplete');
@@ -523,6 +526,7 @@ async function extractRecipeFromWebsite(url: string, fallbackImageUrl?: string):
               prep_time: transformed.prep_time,
               cook_time: transformed.cook_time,
               cuisine: transformed.category,
+              imageUrl: transformed.imageUrl || fallbackImageUrl,
             };
           }
         }
@@ -544,6 +548,7 @@ async function extractRecipeFromWebsite(url: string, fallbackImageUrl?: string):
               prep_time: geminiRecipe.prep_time,
               cook_time: geminiRecipe.cook_time,
               cuisine: geminiRecipe.category,
+              imageUrl: geminiRecipe.imageUrl || fallbackImageUrl,
             };
           }
         }
@@ -564,6 +569,7 @@ async function extractRecipeFromWebsite(url: string, fallbackImageUrl?: string):
                 prep_time: visionRecipe.prep_time,
                 cook_time: visionRecipe.cook_time,
                 cuisine: visionRecipe.cuisine,
+                imageUrl: fallbackImageUrl,
               };
             }
           } catch (visionError: any) {
@@ -592,6 +598,7 @@ async function extractRecipeFromWebsite(url: string, fallbackImageUrl?: string):
                 prep_time: visionRecipe.prep_time,
                 cook_time: visionRecipe.cook_time,
                 cuisine: visionRecipe.cuisine,
+                imageUrl: fallbackImageUrl,
               };
             }
           } catch (visionError: any) {
@@ -1084,6 +1091,10 @@ export async function POST(request: NextRequest) {
         // Parsed recipe data
         ...recipe,
 
+        // Unified image URL field (works for all platforms)
+        // Priority: Pinterest image > Instagram thumbnail > recipe image from website
+        instagramThumbnailUrl: thumbnailUrl || recipe.imageUrl,
+
         // Platform-specific metadata
         ...(isPinterest ? {
           pinterestUrl: url,
@@ -1095,7 +1106,6 @@ export async function POST(request: NextRequest) {
         } : isInstagram ? {
           instagramUrl: url,
           instagramVideoUrl: downloadedVideoUrl,
-          instagramThumbnailUrl: thumbnailUrl,
         } : {
           youtubeUrl: url,
           youtubeVideoId: videoId,
