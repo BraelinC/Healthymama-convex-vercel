@@ -18,7 +18,22 @@ export const identifyRecipeFromImage = action({
       throw new Error("Failed to get image URL from storage");
     }
 
-    console.log("[Recipe Identify] Using image URL:", imageUrl);
+    console.log("[Recipe Identify] Fetching image from Convex storage...");
+
+    // Fetch the image and convert to base64
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to fetch image from storage: ${imageResponse.status}`);
+    }
+
+    const arrayBuffer = await imageResponse.arrayBuffer();
+    const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
+
+    console.log("[Recipe Identify] Image fetched, size:", Math.round(arrayBuffer.byteLength / 1024), "KB");
+
+    // Convert ArrayBuffer to base64 using Web APIs available in Convex
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    const dataUrl = `data:${contentType};base64,${base64}`;
 
     // Call OpenRouter API
     const apiKey = process.env.OPEN_ROUTER_API_KEY;
@@ -63,7 +78,7 @@ IMPORTANT:
               {
                 type: 'image_url',
                 image_url: {
-                  url: imageUrl, // Send Convex storage URL directly
+                  url: dataUrl, // Send base64 data URL
                 },
               },
             ],
@@ -77,7 +92,8 @@ IMPORTANT:
     if (!response.ok) {
       const errorText = await response.text();
       console.error('[Recipe Identify] OpenRouter error:', response.status, errorText);
-      throw new Error(`AI service error: ${response.status}`);
+      console.error('[Recipe Identify] Image URL used:', imageUrl);
+      throw new Error(`AI service error: ${response.status} - ${errorText.substring(0, 300)}`);
     }
 
     const data = await response.json();
@@ -159,4 +175,19 @@ function parseIdentificationJSON(text: string): { dishName: string; ingredients:
     console.error('[Recipe Identify] JSON parse error:', error);
     return null;
   }
+}
+
+/**
+ * Convert ArrayBuffer to base64 string (compatible with Convex runtime)
+ */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  let binary = '';
+
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+
+  return btoa(binary);
 }
