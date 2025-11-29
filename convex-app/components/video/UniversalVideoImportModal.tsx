@@ -186,6 +186,7 @@ export function UniversalVideoImportModal({
   const updateCookbook = useMutation(api.recipes.userRecipes.updateRecipeCookbook);
   const deleteRecipe = useMutation(api.recipes.userRecipes.removeRecipeFromCookbook);
   const generateUploadUrl = useMutation(api.communities.files.generateUploadUrl);
+  const identifyRecipe = useAction(api.recipeIdentification.identifyRecipeFromImage);
 
   // Helper: Delete ghost recipe (recipe without cookbook category)
   const deleteGhostRecipe = async (recipeId: Id<"userRecipes">) => {
@@ -492,35 +493,9 @@ export function UniversalVideoImportModal({
       const { storageId } = await uploadResponse.json();
       console.log("[Image Identify] Uploaded, storage ID:", storageId);
 
-      // Send storageId to API - it will fetch from Convex storage
-      console.log("[Image Identify] Sending to AI...");
-      const response = await fetch("/api/recipe-image/identify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storageId }),
-      });
-
-      console.log("[Image Identify] Response status:", response.status, response.statusText);
-
-      // Get response text first to handle non-JSON responses
-      const responseText = await response.text();
-      console.log("[Image Identify] Response text (first 200 chars):", responseText.substring(0, 200));
-
-      // Try to parse as JSON
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error("[Image Identify] JSON parse error:", parseError);
-        console.error("[Image Identify] Full response:", responseText);
-        // Show first 100 chars of response in error message for debugging
-        const preview = responseText.substring(0, 100);
-        throw new Error(`Server returned invalid response: ${preview}${responseText.length > 100 ? '...' : ''}`);
-      }
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || "Failed to identify dish from image");
-      }
+      // Call Convex action to identify recipe
+      console.log("[Image Identify] Calling Convex action...");
+      const data = await identifyRecipe({ storageId: storageId as any });
 
       // Store identified dish and go to choose-path step
       setIdentifiedDish({
