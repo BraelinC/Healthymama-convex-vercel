@@ -479,8 +479,8 @@ export function UniversalVideoImportModal({
     setErrorMessage("");
 
     try {
-      // Upload image to Convex storage first (faster, no size limit)
-      console.log("[Image Identify] Uploading to storage...");
+      // Upload image to Convex storage (fast, no size limit)
+      console.log("[Image Identify] Uploading to Convex storage...");
       const uploadUrl = await generateUploadUrl();
 
       const uploadResponse = await fetch(uploadUrl, {
@@ -490,16 +490,14 @@ export function UniversalVideoImportModal({
       });
 
       const { storageId } = await uploadResponse.json();
-      console.log("[Image Identify] Uploaded to storage:", storageId);
+      console.log("[Image Identify] Uploaded, storage ID:", storageId);
 
-      // Get the public URL for the uploaded image
-      const imageUrl = `${window.location.origin}/_storage/${storageId}`;
-
-      // Now send the URL to the AI API
+      // Send storageId to API - it will fetch from Convex storage
+      console.log("[Image Identify] Sending to AI...");
       const response = await fetch("/api/recipe-image/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl }),
+        body: JSON.stringify({ storageId }),
       });
 
       console.log("[Image Identify] Response status:", response.status, response.statusText);

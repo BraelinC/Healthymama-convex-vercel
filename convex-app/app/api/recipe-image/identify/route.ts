@@ -15,11 +15,11 @@ import { NextResponse } from 'next/server';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const imageUrl = body.imageUrl as string | undefined;
+    const storageId = body.storageId as string | undefined;
 
-    if (!imageUrl) {
+    if (!storageId) {
       return NextResponse.json(
-        { error: 'No image URL provided' },
+        { error: 'No storage ID provided' },
         { status: 400 }
       );
     }
@@ -32,7 +32,36 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('[Recipe Identify] Processing image from URL:', imageUrl);
+    // Fetch image from Convex storage
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || process.env.CONVEX_URL;
+    if (!convexUrl) {
+      return NextResponse.json(
+        { error: 'Convex URL not configured' },
+        { status: 500 }
+      );
+    }
+
+    const imageUrl = `${convexUrl.replace('/api', '')}/api/storage/${storageId}`;
+    console.log('[Recipe Identify] Fetching image from Convex:', imageUrl);
+
+    // Fetch the image from Convex storage
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      console.error('[Recipe Identify] Failed to fetch from Convex:', imageResponse.status);
+      return NextResponse.json(
+        { error: 'Failed to fetch image from storage' },
+        { status: 500 }
+      );
+    }
+
+    // Convert to base64
+    const arrayBuffer = await imageResponse.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64Image = buffer.toString('base64');
+    const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
+    const dataUrl = `data:${contentType};base64,${base64Image}`;
+
+    console.log('[Recipe Identify] Processing image, size:', Math.round(arrayBuffer.byteLength / 1024), 'KB');
 
     // Lightweight prompt - only identify dish and ingredients
     const prompt = `Identify this food dish. Return ONLY a JSON object with:
@@ -73,7 +102,7 @@ IMPORTANT:
               {
                 type: 'image_url',
                 image_url: {
-                  url: imageUrl,
+                  url: dataUrl,
                 },
               },
             ],
@@ -87,8 +116,9 @@ IMPORTANT:
     if (!response.ok) {
       const errorText = await response.text();
       console.error('[Recipe Identify] API error:', response.status, errorText);
+      console.error('[Recipe Identify] Storage ID:', storageId);
       return NextResponse.json(
-        { error: `AI service error: ${response.status}` },
+        { error: `AI service error: ${response.status} - ${errorText.substring(0, 200)}` },
         { status: 502 }
       );
     }
