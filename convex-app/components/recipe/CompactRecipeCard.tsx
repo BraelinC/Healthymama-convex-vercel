@@ -84,7 +84,7 @@ export function CompactRecipeCard({
       {isDeleteMode && (
         <button
           onClick={handleDelete}
-          className="absolute -top-1 -right-1 z-20 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors"
+          className="absolute top-1 right-1 z-20 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors"
         >
           <X className="w-4 h-4 text-white" />
         </button>
