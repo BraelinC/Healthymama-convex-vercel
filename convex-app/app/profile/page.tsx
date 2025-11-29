@@ -1,23 +1,82 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { User, ArrowLeft } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { User, ArrowLeft, AtSign, Check, X, Loader2 } from "lucide-react";
 import { ProfileImageUploader } from "@/components/profile/ProfileImageUploader";
 import { InstagramConnect } from "@/components/profile/InstagramConnect";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ProfilePage() {
   const { user, isLoaded } = useUser();
   const userId = user?.id || "";
   const router = useRouter();
+  const { toast } = useToast();
+
+  // Profile name state
+  const [profileName, setProfileName] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
 
   const userProfile = useQuery(
     api.userProfile.getUserProfileWithImage,
     userId ? { userId } : "skip"
   );
+
+  // Check if profile name is available
+  const isNameAvailable = useQuery(
+    api.userProfile.checkProfileNameAvailable,
+    userId && profileName.length >= 3
+      ? { uniqueProfileName: profileName, currentUserId: userId }
+      : "skip"
+  );
+
+  const updateProfileName = useMutation(api.userProfile.updateUniqueProfileName);
+
+  // Initialize profile name from existing data
+  useEffect(() => {
+    if (userProfile?.uniqueProfileName) {
+      setProfileName(userProfile.uniqueProfileName);
+    }
+  }, [userProfile?.uniqueProfileName]);
+
+  // Track changes
+  useEffect(() => {
+    const originalName = userProfile?.uniqueProfileName || "";
+    setHasChanges(profileName !== originalName && profileName.length >= 3);
+  }, [profileName, userProfile?.uniqueProfileName]);
+
+  // Validate profile name format
+  const isValidFormat = /^[a-zA-Z0-9_]{3,20}$/.test(profileName);
+  const showValidation = profileName.length > 0;
+
+  const handleSaveProfileName = async () => {
+    if (!userId || !isValidFormat || !isNameAvailable) return;
+
+    setIsSaving(true);
+    try {
+      await updateProfileName({ userId, uniqueProfileName: profileName });
+      toast({
+        title: "Profile name saved!",
+        description: `Your unique profile name is now @${profileName.toLowerCase()}`,
+      });
+      setHasChanges(false);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save profile name",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (!isLoaded || !user) {
     return (
@@ -68,6 +127,79 @@ export default function ProfilePage() {
                   // The query will auto-refetch due to Convex reactivity
                 }}
               />
+            </CardContent>
+          </Card>
+
+          {/* Unique Profile Name Card */}
+          <Card className="rounded-3xl border border-purple-100/70 bg-gradient-to-br from-white via-purple-50/80 to-emerald-50/80 shadow-2xl shadow-purple-200/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center justify-center gap-2 text-purple-600">
+                <AtSign className="h-5 w-5 text-purple-500" />
+                Unique Profile Name
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="py-6">
+              <p className="text-sm text-gray-500 text-center mb-4">
+                Set a unique name so friends can find you
+              </p>
+              <div className="space-y-3">
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">@</span>
+                  <Input
+                    type="text"
+                    placeholder="your_unique_name"
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))}
+                    className="pl-8 pr-10"
+                    maxLength={20}
+                  />
+                  {showValidation && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      {isValidFormat && isNameAvailable ? (
+                        <Check className="h-5 w-5 text-green-500" />
+                      ) : (
+                        <X className="h-5 w-5 text-red-500" />
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Validation messages */}
+                {showValidation && (
+                  <div className="text-xs space-y-1">
+                    {profileName.length < 3 && (
+                      <p className="text-amber-600">Must be at least 3 characters</p>
+                    )}
+                    {profileName.length > 20 && (
+                      <p className="text-red-500">Must be 20 characters or less</p>
+                    )}
+                    {isValidFormat && isNameAvailable === false && (
+                      <p className="text-red-500">This name is already taken</p>
+                    )}
+                    {isValidFormat && isNameAvailable === true && (
+                      <p className="text-green-600">This name is available!</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Save button */}
+                {hasChanges && isValidFormat && isNameAvailable && (
+                  <Button
+                    onClick={handleSaveProfileName}
+                    disabled={isSaving}
+                    className="w-full bg-gradient-to-r from-purple-500 to-emerald-500 hover:from-purple-600 hover:to-emerald-600"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Profile Name"
+                    )}
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
 

@@ -183,7 +183,8 @@ export const getFriends = query({
 
         return {
           userId: friendId,
-          name: user?.prefs?.profileName || user?.email || "Unknown",
+          name: profile?.name || user?.prefs?.profileName || user?.email || "Unknown",
+          uniqueProfileName: profile?.uniqueProfileName || null,
           email: user?.email || "",
           profileImageUrl,
         };
@@ -244,7 +245,8 @@ export const getPendingFriendRequests = query({
         return {
           friendshipId: request._id,
           requesterId: request.requestedBy,
-          requesterName: requester?.prefs?.profileName || requester?.email || "Unknown",
+          requesterName: profile?.name || requester?.prefs?.profileName || requester?.email || "Unknown",
+          requesterUniqueProfileName: profile?.uniqueProfileName || null,
           requesterEmail: requester?.email || "",
           profileImageUrl,
           createdAt: request.createdAt,
@@ -257,7 +259,7 @@ export const getPendingFriendRequests = query({
 });
 
 /**
- * Search users by email (for adding friends)
+ * Search users by email (for adding friends) - LEGACY
  */
 export const searchUserByEmail = query({
   args: {
@@ -289,6 +291,46 @@ export const searchUserByEmail = query({
       userId: user.userId,
       name: user.prefs?.profileName || user.email,
       email: user.email,
+      profileImageUrl,
+    };
+  },
+});
+
+/**
+ * Search users by unique profile name (for adding friends)
+ */
+export const searchUserByProfileName = query({
+  args: {
+    profileName: v.string(),
+    currentUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Search for exact match on unique profile name
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_unique_profile_name", (q) => q.eq("uniqueProfileName", args.profileName.toLowerCase()))
+      .first();
+
+    if (!profile || profile.userId === args.currentUserId) {
+      return null;
+    }
+
+    // Get user info
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_userId", (q) => q.eq("userId", profile.userId))
+      .first();
+
+    let profileImageUrl: string | null = null;
+    if (profile.profileImageStorageId) {
+      profileImageUrl = await ctx.storage.getUrl(profile.profileImageStorageId);
+    }
+
+    return {
+      userId: profile.userId,
+      name: profile.name || profile.uniqueProfileName || user?.email || "Unknown",
+      uniqueProfileName: profile.uniqueProfileName,
+      email: user?.email || "",
       profileImageUrl,
     };
   },
