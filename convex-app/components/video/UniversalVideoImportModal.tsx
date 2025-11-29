@@ -441,7 +441,9 @@ export function UniversalVideoImportModal({
       } catch (parseError) {
         console.error("[Image Identify] JSON parse error:", parseError);
         console.error("[Image Identify] Full response:", responseText);
-        throw new Error("Unexpected response from server. Please try again.");
+        // Show first 100 chars of response in error message for debugging
+        const preview = responseText.substring(0, 100);
+        throw new Error(`Server returned invalid response: ${preview}${responseText.length > 100 ? '...' : ''}`);
       }
 
       if (!response.ok || !data.success) {
