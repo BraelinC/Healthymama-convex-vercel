@@ -48,7 +48,7 @@ interface ExtractedRecipe {
   servings?: string;
   prep_time?: string;
   cook_time?: string;
-  cuisine?: string;
+  cuisine?: string | string[]; // API may return array
   difficulty?: "easy" | "medium" | "hard";
   instagramThumbnailUrl?: string;
   imageUrl?: string;
@@ -434,6 +434,11 @@ export function UniversalVideoImportModal({
       // Save recipe in background WITHOUT cookbook category (ghost recipe)
       // This allows the user to add to cookbook later
       try {
+        // Ensure cuisine is a string (API sometimes returns array)
+        const cuisineValue = Array.isArray(recipe.cuisine)
+          ? recipe.cuisine[0]
+          : recipe.cuisine;
+
         const result = await importRecipe({
           title: recipe.title,
           description: recipe.description || undefined,
@@ -442,7 +447,7 @@ export function UniversalVideoImportModal({
           servings: recipe.servings || undefined,
           prep_time: recipe.prep_time || undefined,
           cook_time: recipe.cook_time || undefined,
-          cuisine: recipe.cuisine || undefined,
+          cuisine: cuisineValue || undefined,
           cookbookCategory: undefined, // NO COOKBOOK - ghost recipe
           source: recipe.source || (detectedPlatform === "pinterest" ? "pinterest" : "instagram"),
           instagramThumbnailUrl: recipe.instagramThumbnailUrl || recipe.imageUrl,
@@ -716,6 +721,11 @@ export function UniversalVideoImportModal({
 
     // Save recipe WITHOUT cookbook category (ghost recipe) - WAIT for completion
     try {
+      // Ensure cuisine is a string (API sometimes returns array)
+      const cuisineValue = Array.isArray(recipe.cuisine)
+        ? recipe.cuisine[0]
+        : recipe.cuisine;
+
       const result = await importRecipe({
         title: recipe.title,
         description: recipe.description || undefined,
@@ -724,7 +734,7 @@ export function UniversalVideoImportModal({
         servings: recipe.servings || undefined,
         prep_time: recipe.prep_time || undefined,
         cook_time: recipe.cook_time || undefined,
-        cuisine: recipe.cuisine || undefined,
+        cuisine: cuisineValue || undefined,
         cookbookCategory: undefined, // NO COOKBOOK - ghost recipe
         source: recipe.source as "instagram" | "youtube" | "pinterest" | undefined,
         instagramThumbnailUrl: recipe.instagramThumbnailUrl || recipe.imageUrl,
