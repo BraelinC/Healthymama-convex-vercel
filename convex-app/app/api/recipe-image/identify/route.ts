@@ -128,12 +128,15 @@ IMPORTANT:
 
     const text = data.choices[0].message.content.trim();
 
+    console.log('[Recipe Identify] AI response text:', text.substring(0, 200)); // Log first 200 chars
+
     // Parse JSON response
     const result = parseIdentificationJSON(text);
 
     if (!result) {
+      console.error('[Recipe Identify] Failed to parse response:', text);
       return NextResponse.json(
-        { error: 'Could not identify dish from image. Please try a clearer image.' },
+        { error: 'Could not identify dish from image. The AI returned an invalid response. Please try again.' },
         { status: 422 }
       );
     }
@@ -169,16 +172,19 @@ function parseIdentificationJSON(text: string): { dishName: string; ingredients:
       jsonText = jsonText.replace(/```\n?/g, '').trim();
     }
 
-    // Extract JSON object
+    // Extract JSON object - find the FIRST { and LAST }
     const firstBrace = jsonText.indexOf('{');
     const lastBrace = jsonText.lastIndexOf('}');
 
     if (firstBrace === -1 || lastBrace === -1) {
-      console.error('[Recipe Identify] No JSON found in response');
+      console.error('[Recipe Identify] No JSON braces found in response:', jsonText.substring(0, 100));
       return null;
     }
 
     jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+
+    console.log('[Recipe Identify] Extracted JSON string:', jsonText);
+
     const parsed = JSON.parse(jsonText);
 
     // Validate required fields
@@ -204,8 +210,18 @@ function parseIdentificationJSON(text: string): { dishName: string; ingredients:
       ingredients,
     };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Recipe Identify] JSON parse error:', error);
+    console.error('[Recipe Identify] Failed to parse text:', text);
+
+    // If AI returned a refusal or error message instead of JSON
+    if (text.toLowerCase().includes('request') ||
+        text.toLowerCase().includes('sorry') ||
+        text.toLowerCase().includes('cannot') ||
+        text.toLowerCase().includes('unable')) {
+      console.error('[Recipe Identify] AI refused the request:', text);
+    }
+
     return null;
   }
 }
