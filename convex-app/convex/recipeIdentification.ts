@@ -28,8 +28,15 @@ export const identifyRecipeFromImage = action({
 
     // Convert to base64
     const arrayBuffer = await imageResponse.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64Image = buffer.toString('base64');
+    const bytes = new Uint8Array(arrayBuffer);
+
+    // Convert to base64 without Buffer (which isn't available in Convex runtime)
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64Image = btoa(binary);
+
     const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
     const dataUrl = `data:${contentType};base64,${base64Image}`;
 
