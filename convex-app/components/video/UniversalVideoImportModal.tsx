@@ -320,11 +320,16 @@ export function UniversalVideoImportModal({
 
   // Handle image file selection
   const handleImageSelect = async (file: File) => {
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!validTypes.includes(file.type)) {
+    // Accept common image formats including HEIC/HEIF from iPhones
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'];
+    // Also check file extension for HEIC (some browsers report wrong MIME type)
+    const fileName = file.name.toLowerCase();
+    const isHeicByExtension = fileName.endsWith('.heic') || fileName.endsWith('.heif');
+
+    if (!validTypes.includes(file.type) && !isHeicByExtension) {
       toast({
         title: "Invalid file type",
-        description: "Please upload a JPEG, PNG, WebP, or GIF image",
+        description: "Please upload a JPEG, PNG, WebP, GIF, or HEIC image",
         variant: "destructive",
       });
       return;
@@ -509,14 +514,25 @@ export function UniversalVideoImportModal({
     setErrorMessage("");
 
     try {
+      // Compress and convert to JPEG (handles HEIC from iPhones)
+      console.log("[Image Identify] Compressing image...");
+      let fileToUpload: File;
+      try {
+        fileToUpload = await compressImage(imageFile);
+        console.log("[Image Identify] Compressed to JPEG:", Math.round(fileToUpload.size / 1024), "KB");
+      } catch (compressError) {
+        console.error("[Image Identify] Compression failed, using original:", compressError);
+        fileToUpload = imageFile;
+      }
+
       // Upload image to Convex storage (fast, no size limit)
       console.log("[Image Identify] Uploading to Convex storage...");
       const uploadUrl = await generateUploadUrl();
 
       const uploadResponse = await fetch(uploadUrl, {
         method: "POST",
-        headers: { "Content-Type": imageFile.type },
-        body: imageFile,
+        headers: { "Content-Type": fileToUpload.type },
+        body: fileToUpload,
       });
 
       const { storageId } = await uploadResponse.json();
