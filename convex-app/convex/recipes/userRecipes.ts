@@ -623,39 +623,7 @@ export const saveSharedRecipeToUserCookbook = mutation({
       return { success: true, recipeId: existing._id };
     }
 
-    // Create new userRecipe entry for User B that references the shared recipe
-    const newRecipeId = await ctx.db.insert("userRecipes", {
-      userId: args.userId,
-
-      // Reference the same source as the shared recipe
-      recipeType: sharedRecipe.recipeType,
-      sourceRecipeId: sharedRecipe.sourceRecipeId,
-      sourceRecipeType: sharedRecipe.sourceRecipeType,
-
-      // Store reference to the recipe this was shared from
-      sharedFromRecipeId: args.sharedRecipeId,
-      sharedFromUserId: sharedRecipe.userId,
-
-      // Cached data for quick display
-      cachedTitle: sharedRecipe.title || sharedRecipe.cachedTitle,
-      cachedImageUrl: sharedRecipe.imageUrl || sharedRecipe.cachedImageUrl,
-
-      // User B's organization
-      cookbookCategory: args.cookbookCategory,
-
-      // For custom recipes, copy the customRecipeData
-      ...(sharedRecipe.recipeType === "custom" || sharedRecipe.recipeType === "ai_generated"
-        ? { customRecipeData: sharedRecipe.customRecipeData }
-        : {}),
-
-      // Metadata
-      isFavorited: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      lastAccessedAt: Date.now(),
-    });
-
-    // Find the share record and mark as saved
+    // Find the share record to get cached recipe data (ingredients, instructions, etc.)
     const share = await ctx.db
       .query("sharedRecipes")
       .filter((q) =>
@@ -666,6 +634,65 @@ export const saveSharedRecipeToUserCookbook = mutation({
       )
       .first();
 
+    // For custom/AI recipes, copy the customRecipeData
+    let customRecipeDataCopy = undefined;
+    if (sharedRecipe.recipeType === "custom" || sharedRecipe.recipeType === "ai_generated") {
+      customRecipeDataCopy = sharedRecipe.customRecipeData;
+    }
+    // For extracted/community recipes, use cached data from share if available
+    else if (share && (share.recipeIngredients || share.recipeInstructions)) {
+      // Convert share cached data to customRecipeData format
+      customRecipeDataCopy = {
+        title: share.recipeTitle,
+        description: share.recipeDescription,
+        imageUrl: share.recipeImageUrl,
+        ingredients: share.recipeIngredients || [],
+        instructions: share.recipeInstructions || [],
+        // Note: servings, prep_time, cook_time, cuisine not in share cache yet
+        servings: undefined,
+        prep_time: undefined,
+        cook_time: undefined,
+        time_minutes: undefined,
+        cuisine: undefined,
+        diet: undefined,
+        category: undefined,
+      };
+    }
+
+    // Create new userRecipe entry for User B
+    const newRecipeId = await ctx.db.insert("userRecipes", {
+      userId: args.userId,
+
+      // If we have cached data, use "custom" type to embed the full recipe
+      // Otherwise reference the same source as the shared recipe
+      recipeType: customRecipeDataCopy ? "custom" : sharedRecipe.recipeType,
+      ...(customRecipeDataCopy
+        ? { customRecipeData: customRecipeDataCopy }
+        : {
+            sourceRecipeId: sharedRecipe.sourceRecipeId,
+            sourceRecipeType: sharedRecipe.sourceRecipeType,
+          }
+      ),
+
+      // Store reference to the recipe this was shared from
+      sharedFromRecipeId: args.sharedRecipeId,
+      sharedFromUserId: sharedRecipe.userId,
+
+      // Cached data for quick display (fallback if source is deleted)
+      cachedTitle: share?.recipeTitle || sharedRecipe.title || sharedRecipe.cachedTitle,
+      cachedImageUrl: share?.recipeImageUrl || sharedRecipe.imageUrl || sharedRecipe.cachedImageUrl,
+
+      // User B's organization
+      cookbookCategory: args.cookbookCategory,
+
+      // Metadata
+      isFavorited: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastAccessedAt: Date.now(),
+    });
+
+    // Mark share as saved
     if (share) {
       await ctx.db.patch(share._id, {
         status: "saved",

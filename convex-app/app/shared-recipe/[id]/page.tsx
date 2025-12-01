@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -33,7 +33,7 @@ export default function SharedRecipePage({ params }: SharedRecipePageProps) {
   const recipe = useQuery(api.mikey.queries.getAnonymousRecipe, { recipeId });
 
   // Debug: Log recipe data to see what imageUrl we're getting
-  React.useEffect(() => {
+  useEffect(() => {
     if (recipe) {
       console.log("[SharedRecipe] Recipe data:", {
         _id: recipe._id,
@@ -69,6 +69,7 @@ export default function SharedRecipePage({ params }: SharedRecipePageProps) {
         prep_time: recipe?.prep_time,
         cook_time: recipe?.cook_time,
         cuisine: recipe?.cuisine,
+        isFavorited: false, // IMPORTANT: Don't copy favorite status from original user
       });
 
       toast({

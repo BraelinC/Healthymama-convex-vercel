@@ -257,6 +257,35 @@ export const getAnonymousRecipe = query({
 });
 
 /**
+ * Get shared recipe data from sharedRecipes table (uses cached data)
+ * This is used when viewing a recipe that was shared between users
+ */
+export const getSharedRecipe = query({
+  args: {
+    shareId: v.id("sharedRecipes"),
+  },
+  handler: async (ctx, args) => {
+    const share = await ctx.db.get(args.shareId);
+
+    if (!share) {
+      return null;
+    }
+
+    // Return the cached recipe data from the share
+    return {
+      _id: share.recipeId, // Keep original recipe ID for reference
+      title: share.recipeTitle,
+      description: share.recipeDescription,
+      imageUrl: share.recipeImageUrl,
+      ingredients: share.recipeIngredients || [],
+      instructions: share.recipeInstructions || [],
+      // Note: servings, prep_time, cook_time, cuisine not cached in shares yet
+      // Could be added to schema if needed
+    };
+  },
+});
+
+/**
  * Search conversations by Instagram username
  */
 export const searchConversations = query({
