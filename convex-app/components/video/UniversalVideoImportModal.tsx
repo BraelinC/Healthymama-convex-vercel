@@ -703,7 +703,68 @@ export function UniversalVideoImportModal({
     }
   };
 
-  // Select a recipe from the carousel (Path B)
+  // Quick-add recipe from carousel - skips detail view, directly opens cookbook selection
+  const handleQuickAddFromCarousel = async (recipe: ExtractedRecipe, event?: React.MouseEvent) => {
+    // Prevent card click when + button is clicked
+    if (event) {
+      event.stopPropagation();
+    }
+
+    setExtractedRecipe(recipe);
+    setMuxThumbnailUrl(recipe.instagramThumbnailUrl || null);
+    setImportMode("url");
+
+    // Save recipe WITHOUT cookbook category (ghost recipe) - WAIT for completion
+    try {
+      const cuisineValue = Array.isArray(recipe.cuisine)
+        ? recipe.cuisine[0]
+        : recipe.cuisine;
+
+      const result = await importRecipe({
+        title: recipe.title,
+        description: recipe.description || undefined,
+        ingredients: recipe.ingredients || [],
+        instructions: recipe.instructions || [],
+        servings: recipe.servings || undefined,
+        prep_time: recipe.prep_time || undefined,
+        cook_time: recipe.cook_time || undefined,
+        cuisine: cuisineValue || undefined,
+        cookbookCategory: undefined, // NO COOKBOOK - ghost recipe
+        source: recipe.source as "instagram" | "youtube" | "pinterest" | undefined,
+        instagramThumbnailUrl: recipe.instagramThumbnailUrl || recipe.imageUrl,
+        pinterestThumbnailUrl: recipe.pinterestThumbnailUrl || recipe.instagramThumbnailUrl || recipe.imageUrl,
+        pinterestImageUrls: recipe.pinterestImageUrls,
+        muxPlaybackId: undefined,
+        videoSegments: undefined,
+      });
+
+      if (result.success && result.recipeId) {
+        setSavedRecipeId(result.recipeId as Id<"userRecipes">);
+        // Open cookbook selection directly - stay on select-recipe step
+        setIsCookbookSelectionOpen(true);
+      } else if (result.recipeId) {
+        // Recipe already exists - use existing ID
+        setSavedRecipeId(result.recipeId as Id<"userRecipes">);
+        setIsCookbookSelectionOpen(true);
+      } else {
+        console.error("[Recipe Import] Failed to save recipe:", result.error);
+        toast({
+          title: "Error",
+          description: "Failed to load recipe",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error("[Recipe Import] Error saving recipe:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load recipe",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Select a recipe from the carousel (Path B) - opens detail view
   const handleSelectExtractedRecipe = async (recipe: ExtractedRecipe) => {
     setExtractedRecipe(recipe);
     setMuxThumbnailUrl(recipe.instagramThumbnailUrl || null);
@@ -1263,7 +1324,7 @@ export function UniversalVideoImportModal({
                               prep_time: recipe.prep_time,
                               cook_time: recipe.cook_time,
                             }}
-                            onAddToCookbook={() => handleSelectExtractedRecipe(recipe)}
+                            onAddToCookbook={(e) => handleQuickAddFromCarousel(recipe, e)}
                           />
                         </div>
                         {recipe.sourceUrl && (
