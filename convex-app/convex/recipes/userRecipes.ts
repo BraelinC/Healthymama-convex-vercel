@@ -865,9 +865,12 @@ export const getCookbookStats = query({
     const result = cookbookCategories.map((category) => {
       const data = stats[category] || { count: 0, recipes: [] };
       const recipeImages = data.recipes
-        .filter((r) => r.imageUrl)
-        .slice(0, 4)
-        .map((r) => r.imageUrl);
+        .map((r) => {
+          // Check customRecipeData first (for custom/AI recipes), then cachedImageUrl, then top-level imageUrl
+          return r.customRecipeData?.imageUrl || r.cachedImageUrl || r.imageUrl;
+        })
+        .filter((url) => url) // Remove null/undefined URLs
+        .slice(0, 4);
 
       return {
         id: category,
