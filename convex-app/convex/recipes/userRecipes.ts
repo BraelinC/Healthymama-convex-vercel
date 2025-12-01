@@ -298,14 +298,15 @@ export const saveRecipeWithParsedIngredients = action({
       }
     }
 
-    // Check if recipe already exists
+    // Check if recipe already exists in the SAME cookbook
+    // (Allows same-titled recipes in different cookbooks)
     const existing = await ctx.runQuery(api.recipes.userRecipes.getUserRecipeByTitle, {
       userId: args.userId,
       title: args.title,
     });
 
-    if (existing) {
-      // Update existing recipe
+    if (existing && existing.cookbookCategory === args.cookbookCategory) {
+      // Update existing recipe ONLY if it's in the same cookbook
       await ctx.runMutation(api.recipes.userRecipes.updateUserRecipe, {
         userRecipeId: existing._id,
         cookbookCategory: args.cookbookCategory,
@@ -313,6 +314,7 @@ export const saveRecipeWithParsedIngredients = action({
       });
       return existing._id;
     }
+    // Otherwise, create a new recipe (even if same title, different cookbook)
 
     // Create new recipe with parsed ingredients
     const userRecipeId = await ctx.runMutation(api.recipes.userRecipes.saveRecipeToUserCookbookWithParsed, {
