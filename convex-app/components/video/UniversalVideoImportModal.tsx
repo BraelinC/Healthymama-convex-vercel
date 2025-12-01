@@ -260,64 +260,6 @@ export function UniversalVideoImportModal({
     onClose();
   };
 
-  // Compress image before upload to stay within Vercel's 4.5MB limit
-  const compressImage = async (file: File): Promise<File> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-
-          // Max dimensions to reduce file size
-          const MAX_WIDTH = 1200;
-          const MAX_HEIGHT = 1200;
-
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height = (height * MAX_WIDTH) / width;
-              width = MAX_WIDTH;
-            }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width = (width * MAX_HEIGHT) / height;
-              height = MAX_HEIGHT;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-
-          canvas.toBlob(
-            (blob) => {
-              if (blob) {
-                const compressedFile = new File([blob], file.name, {
-                  type: 'image/jpeg',
-                  lastModified: Date.now(),
-                });
-                console.log('[Image Compress] Original:', Math.round(file.size / 1024), 'KB, Compressed:', Math.round(compressedFile.size / 1024), 'KB');
-                resolve(compressedFile);
-              } else {
-                reject(new Error('Failed to compress image'));
-              }
-            },
-            'image/jpeg',
-            0.85 // Quality 85%
-          );
-        };
-        img.onerror = () => reject(new Error('Failed to load image'));
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-    });
-  };
-
   // Handle image file selection
   const handleImageSelect = async (file: File) => {
     // Accept common image formats including HEIC/HEIF from iPhones
@@ -335,10 +277,11 @@ export function UniversalVideoImportModal({
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
+    // Soft limit: warn but allow larger files (Convex storage has no size limit)
+    if (file.size > 50 * 1024 * 1024) {
       toast({
         title: "File too large",
-        description: "Please upload an image under 10MB",
+        description: "Please upload an image under 50MB for best performance",
         variant: "destructive",
       });
       return;
@@ -514,39 +457,24 @@ export function UniversalVideoImportModal({
     setErrorMessage("");
 
     try {
-      // Compress and convert to JPEG (handles HEIC from iPhones and all other formats)
-      console.log("[Image Identify] Starting...", {
+      // Upload original image directly - no compression needed
+      // Convex storage supports any size/format, backend handles all image types
+      console.log("[Image Identify] Starting upload...", {
         fileName: imageFile.name,
         type: imageFile.type,
         size: Math.round(imageFile.size / 1024) + "KB"
       });
 
-      let fileToUpload: File;
-
-      // Check if we need to compress (HEIC/HEIF formats or large files)
-      const needsCompression =
-        imageFile.type === 'image/heic' ||
-        imageFile.type === 'image/heif' ||
-        imageFile.name.toLowerCase().endsWith('.heic') ||
-        imageFile.name.toLowerCase().endsWith('.heif') ||
-        imageFile.size > 4 * 1024 * 1024; // Files larger than 4MB
-
-      if (needsCompression) {
-        try {
-          console.log("[Image Identify] Compressing image (HEIC or large file)...");
-          fileToUpload = await compressImage(imageFile);
-          console.log("[Image Identify] Compressed to JPEG:", {
-            size: Math.round(fileToUpload.size / 1024) + "KB",
-            type: fileToUpload.type
-          });
-        } catch (compressError) {
-          console.error("[Image Identify] Compression failed, using original:", compressError);
-          fileToUpload = imageFile;
-        }
-      } else {
-        console.log("[Image Identify] Using original image (already optimized)");
-        fileToUpload = imageFile;
+      // Warn user if file is very large (may slow down AI processing)
+      if (imageFile.size > 20 * 1024 * 1024) {
+        toast({
+          title: "Large Image Detected",
+          description: "This may take longer to process. Consider using a smaller image for faster results.",
+          duration: 3000,
+        });
       }
+
+      const fileToUpload = imageFile;
 
       // Upload image to Convex storage (fast, no size limit)
       console.log("[Image Identify] Uploading to Convex storage...");
