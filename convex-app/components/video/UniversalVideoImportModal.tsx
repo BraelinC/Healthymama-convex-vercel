@@ -886,9 +886,14 @@ export function UniversalVideoImportModal({
       return;
     }
 
+    // Check if we're in quick-add mode (still on carousel)
+    const isQuickAddMode = step === "select-recipe";
+
     // CRITICAL: Mark that we're starting to save - this prevents premature modal close
     isSavingToCookbookRef.current = true;
-    setStep("saving");
+    if (!isQuickAddMode) {
+      setStep("saving");
+    }
 
     try {
       // Update ghost recipe with cookbook category
@@ -900,26 +905,48 @@ export function UniversalVideoImportModal({
 
       recipeSavedToCookbookRef.current = true; // Mark as saved to prevent cleanup deletion
       isSavingToCookbookRef.current = false; // Save complete - allow close now
-      setStep("success");
-      toast({
-        title: "Recipe Saved!",
-        description: `Added to ${cookbookName}`,
-      });
 
-      // Close modal after save
-      setTimeout(() => {
-        handleClose();
-      }, 1500);
+      if (isQuickAddMode) {
+        // Quick-add mode: stay on carousel, just show toast
+        toast({
+          title: "Recipe Saved!",
+          description: `Added to ${cookbookName}`,
+        });
+        // Stay on select-recipe step - don't change step, don't close modal
+      } else {
+        // Normal mode: show success step and close modal
+        setStep("success");
+        toast({
+          title: "Recipe Saved!",
+          description: `Added to ${cookbookName}`,
+        });
+
+        // Close modal after save
+        setTimeout(() => {
+          handleClose();
+        }, 1500);
+      }
     } catch (error: any) {
       console.error("[Recipe Import] Error saving to cookbook:", error);
       isSavingToCookbookRef.current = false; // Save failed - allow close now
-      setErrorMessage(error.message || "Failed to save to cookbook");
-      setStep("error");
-      toast({
-        title: "Save Failed",
-        description: error.message || "Could not save to cookbook",
-        variant: "destructive",
-      });
+
+      if (isQuickAddMode) {
+        // Quick-add mode: stay on carousel, show error toast
+        toast({
+          title: "Save Failed",
+          description: error.message || "Could not save to cookbook",
+          variant: "destructive",
+        });
+      } else {
+        // Normal mode: show error step
+        setErrorMessage(error.message || "Failed to save to cookbook");
+        setStep("error");
+        toast({
+          title: "Save Failed",
+          description: error.message || "Could not save to cookbook",
+          variant: "destructive",
+        });
+      }
     }
   };
 
