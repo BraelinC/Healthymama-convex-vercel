@@ -481,14 +481,24 @@ export function UniversalVideoImportModal({
       const uploadUrl = await generateUploadUrl();
       console.log("[Image Identify] Upload URL obtained");
 
+      // For HEIC files, use image/jpeg as content-type (Convex compatibility)
+      // Convex will store the file as-is, but JPEG content-type is more widely accepted
+      let contentType = fileToUpload.type;
+      if (contentType === 'image/heic' || contentType === 'image/heif' || contentType === '') {
+        contentType = 'image/jpeg'; // Fallback for compatibility
+        console.log("[Image Identify] Using image/jpeg content-type for HEIC/HEIF compatibility");
+      }
+
       const uploadResponse = await fetch(uploadUrl, {
         method: "POST",
-        headers: { "Content-Type": fileToUpload.type },
+        headers: { "Content-Type": contentType },
         body: fileToUpload,
       });
 
       if (!uploadResponse.ok) {
-        throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+        const errorText = await uploadResponse.text();
+        console.error("[Image Identify] Upload error details:", errorText);
+        throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText || uploadResponse.statusText}`);
       }
 
       const uploadResult = await uploadResponse.json();
