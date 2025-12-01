@@ -57,37 +57,52 @@ IMPORTANT:
 - Keep ingredients to the essential ones (5-15 ingredients typically)
 - If you cannot identify the dish, return {"dishName": "Unknown Dish", "ingredients": []}`;
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://healthymama.app',
-        'X-Title': 'HealthyMama Recipe Identification',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: prompt,
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: dataUrl, // Send base64 data URL
+    console.log("[Recipe Identify] Sending request to OpenRouter with Gemini...");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
+    let response;
+    try {
+      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://healthymama.app',
+          'X-Title': 'HealthyMama Recipe Identification',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.0-flash-001',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: prompt,
                 },
-              },
-            ],
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 500,
-      }),
-    });
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: dataUrl, // Send base64 data URL
+                  },
+                },
+              ],
+            },
+          ],
+          temperature: 0.2,
+          max_tokens: 500,
+        }),
+        signal: controller.signal,
+      });
+    } catch (fetchError: any) {
+      clearTimeout(timeout);
+      if (fetchError.name === 'AbortError') {
+        throw new Error('AI identification timed out after 60 seconds. Please try again with a smaller image.');
+      }
+      throw fetchError;
+    }
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const errorText = await response.text();

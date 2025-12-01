@@ -514,20 +514,44 @@ export function UniversalVideoImportModal({
     setErrorMessage("");
 
     try {
-      // Compress and convert to JPEG (handles HEIC from iPhones)
-      console.log("[Image Identify] Compressing image...");
+      // Compress and convert to JPEG (handles HEIC from iPhones and all other formats)
+      console.log("[Image Identify] Starting...", {
+        fileName: imageFile.name,
+        type: imageFile.type,
+        size: Math.round(imageFile.size / 1024) + "KB"
+      });
+
       let fileToUpload: File;
-      try {
-        fileToUpload = await compressImage(imageFile);
-        console.log("[Image Identify] Compressed to JPEG:", Math.round(fileToUpload.size / 1024), "KB");
-      } catch (compressError) {
-        console.error("[Image Identify] Compression failed, using original:", compressError);
+
+      // Check if we need to compress (HEIC/HEIF formats or large files)
+      const needsCompression =
+        imageFile.type === 'image/heic' ||
+        imageFile.type === 'image/heif' ||
+        imageFile.name.toLowerCase().endsWith('.heic') ||
+        imageFile.name.toLowerCase().endsWith('.heif') ||
+        imageFile.size > 4 * 1024 * 1024; // Files larger than 4MB
+
+      if (needsCompression) {
+        try {
+          console.log("[Image Identify] Compressing image (HEIC or large file)...");
+          fileToUpload = await compressImage(imageFile);
+          console.log("[Image Identify] Compressed to JPEG:", {
+            size: Math.round(fileToUpload.size / 1024) + "KB",
+            type: fileToUpload.type
+          });
+        } catch (compressError) {
+          console.error("[Image Identify] Compression failed, using original:", compressError);
+          fileToUpload = imageFile;
+        }
+      } else {
+        console.log("[Image Identify] Using original image (already optimized)");
         fileToUpload = imageFile;
       }
 
       // Upload image to Convex storage (fast, no size limit)
       console.log("[Image Identify] Uploading to Convex storage...");
       const uploadUrl = await generateUploadUrl();
+      console.log("[Image Identify] Upload URL obtained");
 
       const uploadResponse = await fetch(uploadUrl, {
         method: "POST",
@@ -535,12 +559,24 @@ export function UniversalVideoImportModal({
         body: fileToUpload,
       });
 
-      const { storageId } = await uploadResponse.json();
-      console.log("[Image Identify] Uploaded, storage ID:", storageId);
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+
+      const uploadResult = await uploadResponse.json();
+      const { storageId } = uploadResult;
+
+      if (!storageId) {
+        console.error("[Image Identify] No storageId in response:", uploadResult);
+        throw new Error("Failed to get storage ID from upload response");
+      }
+
+      console.log("[Image Identify] Uploaded successfully, storage ID:", storageId);
 
       // Call Convex action to identify recipe
-      console.log("[Image Identify] Calling Convex action...");
+      console.log("[Image Identify] Calling Convex action to identify dish...");
       const data = await identifyRecipe({ storageId: storageId as any });
+      console.log("[Image Identify] Dish identified:", data.dishName);
 
       // Store identified dish and go to choose-path step
       setIdentifiedDish({
