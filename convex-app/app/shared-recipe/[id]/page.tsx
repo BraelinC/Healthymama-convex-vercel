@@ -29,8 +29,20 @@ export default function SharedRecipePage({ params }: SharedRecipePageProps) {
   const router = useRouter();
   const { toast } = useToast();
 
-  // Fetch recipe (no auth required)
+  // Fetch recipe (no auth required - fully public)
   const recipe = useQuery(api.mikey.queries.getAnonymousRecipe, { recipeId });
+
+  // Debug: Log recipe data to see what imageUrl we're getting
+  React.useEffect(() => {
+    if (recipe) {
+      console.log("[SharedRecipe] Recipe data:", {
+        _id: recipe._id,
+        title: recipe.title,
+        imageUrl: recipe.imageUrl,
+        hasImage: !!recipe.imageUrl,
+      });
+    }
+  }, [recipe]);
 
   // Mutation to save recipe to user's cookbook
   const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
@@ -116,9 +128,9 @@ export default function SharedRecipePage({ params }: SharedRecipePageProps) {
       <main className="max-w-4xl mx-auto px-4 py-8">
         {/* Recipe Card */}
         <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-          {/* Image */}
-          {recipe.imageUrl && (
-            <div className="w-full h-80 bg-gray-200">
+          {/* Image - Always show, even if URL is missing */}
+          <div className="w-full h-80 bg-gray-200">
+            {recipe.imageUrl ? (
               <ImageWithFallback
                 src={recipe.imageUrl}
                 alt={recipe.title}
@@ -126,8 +138,15 @@ export default function SharedRecipePage({ params }: SharedRecipePageProps) {
                 height={400}
                 className="w-full h-full object-cover"
               />
-            </div>
-          )}
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-healthymama-pink/10 to-healthymama-pink/5">
+                <div className="text-center text-gray-400">
+                  <ChefHat className="w-16 h-16 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No image available</p>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Content */}
           <div className="p-6">

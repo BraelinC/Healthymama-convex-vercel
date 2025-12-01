@@ -862,8 +862,13 @@ export default defineSchema({
     fromUserId: v.string(),        // User who shared the recipe
     toUserId: v.string(),          // User receiving the recipe
     recipeId: v.id("userRecipes"), // Recipe being shared
+
+    // Cached recipe data so it's always accessible even if source is deleted
     recipeTitle: v.string(),       // Denormalized for quick display
     recipeImageUrl: v.optional(v.string()),
+    recipeIngredients: v.optional(v.array(v.string())),  // Full ingredients list
+    recipeInstructions: v.optional(v.array(v.string())), // Full instructions
+    recipeDescription: v.optional(v.string()),           // Recipe description
 
     message: v.optional(v.string()), // Optional sharing message
     status: v.union(

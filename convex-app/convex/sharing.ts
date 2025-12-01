@@ -35,13 +35,24 @@ export const shareRecipe = mutation({
       throw new Error("Recipe already shared with this user");
     }
 
-    // Create share
+    // Extract full recipe data (ingredients, instructions, etc.)
+    // Use customRecipeData for custom/AI recipes, or fetch from source for referenced recipes
+    const recipeTitle = recipe.customRecipeData?.title || recipe.cachedTitle || recipe.title || "Recipe";
+    const recipeImageUrl = recipe.customRecipeData?.imageUrl || recipe.cachedImageUrl || recipe.imageUrl;
+    const recipeIngredients = recipe.customRecipeData?.ingredients || recipe.ingredients || [];
+    const recipeInstructions = recipe.customRecipeData?.instructions || recipe.instructions || [];
+    const recipeDescription = recipe.customRecipeData?.description || recipe.description;
+
+    // Create share with FULL recipe data cached
     const shareId = await ctx.db.insert("sharedRecipes", {
       fromUserId: args.fromUserId,
       toUserId: args.toUserId,
       recipeId: args.recipeId,
-      recipeTitle: recipe.title,
-      recipeImageUrl: recipe.imageUrl,
+      recipeTitle,
+      recipeImageUrl,
+      recipeIngredients,
+      recipeInstructions,
+      recipeDescription,
       message: args.message,
       status: "unread",
       createdAt: Date.now(),

@@ -231,12 +231,21 @@ export const getAnonymousRecipe = query({
       return null;
     }
 
+    // Get image URL
+    const imageUrl = recipe.customRecipeData?.imageUrl || recipe.cachedImageUrl;
+
+    // Debug logging
+    console.log("[getAnonymousRecipe] Recipe:", recipe._id);
+    console.log("[getAnonymousRecipe] customRecipeData imageUrl:", recipe.customRecipeData?.imageUrl);
+    console.log("[getAnonymousRecipe] cachedImageUrl:", recipe.cachedImageUrl);
+    console.log("[getAnonymousRecipe] Final imageUrl:", imageUrl);
+
     // Return recipe data (enrich if needed)
     return {
       _id: recipe._id,
       title: recipe.customRecipeData?.title || recipe.cachedTitle || "Recipe",
       description: recipe.customRecipeData?.description,
-      imageUrl: recipe.customRecipeData?.imageUrl || recipe.cachedImageUrl,
+      imageUrl,
       ingredients: recipe.customRecipeData?.ingredients || [],
       instructions: recipe.customRecipeData?.instructions || [],
       servings: recipe.customRecipeData?.servings,
