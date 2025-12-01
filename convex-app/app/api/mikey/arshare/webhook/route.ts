@@ -127,7 +127,7 @@ export async function POST(request: Request) {
 
       // Process DM via Convex
       const result = await convex.mutation(api.mikey.mutations.processIncomingDM, {
-        arshareAccountId: instagramAccount._id, // Use our internal ID
+        profileKey, // Use profileKey instead of internal ID
         instagramUserId: sender.id || sender.username,
         instagramUsername: sender.username || sender.name,
         messageText: message.text || message,
@@ -136,16 +136,30 @@ export async function POST(request: Request) {
 
       console.log("[Ayrshare Webhook] Processed DM:", result);
 
-      // Schedule recipe extraction if URL found
-      if (result.recipeUrl && result.conversationId) {
-        await convex.action(api.mikey.actions.extractAndSendRecipe, {
+      // Schedule Instagram reel import if found
+      if (result.instagramReelUrl && result.conversationId) {
+        console.log("[Ayrshare Webhook] Scheduling Instagram reel import");
+        await convex.action(api.mikey.actions.importRecipeFromDM, {
+          instagramReelUrl: result.instagramReelUrl,
+          userId: result.userId,
           conversationId: result.conversationId,
           messageId: result.messageId,
-          recipeUrl: result.recipeUrl,
+          profileKey: result.profileKey,
+        });
+      }
+      // Send error message for non-reel URLs
+      else if (result.needsErrorMessage) {
+        console.log("[Ayrshare Webhook] Sending error message:", result.errorType);
+        await convex.action(api.mikey.actions.sendErrorMessage, {
+          conversationId: result.conversationId,
+          messageId: result.messageId,
+          profileKey: result.profileKey,
+          errorType: result.errorType,
         });
       }
       // Send help message if no URL
       else if (result.needsHelpMessage) {
+        console.log("[Ayrshare Webhook] Sending help message");
         await convex.action(api.mikey.actions.sendHelpMessage, {
           conversationId: result.conversationId,
           messageId: result.messageId,

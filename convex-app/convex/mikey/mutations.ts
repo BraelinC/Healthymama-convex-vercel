@@ -127,20 +127,21 @@ export const deleteInstagramAccount = mutation({
  */
 export const processIncomingDM = mutation({
   args: {
-    arshareAccountId: v.string(),
+    profileKey: v.string(), // Changed from arshareAccountId to profileKey
     instagramUserId: v.string(),
     instagramUsername: v.string(),
     messageText: v.string(),
     arshareMessageId: v.string(),
   },
   handler: async (ctx, args) => {
-    // 1. Find Instagram account
+    // 1. Find Instagram account by profileKey
     const instagramAccount = await ctx.db
       .query("instagramAccounts")
-      .withIndex("by_arshare_id", (q) => q.eq("arshareAccountId", args.arshareAccountId))
+      .withIndex("by_profileKey", (q) => q.eq("ayrshareProfileKey", args.profileKey))
       .first();
 
     if (!instagramAccount) {
+      console.error("[Mikey] Instagram account not found for profileKey:", args.profileKey);
       throw new Error("Instagram account not found");
     }
 
@@ -210,7 +211,7 @@ export const processIncomingDM = mutation({
       messageCount: (conversation.messageCount || 0) + 1,
     });
 
-    // 6. Extract URL from message
+    // 6. Extract and validate Instagram reel URL
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const urls = args.messageText.match(urlRegex);
 
@@ -219,18 +220,52 @@ export const processIncomingDM = mutation({
       await ctx.db.patch(messageId, {
         status: "completed",
       });
-      return { messageId, needsHelpMessage: true };
+      return {
+        messageId,
+        conversationId: conversation._id,
+        needsHelpMessage: true
+      };
     }
 
-    const recipeUrl = urls[0]; // Take first URL
+    // Check if URL is an Instagram reel
+    const instagramReelUrl = urls.find(url =>
+      url.includes('instagram.com') &&
+      (url.includes('/reel/') || url.includes('/p/') || url.includes('/tv/'))
+    );
 
-    // 7. Update message with extracted URL and status
+    if (!instagramReelUrl) {
+      // Check if it's Instagram but not a reel
+      const isInstagramUrl = urls.some(url => url.includes('instagram.com'));
+
+      await ctx.db.patch(messageId, {
+        status: "failed",
+        errorMessage: isInstagramUrl
+          ? "Only Instagram reels are supported"
+          : "No Instagram reel URL found",
+      });
+
+      return {
+        messageId,
+        conversationId: conversation._id,
+        profileKey: args.profileKey,
+        needsErrorMessage: true,
+        errorType: isInstagramUrl ? "non_reel_instagram" : "no_instagram_url",
+      };
+    }
+
+    // 7. Update message with extracted Instagram reel URL
     await ctx.db.patch(messageId, {
-      recipeUrl,
+      recipeUrl: instagramReelUrl,
       status: "processing",
     });
 
-    return { messageId, recipeUrl, conversationId: conversation._id };
+    return {
+      messageId,
+      conversationId: conversation._id,
+      profileKey: args.profileKey,
+      instagramReelUrl,
+      userId: instagramAccount.createdBy || "anonymous",
+    };
   },
 });
 

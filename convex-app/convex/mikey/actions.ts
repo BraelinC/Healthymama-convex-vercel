@@ -191,6 +191,172 @@ export const sendHelpMessage = action({
 });
 
 /**
+ * Import Instagram reel recipe and send link back via DM
+ */
+export const importRecipeFromDM = action({
+  args: {
+    instagramReelUrl: v.string(),
+    userId: v.string(),
+    conversationId: v.id("dmConversations"),
+    messageId: v.id("dmMessages"),
+    profileKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      console.log("[Mikey] Importing Instagram reel:", args.instagramReelUrl);
+
+      // 1. Send "Received!" acknowledgment immediately
+      const conversation = await ctx.runQuery(api.mikey.queries.getConversation, {
+        conversationId: args.conversationId,
+      });
+
+      if (conversation) {
+        await sendArshareMessage({
+          profileKey: args.profileKey,
+          recipientId: conversation.instagramUserId,
+          message: "Received! Processing your recipe... 🍳",
+        });
+
+        await ctx.runMutation(api.mikey.mutations.logOutboundMessage, {
+          conversationId: args.conversationId,
+          messageText: "Received! Processing your recipe... 🍳",
+        });
+      }
+
+      // 2. Call Instagram import action (full Mux upload + AI extraction + video segments)
+      const result = await ctx.runAction(api.instagram.importInstagramRecipe, {
+        userId: args.userId,
+        url: args.instagramReelUrl,
+        cookbookCategory: undefined, // No cookbook initially - user can add later
+      });
+
+      console.log("[Mikey] Import result:", result);
+
+      if (!result.success || !result.recipeId) {
+        throw new Error(result.error || "Recipe import failed");
+      }
+
+      // 3. Generate recipe page URL
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://healthymama.app";
+      const recipeUrl = `${appUrl}/recipe/${result.recipeId}`;
+
+      // 4. Update message status
+      await ctx.runMutation(api.mikey.mutations.updateMessageStatus, {
+        messageId: args.messageId,
+        status: "completed",
+        extractedRecipeId: result.recipeId as Id<"userRecipes">,
+        uniquePageUrl: recipeUrl,
+      });
+
+      // 5. Send recipe link back to user
+      const replyText = `✨ Your recipe is ready!\n\n👉 View it here: ${recipeUrl}\n\nYou can add it to your cookbook from the recipe page! 🍳`;
+
+      if (conversation) {
+        await sendArshareMessage({
+          profileKey: args.profileKey,
+          recipientId: conversation.instagramUserId,
+          message: replyText,
+        });
+
+        await ctx.runMutation(api.mikey.mutations.logOutboundMessage, {
+          conversationId: args.conversationId,
+          messageText: replyText,
+        });
+      }
+
+      console.log("[Mikey] Recipe sent successfully to", conversation?.instagramUsername);
+      return { success: true, recipeId: result.recipeId, recipeUrl };
+    } catch (error: any) {
+      console.error("[Mikey] importRecipeFromDM error:", error);
+
+      // Update message with error
+      await ctx.runMutation(api.mikey.mutations.updateMessageStatus, {
+        messageId: args.messageId,
+        status: "failed",
+        errorMessage: error.message,
+      });
+
+      // Try to send error message to user
+      try {
+        const conversation = await ctx.runQuery(api.mikey.queries.getConversation, {
+          conversationId: args.conversationId,
+        });
+
+        if (conversation) {
+          const errorMessage = `Sorry, I couldn't process that Instagram reel. 😔\n\nPossible reasons:\n• The reel is private\n• The reel was deleted\n• The content couldn't be extracted\n\nTry sharing a different public reel!`;
+
+          await sendArshareMessage({
+            profileKey: args.profileKey,
+            recipientId: conversation.instagramUserId,
+            message: errorMessage,
+          });
+
+          await ctx.runMutation(api.mikey.mutations.logOutboundMessage, {
+            conversationId: args.conversationId,
+            messageText: errorMessage,
+          });
+        }
+      } catch (sendError) {
+        console.error("[Mikey] Failed to send error message:", sendError);
+      }
+
+      throw error;
+    }
+  },
+});
+
+/**
+ * Send error message for non-Instagram reel URLs
+ */
+export const sendErrorMessage = action({
+  args: {
+    conversationId: v.id("dmConversations"),
+    messageId: v.id("dmMessages"),
+    profileKey: v.string(),
+    errorType: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const conversation = await ctx.runQuery(api.mikey.queries.getConversation, {
+        conversationId: args.conversationId,
+      });
+
+      if (!conversation) {
+        throw new Error("Conversation not found");
+      }
+
+      let errorMessage: string;
+      if (args.errorType === "non_reel_instagram") {
+        errorMessage = "Sorry, I can only process Instagram reels right now. Please share a reel URL! 🎬";
+      } else {
+        errorMessage = `👋 Hi! I can help you save Instagram recipes!\n\nJust send me an Instagram reel link like:\nhttps://www.instagram.com/reel/...\n\nI'll extract the recipe and send you a link! 🍳`;
+      }
+
+      await sendArshareMessage({
+        profileKey: args.profileKey,
+        recipientId: conversation.instagramUserId,
+        message: errorMessage,
+      });
+
+      await ctx.runMutation(api.mikey.mutations.logOutboundMessage, {
+        conversationId: args.conversationId,
+        messageText: errorMessage,
+      });
+
+      await ctx.runMutation(api.mikey.mutations.updateMessageStatus, {
+        messageId: args.messageId,
+        status: "completed",
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error("[Mikey] sendErrorMessage error:", error);
+      throw error;
+    }
+  },
+});
+
+/**
  * Helper: Send message via Ayrshare API
  */
 async function sendArshareMessage({
