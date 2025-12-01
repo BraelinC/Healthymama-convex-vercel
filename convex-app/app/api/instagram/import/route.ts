@@ -919,6 +919,32 @@ export async function POST(request: NextRequest) {
         try {
           pinterestRecipe = await extractRecipeFromVideo(videoUrl, title);
           console.log(`[Pinterest Import] ✅ Extracted from video: ${pinterestRecipe.instructions.length} instructions, ${pinterestRecipe.ingredients.length} ingredients`);
+
+          // Upload to Mux for instant clipping
+          try {
+            const muxData = await uploadVideoFromUrl(videoUrl);
+            muxPlaybackId = muxData.playbackId;
+            muxAssetId = muxData.assetId;
+            console.log(`[Pinterest Import] ✅ Uploaded to Mux: ${muxPlaybackId}`);
+          } catch (muxError: any) {
+            console.warn('[Pinterest Import] ⚠️ Mux upload failed:', muxError.message);
+          }
+
+          // Analyze video segments for step-by-step mode
+          if (pinterestRecipe.instructions.length > 0) {
+            try {
+              const segments = await analyzeVideoSegments(
+                videoUrl,
+                pinterestRecipe.instructions
+              );
+              if (segments && segments.length > 0) {
+                videoSegments = segments;
+                console.log(`[Pinterest Import] ✅ Generated ${segments.length} video segments`);
+              }
+            } catch (segmentError: any) {
+              console.warn('[Pinterest Import] ⚠️ Video segmentation failed:', segmentError.message);
+            }
+          }
         } catch (error: any) {
           console.warn('[Pinterest Import] ⚠️ Video extraction failed:', error.message);
         }

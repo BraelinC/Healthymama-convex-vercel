@@ -10,7 +10,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const dancingScript = Dancing_Script({ subsets: ["latin"], variable: "--font-dancing" });
 
 export const metadata: Metadata = {
-  title: "RecipeAI Chat",
+  title: "HealthyMama",
   description: "Serverless recipe assistant powered by Convex and OpenAI",
 };
 

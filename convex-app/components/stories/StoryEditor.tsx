@@ -15,6 +15,7 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
+  RotateCw,
   Trash2,
   Search,
   Instagram,
@@ -30,6 +31,7 @@ interface TextOverlay {
   font: "sans" | "serif" | "handwritten";
   color: string;
   size: number;
+  rotation: number; // Rotation in degrees
 }
 
 // Font options
@@ -73,6 +75,7 @@ export function StoryEditor({
   // Image transform state
   const [imageScale, setImageScale] = useState(1);
   const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
+  const [imageRotation, setImageRotation] = useState(0); // Rotation in degrees
 
   // Text overlay state
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
@@ -146,7 +149,9 @@ export function StoryEditor({
   const handleResetTransform = () => {
     setImageScale(1);
     setImagePosition({ x: 0, y: 0 });
+    setImageRotation(0);
   };
+
 
   // Handle image drag (mouse)
   const handleImageMouseDown = (e: React.MouseEvent) => {
@@ -237,6 +242,7 @@ export function StoryEditor({
       font: currentFont,
       color: currentColor,
       size: 24,
+      rotation: 0, // Initial rotation
     };
     setTextOverlays((prev) => [...prev, newText]);
     setSelectedTextId(newText.id);
@@ -262,6 +268,64 @@ export function StoryEditor({
     setTextOverlays((prev) => prev.filter((t) => t.id !== id));
     setSelectedTextId(null);
   };
+
+  // Rotate text
+  const handleRotateText = (id: string, degrees: number) => {
+    setTextOverlays((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, rotation: (t.rotation + degrees) % 360 } : t))
+    );
+  };
+
+  // Handle text rotation with drag
+  const [isRotatingText, setIsRotatingText] = useState(false);
+  const [rotatingTextId, setRotatingTextId] = useState<string | null>(null);
+
+  const handleTextRotationHandleStart = (e: React.MouseEvent | React.TouchEvent, id: string) => {
+    e.stopPropagation();
+    setIsRotatingText(true);
+    setRotatingTextId(id);
+  };
+
+  const handleTextRotationHandleDrag = useCallback(
+    (e: MouseEvent | TouchEvent) => {
+      if (!isRotatingText || !rotatingTextId || !containerRef.current) return;
+
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+
+      const angle = Math.atan2(clientY - centerY, clientX - centerX);
+      const degrees = (angle * 180) / Math.PI + 90; // +90 to start from top
+
+      setTextOverlays((prev) =>
+        prev.map((t) => (t.id === rotatingTextId ? { ...t, rotation: Math.round(degrees) } : t))
+      );
+    },
+    [isRotatingText, rotatingTextId]
+  );
+
+  const handleTextRotationHandleEnd = () => {
+    setIsRotatingText(false);
+    setRotatingTextId(null);
+  };
+
+  useEffect(() => {
+    if (isRotatingText) {
+      window.addEventListener("mousemove", handleTextRotationHandleDrag);
+      window.addEventListener("mouseup", handleTextRotationHandleEnd);
+      window.addEventListener("touchmove", handleTextRotationHandleDrag);
+      window.addEventListener("touchend", handleTextRotationHandleEnd);
+      return () => {
+        window.removeEventListener("mousemove", handleTextRotationHandleDrag);
+        window.removeEventListener("mouseup", handleTextRotationHandleEnd);
+        window.removeEventListener("touchmove", handleTextRotationHandleDrag);
+        window.removeEventListener("touchend", handleTextRotationHandleEnd);
+      };
+    }
+  }, [isRotatingText, handleTextRotationHandleDrag]);
 
   // Handle text drag
   const handleTextDragStart = (e: React.MouseEvent | React.TouchEvent, id: string) => {
@@ -378,8 +442,19 @@ export function StoryEditor({
         ctx.fillStyle = "#000000";
         ctx.fillRect(0, 0, outputWidth, outputHeight);
 
+        // Apply rotation to image if needed
+        ctx.save();
+        if (imageRotation !== 0) {
+          // Translate to center, rotate, then translate back
+          ctx.translate(outputWidth / 2, outputHeight / 2);
+          ctx.rotate((imageRotation * Math.PI) / 180);
+          ctx.translate(-outputWidth / 2, -outputHeight / 2);
+        }
+
         // Draw image with transforms
         ctx.drawImage(img, finalOffsetX, finalOffsetY, finalDrawWidth, finalDrawHeight);
+
+        ctx.restore();
 
         // Draw text overlays
         textOverlays.forEach((overlay) => {
@@ -391,6 +466,15 @@ export function StoryEditor({
           let fontFamily = "sans-serif";
           if (overlay.font === "serif") fontFamily = "Georgia, serif";
           if (overlay.font === "handwritten") fontFamily = "'Dancing Script', cursive";
+
+          ctx.save();
+
+          // Apply rotation to text
+          if (overlay.rotation !== 0) {
+            ctx.translate(x, y);
+            ctx.rotate((overlay.rotation * Math.PI) / 180);
+            ctx.translate(-x, -y);
+          }
 
           ctx.font = `${fontSize}px ${fontFamily}`;
           ctx.fillStyle = overlay.color;
@@ -408,6 +492,8 @@ export function StoryEditor({
           // Reset shadow
           ctx.shadowColor = "transparent";
           ctx.shadowBlur = 0;
+
+          ctx.restore();
         });
 
         canvas.toBlob(
@@ -461,6 +547,7 @@ export function StoryEditor({
           scale: imageScale,
           x: imagePosition.x,
           y: imagePosition.y,
+          rotation: imageRotation,
         },
         textOverlays: textOverlays.map((t) => ({
           id: t.id,
@@ -470,6 +557,7 @@ export function StoryEditor({
           font: t.font,
           color: t.color,
           size: t.size,
+          rotation: t.rotation,
         })),
       });
 
@@ -609,6 +697,7 @@ export function StoryEditor({
               <button
                 onClick={handleZoomOut}
                 className="text-white p-2 hover:bg-white/20 rounded-full"
+                title="Zoom out"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
@@ -618,12 +707,14 @@ export function StoryEditor({
               <button
                 onClick={handleZoomIn}
                 className="text-white p-2 hover:bg-white/20 rounded-full"
+                title="Zoom in"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
               <button
                 onClick={handleResetTransform}
-                className="text-white p-2 hover:bg-white/20 rounded-full"
+                className="text-white p-2 hover:bg-white/20 rounded-full ml-1"
+                title="Reset all transforms"
               >
                 <RotateCcw className="w-4 h-4" />
               </button>
@@ -638,9 +729,13 @@ export function StoryEditor({
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          onClick={() => {
+          onClick={(e) => {
             if (!isDraggingText && !isDraggingImage) {
-              setSelectedTextId(null);
+              // Check if clicking on empty space (not on text) - deselect text
+              const target = e.target as HTMLElement;
+              if (target === containerRef.current || target.tagName === 'IMG' || target.tagName === 'VIDEO') {
+                setSelectedTextId(null);
+              }
             }
           }}
         >
@@ -652,7 +747,7 @@ export function StoryEditor({
               alt="Story"
               className="absolute inset-0 w-full h-full object-cover pointer-events-none"
               style={{
-                transform: `scale(${imageScale}) translate(${imagePosition.x / imageScale}px, ${imagePosition.y / imageScale}px)`,
+                transform: `scale(${imageScale}) translate(${imagePosition.x / imageScale}px, ${imagePosition.y / imageScale}px) rotate(${imageRotation}deg)`,
               }}
               draggable={false}
             />
@@ -664,7 +759,7 @@ export function StoryEditor({
               src={previewUrl}
               className="absolute inset-0 w-full h-full object-cover pointer-events-none"
               style={{
-                transform: `scale(${imageScale}) translate(${imagePosition.x / imageScale}px, ${imagePosition.y / imageScale}px)`,
+                transform: `scale(${imageScale}) translate(${imagePosition.x / imageScale}px, ${imagePosition.y / imageScale}px) rotate(${imageRotation}deg)`,
               }}
               autoPlay
               loop
@@ -703,7 +798,7 @@ export function StoryEditor({
               style={{
                 left: `${overlay.x}%`,
                 top: `${overlay.y}%`,
-                transform: "translate(-50%, -50%)",
+                transform: `translate(-50%, -50%) rotate(${overlay.rotation}deg)`,
               }}
               onMouseDown={(e) => handleTextDragStart(e, overlay.id)}
               onTouchStart={(e) => handleTextDragStart(e, overlay.id)}
@@ -712,6 +807,26 @@ export function StoryEditor({
                 setSelectedTextId(overlay.id);
               }}
             >
+              {/* Rotation handle for selected text - positioned above text center */}
+              {selectedTextId === overlay.id && (
+                <div
+                  className="absolute left-1/2 bottom-full mb-2 cursor-grab active:cursor-grabbing z-30"
+                  onMouseDown={(e) => handleTextRotationHandleStart(e, overlay.id)}
+                  onTouchStart={(e) => handleTextRotationHandleStart(e, overlay.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ transform: `translateX(-50%) rotate(${-(overlay.rotation || 0)}deg)` }}
+                >
+                  <div className="flex flex-col items-center">
+                    <div className="w-7 h-7 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-healthymama-pink">
+                      <RotateCw className="w-3.5 h-3.5 text-healthymama-pink" />
+                    </div>
+                    <div className="h-4 w-0.5 bg-white/50" />
+                  </div>
+                </div>
+              )}
+
+              {/* Text content */}
+              <div className="relative">
               {selectedTextId === overlay.id ? (
                 <input
                   type="text"
@@ -740,6 +855,7 @@ export function StoryEditor({
                   {overlay.text}
                 </span>
               )}
+              </div>
             </div>
           ))}
           </div>
@@ -800,6 +916,24 @@ export function StoryEditor({
                 className="text-white text-lg px-2 py-1 bg-gray-700 rounded"
               >
                 A+
+              </button>
+            </div>
+
+            {/* Rotation controls */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleRotateText(selectedText.id, -15)}
+                className="text-white p-2 bg-gray-700 rounded hover:bg-gray-600"
+                title="Rotate left 15°"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleRotateText(selectedText.id, 15)}
+                className="text-white p-2 bg-gray-700 rounded hover:bg-gray-600"
+                title="Rotate right 15°"
+              >
+                <RotateCw className="w-4 h-4" />
               </button>
             </div>
 

@@ -23,6 +23,7 @@ interface TextOverlay {
   font: string;
   color: string;
   size: number;
+  rotation?: number; // Rotation in degrees
 }
 
 // Font class mapping
@@ -50,6 +51,7 @@ interface Story {
     scale: number;
     x: number;
     y: number;
+    rotation?: number; // Rotation in degrees
   };
   textOverlays?: TextOverlay[];
 }
@@ -272,7 +274,7 @@ export function StoryViewer({ isOpen, onClose, storyUser }: StoryViewerProps) {
               style={
                 currentStory.imageTransform
                   ? {
-                      transform: `scale(${currentStory.imageTransform.scale}) translate(${currentStory.imageTransform.x / currentStory.imageTransform.scale}px, ${currentStory.imageTransform.y / currentStory.imageTransform.scale}px)`,
+                      transform: `scale(${currentStory.imageTransform.scale}) translate(${currentStory.imageTransform.x / currentStory.imageTransform.scale}px, ${currentStory.imageTransform.y / currentStory.imageTransform.scale}px) rotate(${currentStory.imageTransform.rotation || 0}deg)`,
                     }
                   : undefined
               }
@@ -285,7 +287,7 @@ export function StoryViewer({ isOpen, onClose, storyUser }: StoryViewerProps) {
               style={
                 currentStory.imageTransform
                   ? {
-                      transform: `scale(${currentStory.imageTransform.scale}) translate(${currentStory.imageTransform.x / currentStory.imageTransform.scale}px, ${currentStory.imageTransform.y / currentStory.imageTransform.scale}px)`,
+                      transform: `scale(${currentStory.imageTransform.scale}) translate(${currentStory.imageTransform.x / currentStory.imageTransform.scale}px, ${currentStory.imageTransform.y / currentStory.imageTransform.scale}px) rotate(${currentStory.imageTransform.rotation || 0}deg)`,
                     }
                   : undefined
               }
@@ -304,7 +306,7 @@ export function StoryViewer({ isOpen, onClose, storyUser }: StoryViewerProps) {
               style={{
                 left: `${overlay.x}%`,
                 top: `${overlay.y}%`,
-                transform: "translate(-50%, -50%)",
+                transform: `translate(-50%, -50%) rotate(${overlay.rotation || 0}deg)`,
                 color: overlay.color,
                 fontSize: `${overlay.size}px`,
                 textShadow: "0 2px 4px rgba(0,0,0,0.5)",

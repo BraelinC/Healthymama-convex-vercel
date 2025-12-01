@@ -82,6 +82,7 @@ export default function RecipePage({ params }: RecipePageProps) {
   // Mutations
   const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
   const updateCookbook = useMutation(api.recipes.userRecipes.updateRecipeCookbook);
+  const saveSharedRecipe = useMutation(api.recipes.userRecipes.saveSharedRecipeToUserCookbook);
 
   // Handle toggle favorite
   const handleToggleFavorite = async () => {
@@ -136,21 +137,41 @@ export default function RecipePage({ params }: RecipePageProps) {
     if (!user?.id || !recipe?._id) return;
 
     try {
-      await updateCookbook({
-        userId: user.id,
-        userRecipeId: recipe._id,
-        newCookbookCategory: cookbookCategory,
-      });
+      // Check if this is a shared recipe (not owned by current user)
+      const isSharedRecipe = recipe?.userId !== user.id;
 
-      toast({
-        title: "Recipe moved!",
-        description: `Moved to ${cookbookCategory}`,
-      });
+      if (isSharedRecipe) {
+        // Save shared recipe (creates reference)
+        await saveSharedRecipe({
+          userId: user.id,
+          sharedRecipeId: recipe._id,
+          cookbookCategory: cookbookCategory,
+        });
+
+        toast({
+          title: "Recipe Saved!",
+          description: `Added to ${cookbookCategory}`,
+        });
+      } else {
+        // Update user's own recipe
+        await updateCookbook({
+          userId: user.id,
+          userRecipeId: recipe._id,
+          newCookbookCategory: cookbookCategory,
+        });
+
+        toast({
+          title: "Recipe moved!",
+          description: `Moved to ${cookbookCategory}`,
+        });
+      }
+
       setIsCookbookSelectionOpen(false);
     } catch (error: any) {
+      console.error("[Add to Cookbook] Error:", error);
       toast({
         title: "Error",
-        description: error.message || "Failed to update cookbook",
+        description: error.message || "Failed to save recipe",
         variant: "destructive",
       });
     }

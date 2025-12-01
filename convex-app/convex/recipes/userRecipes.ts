@@ -591,6 +591,93 @@ export const updateRecipeCookbook = mutation({
 });
 
 /**
+ * Save a shared recipe to user's cookbook
+ * Creates a reference to another user's recipe
+ */
+export const saveSharedRecipeToUserCookbook = mutation({
+  args: {
+    userId: v.string(),
+    sharedRecipeId: v.id("userRecipes"), // User A's recipe
+    cookbookCategory: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Get the shared recipe (User A's recipe)
+    const sharedRecipe = await ctx.db.get(args.sharedRecipeId);
+    if (!sharedRecipe) {
+      throw new Error("Shared recipe not found");
+    }
+
+    // Check if user already saved this recipe
+    const existing = await ctx.db
+      .query("userRecipes")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .filter((q) => q.eq(q.field("sharedFromRecipeId"), args.sharedRecipeId))
+      .first();
+
+    if (existing) {
+      // Already saved - just update cookbook category
+      await ctx.db.patch(existing._id, {
+        cookbookCategory: args.cookbookCategory,
+        updatedAt: Date.now(),
+      });
+      return { success: true, recipeId: existing._id };
+    }
+
+    // Create new userRecipe entry for User B that references the shared recipe
+    const newRecipeId = await ctx.db.insert("userRecipes", {
+      userId: args.userId,
+
+      // Reference the same source as the shared recipe
+      recipeType: sharedRecipe.recipeType,
+      sourceRecipeId: sharedRecipe.sourceRecipeId,
+      sourceRecipeType: sharedRecipe.sourceRecipeType,
+
+      // Store reference to the recipe this was shared from
+      sharedFromRecipeId: args.sharedRecipeId,
+      sharedFromUserId: sharedRecipe.userId,
+
+      // Cached data for quick display
+      cachedTitle: sharedRecipe.title || sharedRecipe.cachedTitle,
+      cachedImageUrl: sharedRecipe.imageUrl || sharedRecipe.cachedImageUrl,
+
+      // User B's organization
+      cookbookCategory: args.cookbookCategory,
+
+      // For custom recipes, copy the customRecipeData
+      ...(sharedRecipe.recipeType === "custom" || sharedRecipe.recipeType === "ai_generated"
+        ? { customRecipeData: sharedRecipe.customRecipeData }
+        : {}),
+
+      // Metadata
+      isFavorited: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastAccessedAt: Date.now(),
+    });
+
+    // Find the share record and mark as saved
+    const share = await ctx.db
+      .query("sharedRecipes")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("toUserId"), args.userId),
+          q.eq(q.field("recipeId"), args.sharedRecipeId)
+        )
+      )
+      .first();
+
+    if (share) {
+      await ctx.db.patch(share._id, {
+        status: "saved",
+        savedAt: Date.now(),
+      });
+    }
+
+    return { success: true, recipeId: newRecipeId };
+  },
+});
+
+/**
  * Toggle favorite status of a recipe
  */
 export const toggleRecipeFavorite = mutation({
@@ -917,5 +1004,42 @@ export const getRecentRecipesForPrefetch = query({
     );
 
     return enrichedRecipes;
+  },
+});
+
+/**
+ * Batch prefetch cookbook recipes with full enrichment
+ *
+ * Fetches all recipes in a cookbook and enriches them server-side in parallel.
+ * This is more efficient than N separate client queries and avoids React hooks issues.
+ * The result is automatically cached by ConvexQueryCacheProvider on the client.
+ */
+export const prefetchCookbookRecipes = query({
+  args: {
+    userId: v.string(),
+    cookbookCategory: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Get all recipes in cookbook
+    const recipes = await ctx.db
+      .query("userRecipes")
+      .withIndex("by_user_cookbook", (q) =>
+        q.eq("userId", args.userId).eq("cookbookCategory", args.cookbookCategory)
+      )
+      .collect();
+
+    // Enrich ALL recipes in parallel (batch operation)
+    const enriched = await Promise.all(
+      recipes.map(async (recipe) => {
+        try {
+          return await enrichUserRecipeWithSource(ctx, recipe);
+        } catch (error) {
+          console.error(`[Cookbook Prefetch] Error enriching recipe ${recipe._id}:`, error);
+          return recipe;
+        }
+      })
+    );
+
+    return enriched;
   },
 });

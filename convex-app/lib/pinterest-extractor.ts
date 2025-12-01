@@ -93,10 +93,18 @@ export async function fetchPinterestPin(pinUrl: string): Promise<PinterestPin> {
   const imageUrls: string[] = [];
   let videoUrl: string | undefined;
 
-  // Check for video
+  // Check for video - try multiple quality options in order of preference
   if (pin.video || pin.videos?.video_list) {
     type = 'video';
-    videoUrl = pin.video || pin.videos?.video_list?.V_720P?.url || pin.videos?.video_list?.V_EXP7?.url;
+    // Try different video quality options (highest to lowest)
+    videoUrl = pin.video
+      || pin.videos?.video_list?.V_720P?.url
+      || pin.videos?.video_list?.V_HLSV4?.url
+      || pin.videos?.video_list?.V_HLSV3_WEB?.url
+      || pin.videos?.video_list?.V_EXP7?.url
+      || pin.videos?.video_list?.V_EXP6?.url
+      || pin.videos?.video_list?.V_EXP5?.url
+      || pin.videos?.video_list?.V_EXP4?.url;
   }
 
   // Extract images - try multiple possible paths in API response

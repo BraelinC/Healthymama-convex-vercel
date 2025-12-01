@@ -70,6 +70,13 @@ export function CookbookDetailSheet({
     isOpen && userId ? { userId, cookbookCategory: cookbookId } : "skip"
   );
 
+  // Batch prefetch ALL enriched recipes in this cookbook (server-side)
+  // This warms the cache so individual recipe clicks are instant
+  const _prefetchedRecipes = useQuery(
+    api.recipes.userRecipes.prefetchCookbookRecipes,
+    isOpen && userId ? { userId, cookbookCategory: cookbookId } : "skip"
+  );
+
   // Mutations and actions
   const toggleFavorite = useMutation(api.recipes.userRecipes.toggleRecipeFavorite);
   const saveRecipe = useAction(api.recipes.userRecipes.saveRecipeWithParsedIngredients);

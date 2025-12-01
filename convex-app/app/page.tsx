@@ -327,7 +327,7 @@ function HomePageContent() {
                     backgroundClip: 'text'
                   }}
                 >
-                  Healthy Mama
+                  HealthyMama
                 </h1>
               </div>
 
