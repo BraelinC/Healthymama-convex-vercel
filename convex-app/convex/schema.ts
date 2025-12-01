@@ -6,6 +6,7 @@ export default defineSchema({
     userId: v.string(),
     email: v.string(),
     isCreator: v.optional(v.boolean()), // Creators can create communities
+    isAdmin: v.optional(v.boolean()), // Super admin flag for Mikey access
     stripeCustomerId: v.optional(v.string()), // Stripe customer ID for payments
     prefs: v.object({
       diet: v.optional(v.string()),
@@ -24,6 +25,7 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_email", ["email"])
     .index("by_isCreator", ["isCreator"])
+    .index("by_isAdmin", ["isAdmin"])
     .index("by_stripeCustomerId", ["stripeCustomerId"]),
 
   communities: defineTable({
@@ -437,6 +439,10 @@ export default defineSchema({
     // NEW: Cached data for fallback (when source recipe is deleted)
     cachedTitle: v.optional(v.string()),      // Fallback title if source deleted
     cachedImageUrl: v.optional(v.string()),   // Fallback image if source deleted
+
+    // NEW: Shared recipe tracking (when user saves recipe shared from another user)
+    sharedFromRecipeId: v.optional(v.id("userRecipes")), // Reference to the original user's recipe
+    sharedFromUserId: v.optional(v.string()),            // User ID who originally owned the recipe
 
     // NEW: Modification tracking
     isModified: v.optional(v.boolean()),      // True if user edited a referenced recipe
@@ -1198,6 +1204,7 @@ export default defineSchema({
       scale: v.number(),  // 1 = fit, >1 = zoomed in
       x: v.number(),      // X offset from center
       y: v.number(),      // Y offset from center
+      rotation: v.optional(v.number()), // Rotation in degrees
     })),
 
     // Text overlays (rich text on image)
@@ -1209,6 +1216,7 @@ export default defineSchema({
       font: v.string(),   // 'sans' | 'serif' | 'handwritten'
       color: v.string(),  // Hex color
       size: v.number(),   // Font size in px
+      rotation: v.optional(v.number()), // Rotation in degrees
     }))),
 
     // Timing (24-hour expiry)
@@ -1252,4 +1260,83 @@ export default defineSchema({
     .index("by_domain", ["domain"])
     .index("by_active", ["isActive"])
     .index("by_last_error", ["lastErrorAt"]),
+
+  // ==================== MIKEY: Instagram DM Automation ====================
+
+  instagramAccounts: defineTable({
+    username: v.string(),           // Instagram username (@healthymama_bot1)
+
+    // NEW: Ayrshare integration (optional for backward compatibility)
+    arshareAccountId: v.optional(v.string()),   // DEPRECATED: Old Arshare account ID
+    arshareAccessToken: v.optional(v.string()), // DEPRECATED: Old Arshare access token
+    ayrshareProfileKey: v.optional(v.string()), // Ayrshare Profile Key for messaging
+    ayrshareRefId: v.optional(v.string()),      // Ayrshare Profile RefId
+
+    // OLD: Legacy fields (keep for existing accounts)
+    password: v.optional(v.string()),
+    isActive: v.optional(v.boolean()),
+    notes: v.optional(v.string()),
+    usageCount: v.optional(v.number()),
+
+    status: v.union(
+      v.literal("active"),          // Currently receiving DMs
+      v.literal("inactive"),        // Temporarily disabled
+      v.literal("full")             // Hit 90-100 user limit
+    ),
+    currentUserCount: v.optional(v.number()),   // How many users are using this account
+    maxUsers: v.optional(v.number()),           // Capacity (90-100)
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdBy: v.optional(v.string()),          // Admin userId who added it
+  })
+    .index("by_status", ["status"])
+    .index("by_profileKey", ["ayrshareProfileKey"]),
+
+  dmConversations: defineTable({
+    instagramAccountId: v.id("instagramAccounts"), // Which bot account
+    instagramUserId: v.string(),    // Instagram user ID (from Arshare)
+    instagramUsername: v.string(),  // Instagram username
+    healthyMamaUserId: v.optional(v.string()), // If they sign up, link to users table
+    lastMessageAt: v.number(),
+    messageCount: v.number(),       // Total DMs received
+    status: v.union(
+      v.literal("active"),
+      v.literal("blocked"),         // User blocked by admin
+      v.literal("rate_limited")     // Hit rate limits
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_instagram_account", ["instagramAccountId"])
+    .index("by_instagram_user", ["instagramUserId"]),
+
+  dmMessages: defineTable({
+    conversationId: v.id("dmConversations"),
+    direction: v.union(v.literal("inbound"), v.literal("outbound")),
+    messageText: v.string(),
+    recipeUrl: v.optional(v.string()),      // Extracted URL from message
+    extractedRecipeId: v.optional(v.id("userRecipes")), // If recipe extracted
+    uniquePageUrl: v.optional(v.string()),  // URL sent back to user
+    arshareMessageId: v.string(),           // Arshare message ID
+    status: v.union(
+      v.literal("received"),
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+    errorMessage: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId"])
+    .index("by_status", ["status"]),
+
+  // Temporary storage for pending Ayrshare profile connections
+  pendingAyrshareProfiles: defineTable({
+    userId: v.string(),             // Admin who created the connection
+    profileKey: v.string(),         // Ayrshare profileKey
+    refId: v.string(),              // Ayrshare refId
+    createdAt: v.number(),
+    expiresAt: v.number(),          // Auto-expire after 15 minutes
+  })
+    .index("by_userId", ["userId"])
+    .index("by_expiresAt", ["expiresAt"]),
 });
