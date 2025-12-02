@@ -134,14 +134,23 @@ export const processIncomingDM = mutation({
     arshareMessageId: v.string(),
   },
   handler: async (ctx, args) => {
-    // 1. Find Instagram account by profileKey
-    const instagramAccount = await ctx.db
+    // 1. Find Instagram account by profileKey (which is actually refId from webhook)
+    // Webhooks send refId, not profileKey, so search by refId
+    let instagramAccount = await ctx.db
       .query("instagramAccounts")
-      .withIndex("by_profileKey", (q) => q.eq("ayrshareProfileKey", args.profileKey))
+      .withIndex("by_refId", (q) => q.eq("ayrshareRefId", args.profileKey))
       .first();
 
+    // Fallback: try searching by profileKey if refId lookup fails
     if (!instagramAccount) {
-      console.error("[Mikey] Instagram account not found for profileKey:", args.profileKey);
+      instagramAccount = await ctx.db
+        .query("instagramAccounts")
+        .withIndex("by_profileKey", (q) => q.eq("ayrshareProfileKey", args.profileKey))
+        .first();
+    }
+
+    if (!instagramAccount) {
+      console.error("[Mikey] Instagram account not found for profileKey/refId:", args.profileKey);
       throw new Error("Instagram account not found");
     }
 
@@ -227,10 +236,10 @@ export const processIncomingDM = mutation({
       };
     }
 
-    // Check if URL is an Instagram reel
+    // Check if URL is an Instagram reel or CDN video URL (from share button)
     const instagramReelUrl = urls.find(url =>
-      url.includes('instagram.com') &&
-      (url.includes('/reel/') || url.includes('/p/') || url.includes('/tv/'))
+      (url.includes('instagram.com') && (url.includes('/reel/') || url.includes('/p/') || url.includes('/tv/'))) ||
+      url.includes('lookaside.fbsbx.com/ig_messaging_cdn')
     );
 
     if (!instagramReelUrl) {
@@ -253,7 +262,22 @@ export const processIncomingDM = mutation({
       };
     }
 
-    // 7. Update message with extracted Instagram reel URL
+    // 7. Look up the DM sender's Clerk userId by their Instagram username
+    // This allows the bot to save recipes to the actual sender's account
+    const senderProfile = await ctx.db
+      .query("userProfiles")
+      .filter((q) => q.eq(q.field("instagramUsername"), args.instagramUsername))
+      .first();
+
+    const senderUserId = senderProfile?.userId;
+
+    if (!senderUserId) {
+      console.log(`[Mikey] DM sender @${args.instagramUsername} does not have a linked healthymama.app account`);
+    } else {
+      console.log(`[Mikey] DM sender @${args.instagramUsername} found: userId=${senderUserId}`);
+    }
+
+    // 8. Update message with extracted Instagram reel URL
     await ctx.db.patch(messageId, {
       recipeUrl: instagramReelUrl,
       status: "processing",
@@ -264,7 +288,7 @@ export const processIncomingDM = mutation({
       conversationId: conversation._id,
       profileKey: args.profileKey,
       instagramReelUrl,
-      userId: instagramAccount.createdBy || "anonymous",
+      userId: senderUserId || instagramAccount.createdBy || "anonymous",
     };
   },
 });
@@ -294,6 +318,34 @@ export const updateMessageStatus = mutation({
     });
 
     return { success: true };
+  },
+});
+
+/**
+ * Create outgoing message (sent by user from profile)
+ */
+export const createOutgoingMessage = mutation({
+  args: {
+    conversationId: v.id("dmConversations"),
+    messageText: v.string(),
+    sentBy: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const messageId = await ctx.db.insert("dmMessages", {
+      conversationId: args.conversationId,
+      direction: "outgoing",
+      messageText: args.messageText,
+      status: "completed",
+      createdAt: Date.now(),
+      arshareMessageId: `user-sent-${Date.now()}`,
+    });
+
+    // Update conversation's last message time
+    await ctx.db.patch(args.conversationId, {
+      updatedAt: Date.now(),
+    });
+
+    return { messageId };
   },
 });
 

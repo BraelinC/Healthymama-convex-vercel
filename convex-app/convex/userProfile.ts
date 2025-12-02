@@ -306,6 +306,7 @@ export const saveAyrshareProfileKey = mutation({
   args: {
     userId: v.string(),
     ayrshareProfileKey: v.string(),
+    ayrshareRefId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const profile = await ctx.db
@@ -318,6 +319,7 @@ export const saveAyrshareProfileKey = mutation({
       await ctx.db.insert("userProfiles", {
         userId: args.userId,
         ayrshareProfileKey: args.ayrshareProfileKey,
+        ayrshareRefId: args.ayrshareRefId,
         allergens: [],
         dietaryPreferences: [],
         createdAt: Date.now(),
@@ -328,6 +330,7 @@ export const saveAyrshareProfileKey = mutation({
 
     await ctx.db.patch(profile._id, {
       ayrshareProfileKey: args.ayrshareProfileKey,
+      ayrshareRefId: args.ayrshareRefId,
       updatedAt: Date.now(),
     });
 
@@ -361,5 +364,23 @@ export const updateInstagramConnection = mutation({
     });
 
     return { success: true };
+  },
+});
+
+/**
+ * Get user profile by Instagram username
+ * Used by Mikey bot to find recipe recipients when they send DMs
+ */
+export const getUserByInstagramUsername = query({
+  args: {
+    instagramUsername: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("userProfiles")
+      .filter((q) => q.eq(q.field("instagramUsername"), args.instagramUsername))
+      .first();
+
+    return profile;
   },
 });

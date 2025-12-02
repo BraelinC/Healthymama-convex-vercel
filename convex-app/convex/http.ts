@@ -99,9 +99,10 @@ http.route({
           });
         }
 
-        // Skip outgoing "sent" messages - we only process incoming "received" messages
-        if (body.type === "sent") {
-          console.log("[Ayrshare Webhook] Skipping outgoing 'sent' message");
+        // Skip outgoing "sent" messages FIRST - we only process incoming "received" messages
+        // This must happen before any processing to avoid bot responding to its own messages
+        if (body.type === "sent" || body.direction === "outgoing" || body.subAction === "messageSent") {
+          console.log("[Ayrshare Webhook] Skipping outgoing message (type:", body.type, "direction:", body.direction, "subAction:", body.subAction, ")");
           return new Response(JSON.stringify({ success: true, processed: false, skipped: "outgoing" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
