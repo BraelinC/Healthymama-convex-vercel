@@ -753,13 +753,25 @@ Otherwise, return ONLY valid JSON:
  */
 export async function POST(request: NextRequest) {
   try {
-    // SECURITY: Validate authentication (Next.js 15: auth() is now async)
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized - authentication required' },
-        { status: 401 }
-      );
+    // Check if this is an internal call from Mikey bot
+    const isInternalCall = request.headers.get('X-Internal-Call') === 'mikey-bot';
+
+    let userId: string | null = null;
+
+    if (isInternalCall) {
+      // For Mikey bot calls, use a system user ID
+      console.log('[Instagram Import] Internal call from Mikey bot');
+      userId = 'system_mikey_bot'; // Placeholder - actual userId passed separately
+    } else {
+      // SECURITY: Validate authentication for regular user requests
+      const authResult = await auth();
+      userId = authResult.userId;
+      if (!userId) {
+        return NextResponse.json(
+          { error: 'Unauthorized - authentication required' },
+          { status: 401 }
+        );
+      }
     }
 
     // Parse request body

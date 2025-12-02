@@ -70,12 +70,14 @@ import { api } from "./_generated/api";
  */
 export const importInstagramRecipe = action({
   args: {
-    // SECURITY: userId removed from args - retrieved from authenticated context instead
+    // Optional userId for internal calls (Mikey bot) - otherwise retrieved from auth context
+    userId: v.optional(v.string()),
+
     // Recipe data (parsed from video or description)
     title: v.string(),
     description: v.optional(v.string()),
-    ingredients: v.array(v.string()),
-    instructions: v.array(v.string()),
+    ingredients: v.optional(v.array(v.string())), // Optional - defaults to empty array
+    instructions: v.optional(v.array(v.string())), // Optional - defaults to empty array
 
     // Optional metadata
     servings: v.optional(v.string()),
@@ -125,12 +127,21 @@ export const importInstagramRecipe = action({
     }))),
   },
   handler: async (ctx, args) => {
-    // SECURITY: Get authenticated userId from Convex auth context
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Unauthorized - must be logged in to import recipes");
+    // Get userId - either from args (Mikey bot) or auth context (regular users)
+    let userId: string;
+
+    if (args.userId) {
+      // Internal call from Mikey bot or other system
+      console.log("[Instagram Import] Using provided userId:", args.userId);
+      userId = args.userId;
+    } else {
+      // SECURITY: Get authenticated userId from Convex auth context
+      const identity = await ctx.auth.getUserIdentity();
+      if (!identity) {
+        throw new Error("Unauthorized - must be logged in to import recipes");
+      }
+      userId = identity.subject;
     }
-    const userId = identity.subject;
 
     const {
       title,
@@ -197,8 +208,8 @@ export const importInstagramRecipe = action({
         (isYouTube ? `Recipe from YouTube` : `Recipe from @${instagramUsername || 'Instagram'}`)
       ),
       imageUrl,
-      ingredients,
-      instructions,
+      ingredients: ingredients || [], // Fallback to empty array if undefined
+      instructions: instructions || [], // Fallback to empty array if undefined
 
       // Optional metadata
       servings,

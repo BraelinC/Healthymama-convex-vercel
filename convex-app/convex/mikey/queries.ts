@@ -48,6 +48,23 @@ export const getInstagramAccountByProfileKey = query({
 });
 
 /**
+ * Get Instagram account by Ayrshare refId (webhook sends refId, not profileKey)
+ */
+export const getInstagramAccountByRefId = query({
+  args: {
+    refId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const account = await ctx.db
+      .query("instagramAccounts")
+      .withIndex("by_refId", (q) => q.eq("ayrshareRefId", args.refId))
+      .first();
+
+    return account;
+  },
+});
+
+/**
  * Get conversation by ID
  */
 export const getConversation = query({
@@ -303,5 +320,64 @@ export const searchConversations = query({
     );
 
     return filtered.slice(0, limit);
+  },
+});
+
+/**
+ * Get message by Ayrshare message ID (for duplicate detection in polling)
+ */
+export const getMessageByArshareId = query({
+  args: {
+    arshareMessageId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const message = await ctx.db
+      .query("dmMessages")
+      .filter((q) => q.eq(q.field("arshareMessageId"), args.arshareMessageId))
+      .first();
+
+    return message;
+  },
+});
+
+/**
+ * Get user's Instagram conversations by their userId
+ * Looks up their ayrshareProfileKey from userProfile and returns conversations
+ */
+export const getUserConversations = query({
+  args: {
+    userId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // Get user profile to find their ayrshareProfileKey
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .filter((q) => q.eq(q.field("userId"), args.userId))
+      .first();
+
+    if (!userProfile?.ayrshareProfileKey) {
+      return [];
+    }
+
+    // Find the Instagram account with this profileKey
+    const account = await ctx.db
+      .query("instagramAccounts")
+      .filter((q) => q.eq(q.field("ayrshareProfileKey"), userProfile.ayrshareProfileKey))
+      .first();
+
+    if (!account) {
+      return [];
+    }
+
+    // Get conversations for this account
+    const limit = args.limit || 50;
+    const conversations = await ctx.db
+      .query("dmConversations")
+      .withIndex("by_instagram_account", (q) => q.eq("instagramAccountId", account._id))
+      .order("desc")
+      .take(limit);
+
+    return conversations;
   },
 });
