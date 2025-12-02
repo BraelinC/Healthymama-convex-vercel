@@ -232,6 +232,7 @@ export function isYouTubeUrl(url: string): boolean {
  * - https://www.instagram.com/p/CODE/
  * - https://www.instagram.com/tv/CODE/
  * - https://www.instagram.com/stories/USERNAME/ID/
+ * - https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=... (Facebook CDN URLs from webhooks)
  *
  * @param url - Any URL string
  * @returns true if Instagram URL
@@ -240,6 +241,7 @@ export function isInstagramUrl(url: string): boolean {
   const instagramPatterns = [
     /^https?:\/\/(www\.)?instagram\.com\/(reel|p|tv)\/[A-Za-z0-9_-]+/i,
     /^https?:\/\/(www\.)?instagram\.com\/stories\/[^/]+\/\d+/i,
+    /^https?:\/\/lookaside\.fbsbx\.com\/ig_messaging_cdn\/\?asset_id=/i, // Facebook CDN URLs
   ];
 
   return instagramPatterns.some(pattern => pattern.test(url));
