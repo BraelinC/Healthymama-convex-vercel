@@ -266,6 +266,8 @@ export const importRecipeFromDM = action({
       });
 
       console.log("[Mikey] Import result:", result);
+      console.log("[Mikey] Recipe ID received from importInstagramRecipe:", result.recipeId);
+      console.log("[Mikey] Recipe ID type:", typeof result.recipeId);
 
       if (!result.success || !result.recipeId) {
         throw new Error(result.error || "Recipe import failed");
@@ -273,6 +275,7 @@ export const importRecipeFromDM = action({
 
       // Generate recipe page URL (reuse appUrl from above)
       const recipeUrl = `${appUrl}/recipe/${result.recipeId}`;
+      console.log("[Mikey] Generated recipe URL:", recipeUrl);
 
       // Update message status
       await ctx.runMutation(api.mikey.mutations.updateMessageStatus, {

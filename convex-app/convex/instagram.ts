@@ -196,6 +196,7 @@ export const importInstagramRecipe = action({
 
     // Save Recipe with PRE-PARSED INGREDIENTS for instant grocery lists
     // This parses ingredients ONCE with AI during import
+    console.log(`[${source || 'Video Import'}] Calling saveRecipeWithParsedIngredients for "${title}"`);
     const recipeId = await ctx.runAction(api.recipes.userRecipes.saveRecipeWithParsedIngredients, {
       userId,
       recipeType: "community", // Video imports are external recipes
@@ -232,6 +233,7 @@ export const importInstagramRecipe = action({
       videoSegments,
     });
 
+    console.log(`[${source || 'Video Import'}] ✅ Received recipe ID: ${recipeId}`);
     console.log(`[${source || 'Video Import'}] ✅ Imported recipe "${title}" with pre-parsed ingredients for user ${userId}`);
 
     return {

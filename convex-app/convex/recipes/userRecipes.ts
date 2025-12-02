@@ -352,6 +352,9 @@ export const saveRecipeWithParsedIngredients = action({
       videoSegments: args.videoSegments,
     });
 
+    console.log("[saveRecipeWithParsedIngredients] Received recipe ID from mutation:", userRecipeId);
+    console.log("[saveRecipeWithParsedIngredients] Returning recipe ID:", userRecipeId);
+
     return userRecipeId;
   },
 });
@@ -414,6 +417,8 @@ export const saveRecipeToUserCookbookWithParsed = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+
+    console.log("[saveRecipeToUserCookbookWithParsed] Inserting recipe:", args.title, "for user:", args.userId);
 
     const userRecipeId = await ctx.db.insert("userRecipes", {
       userId: args.userId,
@@ -483,6 +488,9 @@ export const saveRecipeToUserCookbookWithParsed = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    console.log("[saveRecipeToUserCookbookWithParsed] Recipe inserted with ID:", userRecipeId);
+    console.log("[saveRecipeToUserCookbookWithParsed] ID type check - starts with correct prefix:", String(userRecipeId).substring(0, 3));
 
     return userRecipeId;
   },
