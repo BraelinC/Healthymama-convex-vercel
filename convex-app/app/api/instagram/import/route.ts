@@ -832,15 +832,26 @@ export async function POST(request: NextRequest) {
       console.log(`[Pinterest Import] External link: ${pinterestData.link || 'none'}`);
       console.log(`[Pinterest Import] Domain: ${pinterestData.domain || 'none'}`);
     } else if (isInstagram) {
-      // Extract Instagram data using HikerAPI
-      const instagramData = await extractInstagramData(url);
+      // Check if this is a Facebook CDN URL (from Ayrshare webhooks)
+      const isCdnUrl = url.includes('lookaside.fbsbx.com/ig_messaging_cdn');
 
-      videoUrl = instagramData.videoUrl;
-      thumbnailUrl = instagramData.thumbnailUrl;
-      description = instagramData.caption;
+      if (isCdnUrl) {
+        // CDN URL is already a direct video link - skip HikerAPI
+        console.log('[Instagram Import] Detected CDN URL - using direct video link');
+        videoUrl = url;
+        thumbnailUrl = undefined; // Will be extracted from video
+        description = 'Instagram reel shared via DM';
+      } else {
+        // Regular Instagram URL - extract data using HikerAPI
+        const instagramData = await extractInstagramData(url);
 
-      console.log(`[Instagram Import] Caption length: ${description?.length || 0} chars`);
-      console.log(`[Instagram Import] Caption preview: ${description?.substring(0, 150)}...`);
+        videoUrl = instagramData.videoUrl;
+        thumbnailUrl = instagramData.thumbnailUrl;
+        description = instagramData.caption;
+
+        console.log(`[Instagram Import] Caption length: ${description?.length || 0} chars`);
+        console.log(`[Instagram Import] Caption preview: ${description?.substring(0, 150)}...`);
+      }
     } else {
       // Extract YouTube data using YouTube API
       const youtubeData = await extractYouTubeData(url);
