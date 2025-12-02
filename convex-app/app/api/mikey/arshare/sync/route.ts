@@ -14,10 +14,10 @@ const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 export async function GET(request: Request) {
   try {
     const AYRSHARE_BASE_URL = "https://api.ayrshare.com";
-    const AYRSHARE_API = process.env.AYRSHARE_API;
+    const AYRSHARE_API = process.env.AYRSHARE_API_KEY;
 
     if (!AYRSHARE_API) {
-      return NextResponse.json({ error: "AYRSHARE_API not configured" }, { status: 500 });
+      return NextResponse.json({ error: "AYRSHARE_API_KEY not configured" }, { status: 500 });
     }
 
     console.log("[Ayrshare Sync] Fetching all profiles...");
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     }
 
     const profilesData = await profilesResponse.json();
-    console.log("[Ayrshare Sync] Profiles:", profilesData);
+    console.log("[Ayrshare Sync] Profiles response:", JSON.stringify(profilesData, null, 2));
 
     if (!profilesData.profiles || profilesData.profiles.length === 0) {
       return NextResponse.json({
@@ -51,7 +51,8 @@ export async function GET(request: Request) {
 
     // 2. For each profile, check if it has Instagram accounts
     for (const profile of profilesData.profiles) {
-      const profileKey = profile.profileKey;
+      console.log("[Ayrshare Sync] Profile object:", JSON.stringify(profile, null, 2));
+      const profileKey = profile.profileKey || profile.key;
 
       console.log(`[Ayrshare Sync] Checking profile ${profileKey}...`);
 

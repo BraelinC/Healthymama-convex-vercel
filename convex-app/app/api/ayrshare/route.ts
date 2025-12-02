@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
-const AYRSHARE_API_KEY = process.env.AYRSHARE_API;
+const AYRSHARE_API_KEY = process.env.AYRSHARE_API_KEY;
 const AYRSHARE_DOMAIN = process.env.AYRSHARE_DOMAIN || "id-fag98";
 const AYRSHARE_BASE_URL = "https://api.ayrshare.com/api";
 
@@ -21,6 +21,7 @@ function getPrivateKey(): string | null {
  * POST /api/ayrshare - Handle various Ayrshare operations
  *
  * Actions:
+ * - create-and-connect: Create profile and generate SSO URL in one call (optimized for popup blockers)
  * - create-profile: Create a new Ayrshare profile for a user
  * - connect-url: Generate JWT connect URL for Instagram linking
  * - status: Check Instagram connection status
@@ -41,6 +42,8 @@ export async function POST(request: NextRequest) {
     }
 
     switch (action) {
+      case "create-and-connect":
+        return await createProfileAndConnect(userId, redirectUrl);
       case "create-profile":
         return await createProfile(userId);
       case "connect-url":
@@ -69,7 +72,120 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Create profile and generate SSO URL in one call
+ * Optimized to avoid popup blockers by returning URL immediately
+ */
+async function createProfileAndConnect(userId: string, redirectUrl: string) {
+  if (!userId) {
+    return NextResponse.json(
+      { error: "userId is required" },
+      { status: 400 }
+    );
+  }
+
+  // Step 1: Create profile
+  const profileTitle = `healthymama_${userId.substring(0, 15)}_${Date.now()}`;
+  console.log("[Ayrshare] Creating profile (create-and-connect):", profileTitle);
+
+  const profileResponse = await fetch(`${AYRSHARE_BASE_URL}/profiles`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${AYRSHARE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      title: profileTitle,
+      messagingActive: true,
+    }),
+  });
+
+  if (!profileResponse.ok) {
+    const errorData = await profileResponse.json().catch(() => ({}));
+    console.error("[Ayrshare Create Profile Error]:", errorData);
+    return NextResponse.json(
+      { error: "Failed to create Ayrshare profile", details: errorData },
+      { status: profileResponse.status }
+    );
+  }
+
+  const profileData = await profileResponse.json();
+  console.log("[Ayrshare] Profile created:", profileData.profileKey);
+
+  // Step 2: Generate JWT/SSO URL immediately
+  const privateKey = getPrivateKey();
+  if (!privateKey) {
+    return NextResponse.json(
+      { error: "Failed to load private key for JWT generation" },
+      { status: 500 }
+    );
+  }
+
+  console.log("[Ayrshare] Generating JWT for new profile");
+
+  const jwtResponse = await fetch(`${AYRSHARE_BASE_URL}/profiles/generateJWT`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${AYRSHARE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      domain: AYRSHARE_DOMAIN,
+      privateKey: privateKey,
+      profileKey: profileData.profileKey,
+      allowedSocial: ["instagram"],
+    }),
+  });
+
+  if (!jwtResponse.ok) {
+    const errorData = await jwtResponse.json().catch(() => ({}));
+    console.error("[Ayrshare Generate JWT Error]:", errorData);
+    return NextResponse.json(
+      { error: "Failed to generate connect URL", details: errorData },
+      { status: jwtResponse.status }
+    );
+  }
+
+  const jwtData = await jwtResponse.json();
+  const baseUrl = jwtData.url || `https://profile.ayrshare.com/social-accounts?domain=${AYRSHARE_DOMAIN}&jwt=${jwtData.token}`;
+  const ssoUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}logout=true`;
+
+  console.log("[Ayrshare] SSO URL ready:", ssoUrl);
+
+  // Step 3: Register webhook in background (non-blocking)
+  try {
+    console.log("[Ayrshare] Registering webhook for profile:", profileData.profileKey);
+
+    fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/api/webhook/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ profileKey: profileData.profileKey }),
+    }).then(response => {
+      if (response.ok) {
+        console.log("[Ayrshare] ✅ Webhook registered successfully");
+      } else {
+        console.error("[Ayrshare] ❌ Webhook registration failed (non-fatal)");
+      }
+    }).catch(err => {
+      console.error("[Ayrshare] ❌ Webhook registration exception (non-fatal):", err);
+    });
+  } catch (webhookError: any) {
+    console.error("[Ayrshare] ❌ Webhook registration exception (non-fatal):", webhookError.message);
+  }
+
+  // Return everything needed for immediate popup
+  return NextResponse.json({
+    success: true,
+    profileKey: profileData.profileKey,
+    refId: profileData.refId,
+    url: ssoUrl,
+  });
+}
+
+/**
  * Create a new Ayrshare profile for a user
+ * ALWAYS creates a fresh profile with unique timestamp
  */
 async function createProfile(userId: string) {
   if (!userId) {
@@ -79,6 +195,10 @@ async function createProfile(userId: string) {
     );
   }
 
+  // Create unique profile title with timestamp to ensure fresh profile
+  const profileTitle = `healthymama_${userId.substring(0, 15)}_${Date.now()}`;
+  console.log("[Ayrshare] Creating profile:", profileTitle);
+
   const response = await fetch(`${AYRSHARE_BASE_URL}/profiles`, {
     method: "POST",
     headers: {
@@ -86,7 +206,8 @@ async function createProfile(userId: string) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      title: `healthymama_${userId.substring(0, 20)}`,
+      title: profileTitle,
+      messagingActive: true, // Enable messaging for this profile
     }),
   });
 
@@ -100,6 +221,42 @@ async function createProfile(userId: string) {
   }
 
   const data = await response.json();
+  console.log("[Ayrshare] Profile created successfully:", data.profileKey);
+
+  // Register webhook for instant DM notifications
+  try {
+    console.log("[Ayrshare] ========================================");
+    console.log("[Ayrshare] REGISTERING WEBHOOK");
+    console.log("[Ayrshare] Profile Key:", data.profileKey);
+    console.log("[Ayrshare] App URL:", process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001');
+    console.log("[Ayrshare] ========================================");
+
+    const webhookResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/api/webhook/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ profileKey: data.profileKey }),
+    });
+
+    console.log("[Ayrshare] Webhook response status:", webhookResponse.status);
+
+    if (webhookResponse.ok) {
+      const webhookData = await webhookResponse.json();
+      console.log("[Ayrshare] ✅ Webhook registered successfully:", JSON.stringify(webhookData, null, 2));
+    } else {
+      const errorText = await webhookResponse.text();
+      console.error("[Ayrshare] ❌ Webhook registration failed (non-fatal):");
+      console.error("[Ayrshare] Status:", webhookResponse.status);
+      console.error("[Ayrshare] Error:", errorText);
+      // Don't fail profile creation if webhook registration fails
+    }
+  } catch (webhookError: any) {
+    console.error("[Ayrshare] ❌ Webhook registration exception (non-fatal):");
+    console.error("[Ayrshare] Error:", webhookError.message);
+    console.error("[Ayrshare] Stack:", webhookError.stack);
+    // Don't fail profile creation if webhook registration fails
+  }
 
   return NextResponse.json({
     success: true,
@@ -142,6 +299,7 @@ async function getConnectUrl(profileKey: string, redirectUrl: string) {
       domain: AYRSHARE_DOMAIN,
       privateKey: privateKey,
       profileKey: profileKey,
+      allowedSocial: ["instagram"], // Only show Instagram
     }),
   });
 
@@ -158,7 +316,11 @@ async function getConnectUrl(profileKey: string, redirectUrl: string) {
   console.log("[Ayrshare] JWT Response:", data);
 
   // Use the URL provided by Ayrshare API or construct it
-  const ssoUrl = data.url || `https://profile.ayrshare.com/social-accounts?domain=${AYRSHARE_DOMAIN}&jwt=${data.token}`;
+  // Add logout=true to force logout of any cached profile session
+  const baseUrl = data.url || `https://profile.ayrshare.com/social-accounts?domain=${AYRSHARE_DOMAIN}&jwt=${data.token}`;
+  const ssoUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}logout=true`;
+
+  console.log("[Ayrshare] SSO URL with logout=true:", ssoUrl);
 
   return NextResponse.json({
     success: true,

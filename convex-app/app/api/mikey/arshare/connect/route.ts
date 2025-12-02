@@ -75,7 +75,10 @@ export async function GET(request: Request) {
         Authorization: `Bearer ${AYRSHARE_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ title: profileTitle }),
+      body: JSON.stringify({
+        title: profileTitle,
+        messagingActive: true, // Enable messaging for this bot profile
+      }),
     });
 
     console.log(`[Ayrshare Connect] Profile creation response status: ${profileResponse.status} ${profileResponse.statusText}`);
@@ -100,6 +103,30 @@ export async function GET(request: Request) {
 
     console.log(`[Ayrshare Connect] Profile Key: ${profileKey}`);
     console.log(`[Ayrshare Connect] Ref ID: ${refId}`);
+
+    // 3.5. Register webhook for instant DM notifications
+    console.log(`[Ayrshare Connect] === REGISTERING WEBHOOK ===`);
+    try {
+      const webhookResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/api/webhook/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ profileKey }),
+      });
+
+      if (webhookResponse.ok) {
+        const webhookData = await webhookResponse.json();
+        console.log("[Ayrshare Connect] Webhook registered successfully:", webhookData);
+      } else {
+        const errorText = await webhookResponse.text();
+        console.error("[Ayrshare Connect] Webhook registration failed (non-fatal):", errorText);
+        // Don't fail the whole flow if webhook registration fails
+      }
+    } catch (webhookError) {
+      console.error("[Ayrshare Connect] Webhook registration error (non-fatal):", webhookError);
+      // Don't fail the whole flow if webhook registration fails
+    }
 
     // 4. Generate JWT for SSO
     console.log(`[Ayrshare Connect] === GENERATING JWT FOR SSO ===`);

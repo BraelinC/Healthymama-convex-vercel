@@ -19,4 +19,8 @@ crons.interval(
   internal.memory.sessionCacheQueries.expireOldCaches
 );
 
+// REMOVED: Instagram DM polling (replaced by webhooks)
+// Webhooks provide instant notifications instead of 15-second polling
+// Webhook registered automatically when Instagram account is connected
+
 export default crons;

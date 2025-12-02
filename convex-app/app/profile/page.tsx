@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { User, ArrowLeft, AtSign, Check, X, Loader2 } from "lucide-react";
 import { ProfileImageUploader } from "@/components/profile/ProfileImageUploader";
 import { InstagramConnect } from "@/components/profile/InstagramConnect";
+import { InstagramDM } from "@/components/profile/InstagramDM";
+import { MikeyConnectCard } from "@/components/mikey/MikeyConnectCard";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 
@@ -217,6 +219,28 @@ export default function ProfilePage() {
               // The query will auto-refetch due to Convex reactivity
             }}
           />
+
+          {/* Mikey Bot Connect Card - Recipe from Reels */}
+          <div className="flex items-center gap-4">
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-purple-200 to-transparent"></div>
+            <span className="text-sm text-gray-400">Recipe Assistant</span>
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-purple-200 to-transparent"></div>
+          </div>
+
+          <MikeyConnectCard userId={userId} />
+
+          {/* Instagram DM Interface */}
+          {userProfile?.instagramConnected && (
+            <>
+              <div className="flex items-center gap-4">
+                <div className="flex-1 h-px bg-gradient-to-r from-transparent via-purple-200 to-transparent"></div>
+                <span className="text-sm text-gray-400">Your Direct Messages</span>
+                <div className="flex-1 h-px bg-gradient-to-r from-transparent via-purple-200 to-transparent"></div>
+              </div>
+
+              <InstagramDM userId={userId} />
+            </>
+          )}
         </div>
       </div>
     </div>

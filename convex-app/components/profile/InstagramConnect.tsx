@@ -86,69 +86,44 @@ export function InstagramConnect({ userId, onProfileImageSync }: InstagramConnec
 
   const handleCreateProfileAndConnect = async () => {
     setError(null);
+    setIsCreatingProfile(true);
 
     try {
-      let profileKey = ayrshareProfileKey;
-
-      // Step 1: Create Ayrshare profile if not exists
-      if (!profileKey) {
-        setIsCreatingProfile(true);
-
-        const createResponse = await fetch("/api/ayrshare", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "create-profile",
-            userId,
-          }),
-        });
-
-        const createData = await createResponse.json();
-
-        if (!createData.success) {
-          throw new Error(createData.error || "Failed to create Ayrshare profile");
-        }
-
-        profileKey = createData.profileKey;
-
-        // Save profile key to Convex
-        await saveAyrshareProfileKey({
-          userId,
-          ayrshareProfileKey: profileKey,
-        });
-
-        setIsCreatingProfile(false);
-      }
-
-      // Step 2: Get connect URL and redirect
-      setIsConnecting(true);
-
-      const connectResponse = await fetch("/api/ayrshare", {
+      // Step 1: Create profile and get SSO URL in one call
+      const response = await fetch("/api/ayrshare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "connect-url",
-          profileKey,
+          action: "create-and-connect",
+          userId,
           redirectUrl: `${window.location.origin}/profile?connected=true`,
         }),
       });
 
-      const connectData = await connectResponse.json();
+      const data = await response.json();
 
-      if (!connectData.success) {
-        throw new Error(connectData.error || "Failed to get connect URL");
+      if (!data.success) {
+        throw new Error(data.error || "Failed to create profile");
       }
 
-      // Open Ayrshare in new tab (user stays on profile page)
-      window.open(connectData.url, '_blank');
+      console.log("[InstagramConnect] Opening Ayrshare SSO");
+
+      // Open SSO URL IMMEDIATELY (no await in between)
+      window.open(data.url, '_blank');
+
+      // Save profile key in background (don't await)
+      saveAyrshareProfileKey({
+        userId,
+        ayrshareProfileKey: data.profileKey,
+        ayrshareRefId: data.refId,
+      }).catch(err => console.error("Failed to save profile key:", err));
 
       setSuccessMessage("Connect your Instagram in the new tab, then click 'Refresh Status' when done");
-      setIsConnecting(false);
+      setIsCreatingProfile(false);
     } catch (err) {
       console.error("Error connecting Instagram:", err);
       setError(err instanceof Error ? err.message : "Failed to connect Instagram");
       setIsCreatingProfile(false);
-      setIsConnecting(false);
     }
   };
 

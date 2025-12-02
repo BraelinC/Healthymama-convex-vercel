@@ -942,6 +942,7 @@ export default defineSchema({
 
     // Ayrshare / Instagram integration
     ayrshareProfileKey: v.optional(v.string()), // Ayrshare profile key for this user
+    ayrshareRefId: v.optional(v.string()),      // Ayrshare profile refId (from webhooks)
     instagramConnected: v.optional(v.boolean()), // Whether Instagram is connected
     instagramUsername: v.optional(v.string()), // Connected Instagram username
 
@@ -950,7 +951,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"])
-    .index("by_unique_profile_name", ["uniqueProfileName"]),
+    .index("by_unique_profile_name", ["uniqueProfileName"])
+    .index("by_ayrshareRefId", ["ayrshareRefId"]),
 
   // Tier 2: Learned Preferences (Dynamic - AI-Extracted from Conversations)
   learnedPreferences: defineTable({
@@ -1295,7 +1297,8 @@ export default defineSchema({
     createdBy: v.optional(v.string()),          // Admin userId who added it
   })
     .index("by_status", ["status"])
-    .index("by_profileKey", ["ayrshareProfileKey"]),
+    .index("by_profileKey", ["ayrshareProfileKey"])
+    .index("by_refId", ["ayrshareRefId"]),
 
   dmConversations: defineTable({
     instagramAccountId: v.id("instagramAccounts"), // Which bot account
@@ -1344,4 +1347,33 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_expiresAt", ["expiresAt"]),
+
+  // User Instagram Conversations (for regular users receiving their own DMs)
+  userInstagramConversations: defineTable({
+    userId: v.string(),                    // HealthyMama user ID (from users table)
+    instagramUserId: v.string(),           // Instagram sender's user ID
+    instagramUsername: v.string(),         // Instagram sender's username
+    lastMessageAt: v.number(),
+    lastMessageText: v.string(),
+    unreadCount: v.number(),               // Number of unread messages
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_and_instagram", ["userId", "instagramUserId"])
+    .index("by_last_message", ["userId", "lastMessageAt"]),
+
+  // User Instagram Messages
+  userInstagramMessages: defineTable({
+    conversationId: v.id("userInstagramConversations"),
+    userId: v.string(),                    // HealthyMama user ID (for easy querying)
+    direction: v.union(v.literal("inbound"), v.literal("outbound")),
+    messageText: v.string(),
+    instagramMessageId: v.string(),        // Ayrshare/Instagram message ID
+    read: v.boolean(),                     // Whether user has read this message
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId", "createdAt"])
+    .index("by_user", ["userId", "createdAt"]),
 });
+
