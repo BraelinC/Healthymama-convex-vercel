@@ -9,7 +9,17 @@ export async function POST(request: Request) {
   try {
     const AYRSHARE_BASE_URL = "https://api.ayrshare.com";
     const AYRSHARE_API_KEY = process.env.AYRSHARE_API_KEY;
-    const WEBHOOK_URL = "https://fearless-goldfinch-827.convex.site/mikey/webhook";
+
+    // Build webhook URL from Convex deployment URL
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (!convexUrl) {
+      return NextResponse.json({
+        success: false,
+        error: "NEXT_PUBLIC_CONVEX_URL not configured"
+      }, { status: 500 });
+    }
+
+    const WEBHOOK_URL = convexUrl.replace(".cloud", ".site").replace("/api", "") + "/mikey/webhook";
 
     if (!AYRSHARE_API_KEY) {
       return NextResponse.json({

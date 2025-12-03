@@ -798,13 +798,21 @@ export const registerWebhookForProfile = action({
   handler: async (ctx, args) => {
     const AYRSHARE_BASE_URL = "https://api.ayrshare.com";
     const AYRSHARE_API_KEY = process.env.AYRSHARE_API_KEY;
-    const WEBHOOK_URL = "https://fearless-goldfinch-827.convex.site/mikey/webhook";
+
+    // Build webhook URL dynamically from environment
+    // CONVEX_SITE_URL should be set to your Convex deployment URL (e.g., https://zealous-sockeye-430.convex.site)
+    const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL;
+    if (!CONVEX_SITE_URL) {
+      throw new Error("CONVEX_SITE_URL is not configured");
+    }
+    const WEBHOOK_URL = `${CONVEX_SITE_URL}/mikey/webhook`;
 
     if (!AYRSHARE_API_KEY) {
       throw new Error("AYRSHARE_API_KEY is not configured");
     }
 
     console.log(`[Webhook Registration] Registering webhook for profile: ${args.profileKey}`);
+    console.log(`[Webhook Registration] Webhook URL: ${WEBHOOK_URL}`);
 
     try {
       const response = await fetch(`${AYRSHARE_BASE_URL}/api/hook/webhook`, {
