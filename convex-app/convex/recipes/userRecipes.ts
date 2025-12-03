@@ -425,6 +425,11 @@ export const saveRecipeToUserCookbookWithParsed = mutation({
     const now = Date.now();
 
     console.log("[saveRecipeToUserCookbookWithParsed] Inserting recipe:", args.title, "for user:", args.userId);
+    console.log("[saveRecipeToUserCookbookWithParsed] 🎥 MUX fields being saved:", {
+      muxPlaybackId: args.muxPlaybackId,
+      muxAssetId: args.muxAssetId,
+      instagramVideoUrl: args.instagramVideoUrl,
+    });
 
     const userRecipeId = await ctx.db.insert("userRecipes", {
       userId: args.userId,
@@ -557,7 +562,21 @@ export const getUserRecipeById = query({
     const userRecipe = await ctx.db.get(args.recipeId);
     if (!userRecipe) return null;
 
-    return await enrichUserRecipeWithSource(ctx, userRecipe);
+    console.log(`[getUserRecipeById] Raw recipe from DB - 🎥 MUX fields:`, {
+      id: userRecipe._id,
+      muxPlaybackId: userRecipe.muxPlaybackId,
+      muxAssetId: userRecipe.muxAssetId,
+    });
+
+    const enriched = await enrichUserRecipeWithSource(ctx, userRecipe);
+
+    console.log(`[getUserRecipeById] After enrichment - 🎥 MUX fields:`, {
+      id: enriched._id,
+      muxPlaybackId: enriched.muxPlaybackId,
+      muxAssetId: enriched.muxAssetId,
+    });
+
+    return enriched;
   },
 });
 
@@ -597,9 +616,24 @@ export const updateRecipeCookbook = mutation({
       throw new Error("Recipe not found or access denied");
     }
 
+    console.log("[updateRecipeCookbook] BEFORE update - Recipe:", args.userRecipeId);
+    console.log("[updateRecipeCookbook] BEFORE update - 🎥 MUX fields:", {
+      muxPlaybackId: recipe.muxPlaybackId,
+      muxAssetId: recipe.muxAssetId,
+      instagramVideoUrl: recipe.instagramVideoUrl,
+    });
+
     await ctx.db.patch(args.userRecipeId, {
       cookbookCategory: args.newCookbookCategory,
       updatedAt: Date.now(),
+    });
+
+    // Verify muxPlaybackId is still there after update
+    const updatedRecipe = await ctx.db.get(args.userRecipeId);
+    console.log("[updateRecipeCookbook] AFTER update - 🎥 MUX fields:", {
+      muxPlaybackId: updatedRecipe?.muxPlaybackId,
+      muxAssetId: updatedRecipe?.muxAssetId,
+      instagramVideoUrl: updatedRecipe?.instagramVideoUrl,
     });
 
     return { success: true };
@@ -816,10 +850,27 @@ export const getUserRecipesByCookbook = query({
       .order("desc")
       .collect();
 
+    console.log(`[getUserRecipesByCookbook] Found ${userRecipes.length} recipes in ${args.cookbookCategory}`);
+    if (userRecipes.length > 0) {
+      console.log(`[getUserRecipesByCookbook] First recipe 🎥 MUX fields:`, {
+        id: userRecipes[0]._id,
+        muxPlaybackId: userRecipes[0].muxPlaybackId,
+        muxAssetId: userRecipes[0].muxAssetId,
+      });
+    }
+
     // Enrich each recipe with source data
     const enrichedRecipes = await Promise.all(
       userRecipes.map((recipe) => enrichUserRecipeWithSource(ctx, recipe))
     );
+
+    if (enrichedRecipes.length > 0) {
+      console.log(`[getUserRecipesByCookbook] After enrichment - First recipe 🎥 MUX fields:`, {
+        id: enrichedRecipes[0]._id,
+        muxPlaybackId: enrichedRecipes[0].muxPlaybackId,
+        muxAssetId: enrichedRecipes[0].muxAssetId,
+      });
+    }
 
     return enrichedRecipes;
   },

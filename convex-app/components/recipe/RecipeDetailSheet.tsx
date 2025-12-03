@@ -128,7 +128,11 @@ export function RecipeDetailSheet({
           {/* Scrollable Content */}
           <div className="overflow-y-auto h-[calc(90vh-100px)] pb-6">
             <UnifiedRecipeCard
-              recipe={recipe}
+              recipe={{
+                ...recipe,
+                name: recipe.title,
+                steps: recipe.instructions,
+              }}
               userId={userId}
               isFavorited={isFavorited}
               onToggleFavorite={handleToggleFavorite}
