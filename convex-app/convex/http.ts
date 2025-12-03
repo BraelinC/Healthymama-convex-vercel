@@ -193,7 +193,7 @@ http.route({
             instagramUserId: senderDetails?.id || body.senderId || "",
             instagramUsername: senderDetails?.username || body.senderUsername || "unknown",
             messageText,
-            arshareMessageId: messageId || conversationId || body.id || `${Date.now()}`,
+            arshareMessageId: body.id || messageId || `${conversationId}_${Date.now()}`,
           });
 
           console.log("[Ayrshare Webhook] ✅ DM processed as Mikey bot message");
