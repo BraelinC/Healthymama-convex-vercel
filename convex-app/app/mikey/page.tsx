@@ -113,6 +113,40 @@ export default function MikeyPage() {
     }
   };
 
+  // Handle register webhook globally
+  const handleRegisterWebhookGlobal = async () => {
+    toast({
+      title: "Registering Webhook...",
+      description: "Registering webhook at account level for ALL Instagram accounts",
+    });
+
+    try {
+      const response = await fetch("/api/mikey/register-webhook-global", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("Registration failed");
+      }
+
+      const data = await response.json();
+
+      toast({
+        title: data.success ? "Webhook Registered!" : "Registration Failed",
+        description: data.message || data.error,
+        variant: data.success ? "default" : "destructive",
+        duration: 7000,
+      });
+    } catch (error) {
+      console.error("Register webhook error:", error);
+      toast({
+        title: "Registration Failed",
+        description: "Failed to register webhook. Check console for details.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle test webhook
   const handleTestWebhook = async () => {
     toast({
@@ -314,6 +348,9 @@ export default function MikeyPage() {
               <p className="text-sm text-gray-600">Instagram DM Automation Dashboard</p>
             </div>
             <div className="flex items-center gap-2">
+              <Button onClick={handleRegisterWebhookGlobal} variant="default" className="flex items-center gap-2 bg-green-600 hover:bg-green-700">
+                Register Webhook
+              </Button>
               <Button onClick={handleTestWebhook} variant="outline" className="flex items-center gap-2">
                 Test Webhook
               </Button>
