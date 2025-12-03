@@ -229,10 +229,22 @@ export function UnifiedRecipeCard({
   // Get priority tags (max 2: 1 meal type + 1 diet type)
   const priorityTags = selectPriorityTags(recipe, activeFilter);
 
+  // Extract muxPlaybackId from Mux thumbnail URL if missing
+  // Mux thumbnail URLs have format: https://image.mux.com/{PLAYBACK_ID}/thumbnail.jpg
+  let effectiveMuxPlaybackId = recipe.muxPlaybackId;
+  if (!effectiveMuxPlaybackId && recipe.imageUrl?.includes('image.mux.com')) {
+    const match = recipe.imageUrl.match(/image\.mux\.com\/([^/]+)\//);
+    if (match) {
+      effectiveMuxPlaybackId = match[1];
+      console.log('[UnifiedRecipeCard] 🔧 Extracted muxPlaybackId from thumbnail:', effectiveMuxPlaybackId);
+    }
+  }
+
   // DEBUG: Log Mux video fields
   console.log('[UnifiedRecipeCard] Recipe data:', {
     title: recipe.title || recipe.name,
     muxPlaybackId: recipe.muxPlaybackId,
+    extractedPlaybackId: effectiveMuxPlaybackId,
     muxAssetId: recipe.muxAssetId,
     imageUrl: recipe.imageUrl,
     hasVideoSegments: !!recipe.videoSegments,
@@ -244,9 +256,9 @@ export function UnifiedRecipeCard({
       {/* Image/Video Section with Action Buttons Overlay */}
       <div className="relative">
         <div className="relative h-64 w-full bg-gray-200">
-          {recipe.muxPlaybackId ? (
+          {effectiveMuxPlaybackId ? (
             <MuxPlayer
-              playbackId={recipe.muxPlaybackId}
+              playbackId={effectiveMuxPlaybackId}
               className="w-full h-full object-cover"
               streamType="on-demand"
               muted={false}
