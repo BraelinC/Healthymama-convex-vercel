@@ -195,7 +195,7 @@ export default function RecipePage({ params }: RecipePageProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.back()}
+              onClick={() => router.push("/")}
               className="hover:bg-gray-100"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -224,7 +224,7 @@ export default function RecipePage({ params }: RecipePageProps) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.back()}
+            onClick={() => router.push("/")}
             className="hover:bg-gray-100"
           >
             <ArrowLeft className="w-5 h-5" />
