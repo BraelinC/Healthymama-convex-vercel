@@ -1348,6 +1348,16 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_expiresAt", ["expiresAt"]),
 
+  // Webhook event deduplication tracking
+  webhookEvents: defineTable({
+    webhookId: v.string(),              // Unique webhook ID from Ayrshare (body.id)
+    refId: v.string(),                  // Ayrshare refId for debugging
+    conversationId: v.string(),         // Instagram conversation ID for debugging
+    createdAt: v.number(),
+  })
+    .index("by_webhookId", ["webhookId"])
+    .index("by_createdAt", ["createdAt"]),
+
   // User Instagram Conversations (for regular users receiving their own DMs)
   userInstagramConversations: defineTable({
     userId: v.string(),                    // HealthyMama user ID (from users table)

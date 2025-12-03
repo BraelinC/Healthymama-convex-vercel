@@ -381,3 +381,24 @@ export const getUserConversations = query({
     return conversations;
   },
 });
+
+/**
+ * Check if webhook ID was recently processed (for deduplication)
+ */
+export const checkRecentWebhookId = query({
+  args: {
+    webhookId: v.string(),
+    windowSeconds: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const cutoffTime = Date.now() - (args.windowSeconds * 1000);
+
+    const recentWebhooks = await ctx.db
+      .query("webhookEvents")
+      .filter((q) => q.eq(q.field("webhookId"), args.webhookId))
+      .filter((q) => q.gt(q.field("createdAt"), cutoffTime))
+      .collect();
+
+    return recentWebhooks;
+  },
+});

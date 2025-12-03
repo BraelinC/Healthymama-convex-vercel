@@ -560,3 +560,22 @@ export const deleteAllPendingProfiles = mutation({
     return deletedCount;
   },
 });
+
+/**
+ * Log webhook ID for deduplication tracking
+ */
+export const logWebhookId = mutation({
+  args: {
+    webhookId: v.string(),
+    refId: v.string(),
+    conversationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("webhookEvents", {
+      webhookId: args.webhookId,
+      refId: args.refId,
+      conversationId: args.conversationId,
+      createdAt: Date.now(),
+    });
+  },
+});

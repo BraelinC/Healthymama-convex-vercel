@@ -109,10 +109,37 @@ http.route({
           });
         }
 
+        // CRITICAL: Deduplicate webhook events using webhook ID
+        // Ayrshare sends SAME message with DIFFERENT refIds - we must deduplicate by webhook ID
+        const webhookId = body.id || `${conversationId}_${body.created}`;
+
+        // Check if we processed this exact webhook in the last 60 seconds
+        const recentWebhooks = await ctx.runQuery(internal.mikey.queries.checkRecentWebhookId, {
+          webhookId,
+          windowSeconds: 60,
+        });
+
+        if (recentWebhooks && recentWebhooks.length > 0) {
+          console.log("[Ayrshare Webhook] ⚠️ Duplicate webhook detected (same ID):", webhookId);
+          console.log("[Ayrshare Webhook] Already processed at:", new Date(recentWebhooks[0].createdAt).toISOString());
+          return new Response(
+            JSON.stringify({ success: true, processed: false, skipped: "duplicate_webhook_id" }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        // Log this webhook ID for future deduplication
+        await ctx.runMutation(internal.mikey.mutations.logWebhookId, {
+          webhookId,
+          refId: refId || "",
+          conversationId: conversationId || "",
+        });
+
         console.log("[Ayrshare Webhook] 🎉 Instagram DM received from:", senderDetails?.username || "unknown");
         console.log("[Ayrshare Webhook] Message:", message);
         console.log("[Ayrshare Webhook] Attachments:", body.attachments);
         console.log("[Ayrshare Webhook] RefId:", refId);
+        console.log("[Ayrshare Webhook] Webhook ID:", webhookId);
 
         // Extract message text or Instagram reel URL from attachments
         let messageText = typeof message === "string" ? message : message?.text || "";
