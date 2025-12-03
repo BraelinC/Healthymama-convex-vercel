@@ -310,6 +310,17 @@ export const importRecipeFromDM = action({
     } catch (error: any) {
       console.error("[Mikey] importRecipeFromDM error:", error);
 
+      // If recipe was already imported, silently skip (webhook duplicate)
+      if (error.message?.includes("already been imported")) {
+        console.log("[Mikey] Recipe already imported, skipping duplicate webhook");
+        await ctx.runMutation(api.mikey.mutations.updateMessageStatus, {
+          messageId: args.messageId,
+          status: "completed",
+          errorMessage: "Duplicate - recipe already imported",
+        });
+        return { success: true, skipped: true, reason: "already_imported" };
+      }
+
       // Update message with error
       await ctx.runMutation(api.mikey.mutations.updateMessageStatus, {
         messageId: args.messageId,
