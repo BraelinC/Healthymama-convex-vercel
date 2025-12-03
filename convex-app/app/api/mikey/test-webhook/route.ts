@@ -7,14 +7,17 @@ import { NextResponse } from "next/server";
  */
 export async function POST(request: Request) {
   try {
-    const WEBHOOK_URL = process.env.NEXT_PUBLIC_CONVEX_URL?.replace("/api", "") + "/mikey/webhook";
-
-    if (!WEBHOOK_URL) {
+    // Convex HTTP endpoints use .site domain, not .cloud
+    // Convert https://fearless-goldfinch-827.convex.cloud to https://fearless-goldfinch-827.convex.site
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (!convexUrl) {
       return NextResponse.json({
         success: false,
-        message: "Webhook URL not configured"
+        message: "NEXT_PUBLIC_CONVEX_URL not configured"
       }, { status: 500 });
     }
+
+    const WEBHOOK_URL = convexUrl.replace(".cloud", ".site").replace("/api", "") + "/mikey/webhook";
 
     console.log("[Test Webhook] Sending test message to:", WEBHOOK_URL);
 
