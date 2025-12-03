@@ -223,28 +223,7 @@ export const processIncomingDM = mutation({
       };
     }
 
-    // 4. AGGRESSIVE: Check if we just sent a response (prevents duplicate webhook processing)
-    // If there's an outbound message in the last 10 seconds, skip this incoming message entirely
-    const recentOutboundMessage = await ctx.db
-      .query("dmMessages")
-      .withIndex("by_conversation", (q) => q.eq("conversationId", conversation._id))
-      .filter((q) => q.eq(q.field("direction"), "outbound"))
-      .filter((q) => q.gt(q.field("createdAt"), Date.now() - 10000)) // Last 10 seconds
-      .first();
-
-    if (recentOutboundMessage) {
-      console.log("[Mikey] ⚠️ Already sent response recently, skipping duplicate webhook");
-      // Return fake message ID to satisfy caller, but don't process
-      return {
-        messageId: recentOutboundMessage._id,
-        conversationId: conversation._id,
-        userId: instagramAccount.userId,
-        duplicate: true,
-        reason: "recent_outbound_message",
-      };
-    }
-
-    // 5. Check rate limits
+    // 4. Check rate limits
     const recentMessages = await ctx.db
       .query("dmMessages")
       .withIndex("by_conversation", (q) => q.eq("conversationId", conversation._id))
