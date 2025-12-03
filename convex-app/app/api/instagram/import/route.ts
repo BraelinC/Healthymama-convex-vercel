@@ -786,9 +786,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Detect URL type
+    console.log(`[Video Import] === URL Validation Debug ===`);
+    console.log(`[Video Import] Raw URL:`, url);
+    console.log(`[Video Import] URL type:`, typeof url);
+    console.log(`[Video Import] URL length:`, url?.length);
+    console.log(`[Video Import] Is CDN URL (lookaside check):`, url?.includes('lookaside.fbsbx.com'));
+    console.log(`[Video Import] Is CDN URL (full path check):`, url?.includes('lookaside.fbsbx.com/ig_messaging_cdn'));
     const isInstagram = isInstagramUrl(url);
     const isYouTube = isYouTubeUrl(url);
     const isPinterest = isPinterestUrl(url);
+    console.log(`[Video Import] Validation results - isInstagram:`, isInstagram, 'isYouTube:', isYouTube, 'isPinterest:', isPinterest);
 
     // YouTube is temporarily disabled
     if (isYouTube) {
@@ -798,14 +805,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isInstagram && !isPinterest) {
+    // TEMPORARY: Force-accept Facebook CDN URLs for debugging
+    const isCdnUrl = url.includes('lookaside.fbsbx.com/ig_messaging_cdn');
+    console.log(`[Video Import] Is CDN URL:`, isCdnUrl);
+
+    if (!isInstagram && !isPinterest && !isCdnUrl) {
+      console.log(`[Video Import] ❌ URL validation failed - rejecting URL`);
       return NextResponse.json(
         { error: 'Invalid URL - must be Instagram or Pinterest URL' },
         { status: 400 }
       );
     }
 
-    const platform = isPinterest ? 'Pinterest' : (isInstagram ? 'Instagram' : 'YouTube');
+    console.log(`[Video Import] ✅ URL validation passed`);
+
+    // Determine platform (CDN URLs are Instagram)
+    const platform = isPinterest ? 'Pinterest' : ((isInstagram || isCdnUrl) ? 'Instagram' : 'YouTube');
     console.log(`\n[${platform} Import] Starting import for: ${url}`);
 
     // Step 1: Extract data based on platform
@@ -831,10 +846,8 @@ export async function POST(request: NextRequest) {
       console.log(`[Pinterest Import] Description length: ${description?.length || 0} chars`);
       console.log(`[Pinterest Import] External link: ${pinterestData.link || 'none'}`);
       console.log(`[Pinterest Import] Domain: ${pinterestData.domain || 'none'}`);
-    } else if (isInstagram) {
-      // Check if this is a Facebook CDN URL (from Ayrshare webhooks)
-      const isCdnUrl = url.includes('lookaside.fbsbx.com/ig_messaging_cdn');
-
+    } else if (isInstagram || isCdnUrl) {
+      // Process Instagram URLs (including CDN URLs from webhooks)
       if (isCdnUrl) {
         // CDN URL is already a direct video link - skip HikerAPI
         console.log('[Instagram Import] Detected CDN URL - using direct video link');
