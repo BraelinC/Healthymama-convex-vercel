@@ -877,8 +877,19 @@ export async function POST(request: NextRequest) {
     if (downloadedVideoUrl) {
       try {
         console.log(`[${platform} Import] Uploading video to Mux...`);
-        const passthrough = isPinterest ? `pinterest:${pinterestData?.pinId}` :
-                           (isYouTube ? `youtube:${videoId}` : `instagram:${url.split('/').pop()}`);
+
+        // Extract a short identifier for passthrough (max 255 chars)
+        let passthrough = '';
+        if (isPinterest) {
+          passthrough = `pinterest:${pinterestData?.pinId}`;
+        } else if (isYouTube) {
+          passthrough = `youtube:${videoId}`;
+        } else {
+          // For Instagram CDN URLs, extract just the asset_id
+          const assetIdMatch = downloadedVideoUrl.match(/asset_id=(\d+)/);
+          const assetId = assetIdMatch ? assetIdMatch[1] : Date.now().toString();
+          passthrough = `instagram:${assetId}`;
+        }
 
         muxData = await uploadVideoFromUrl(downloadedVideoUrl, { passthrough });
         console.log(`[${platform} Import] ✅ Mux upload complete: ${muxData.playbackId}`);
