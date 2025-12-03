@@ -113,6 +113,39 @@ export default function MikeyPage() {
     }
   };
 
+  // Handle test webhook
+  const handleTestWebhook = async () => {
+    toast({
+      title: "Testing Webhook...",
+      description: "Sending a test message to verify webhook configuration",
+    });
+
+    try {
+      const response = await fetch("/api/mikey/test-webhook", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("Test failed");
+      }
+
+      const data = await response.json();
+
+      toast({
+        title: "Webhook Test Result",
+        description: data.message,
+        variant: data.success ? "default" : "destructive",
+      });
+    } catch (error) {
+      console.error("Test webhook error:", error);
+      toast({
+        title: "Test Failed",
+        description: "Failed to test webhook. Check console for details.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle add account
   const handleAddAccount = async () => {
     console.log("[Frontend] === STARTING INSTAGRAM CONNECTION ===");
@@ -281,6 +314,9 @@ export default function MikeyPage() {
               <p className="text-sm text-gray-600">Instagram DM Automation Dashboard</p>
             </div>
             <div className="flex items-center gap-2">
+              <Button onClick={handleTestWebhook} variant="outline" className="flex items-center gap-2">
+                Test Webhook
+              </Button>
               <Button onClick={handleCleanup} variant="outline" className="flex items-center gap-2">
                 <Trash2 className="w-4 h-4" />
                 Delete All
