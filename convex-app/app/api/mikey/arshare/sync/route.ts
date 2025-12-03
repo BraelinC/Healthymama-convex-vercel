@@ -94,13 +94,24 @@ export async function GET(request: Request) {
             createdBy: "admin",
           });
 
+          console.log(`[Ayrshare Sync] Added Instagram account: ${username}`);
+
+          // 🔥 AUTOMATICALLY REGISTER WEBHOOK for this profile
+          try {
+            await convex.action(api.mikey.actions.registerWebhookForProfile, {
+              profileKey,
+            });
+            console.log(`[Ayrshare Sync] ✅ Webhook registered for profile ${profileKey}`);
+          } catch (webhookError: any) {
+            console.error(`[Ayrshare Sync] ⚠️ Failed to register webhook for ${profileKey}:`, webhookError.message);
+            // Don't fail the whole sync if webhook registration fails
+          }
+
           accountsAdded.push({
             username,
             profileKey,
             refId: profile.refId,
           });
-
-          console.log(`[Ayrshare Sync] Added Instagram account: ${username}`);
         } catch (error: any) {
           console.error(`[Ayrshare Sync] Error adding account ${username}:`, error.message);
         }
