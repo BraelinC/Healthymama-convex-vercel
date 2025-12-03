@@ -197,6 +197,8 @@ export const importInstagramRecipe = action({
     // Save Recipe with PRE-PARSED INGREDIENTS for instant grocery lists
     // This parses ingredients ONCE with AI during import
     console.log(`[${source || 'Video Import'}] Calling saveRecipeWithParsedIngredients for "${title}"`);
+    console.log(`[${source || 'Video Import'}] 🎥 MUX Playback ID to save:`, muxPlaybackId);
+    console.log(`[${source || 'Video Import'}] 🎥 MUX Asset ID to save:`, muxAssetId);
     const recipeId = await ctx.runAction(api.recipes.userRecipes.saveRecipeWithParsedIngredients, {
       userId,
       recipeType: "community", // Video imports are external recipes

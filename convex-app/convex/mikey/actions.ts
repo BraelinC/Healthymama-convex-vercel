@@ -242,6 +242,9 @@ export const importRecipeFromDM = action({
       console.log("[Mikey] Recipe extracted:", extractResult.recipe.title);
       console.log("[Mikey] Ingredients:", extractResult.recipe.ingredients?.length || 0);
       console.log("[Mikey] Instructions:", extractResult.recipe.instructions?.length || 0);
+      console.log("[Mikey] 🎥 MUX Playback ID from API:", extractResult.recipe.muxPlaybackId);
+      console.log("[Mikey] 🎥 MUX Asset ID from API:", extractResult.recipe.muxAssetId);
+      console.log("[Mikey] 📹 Instagram Video URL:", extractResult.recipe.instagramVideoUrl);
 
       // Step 2: Save recipe to database using importInstagramRecipe
       const recipe = extractResult.recipe;
