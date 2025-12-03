@@ -717,6 +717,13 @@ export const saveSharedRecipeToUserCookbook = mutation({
       // User B's organization
       cookbookCategory: args.cookbookCategory,
 
+      // Copy Mux video data from shared recipe (for Instagram/video recipes)
+      muxPlaybackId: sharedRecipe.muxPlaybackId,
+      muxAssetId: sharedRecipe.muxAssetId,
+      instagramVideoUrl: sharedRecipe.instagramVideoUrl,
+      instagramUsername: sharedRecipe.instagramUsername,
+      videoSegments: sharedRecipe.videoSegments,
+
       // Metadata
       isFavorited: false,
       createdAt: Date.now(),
