@@ -229,6 +229,15 @@ export function UnifiedRecipeCard({
   // Get priority tags (max 2: 1 meal type + 1 diet type)
   const priorityTags = selectPriorityTags(recipe, activeFilter);
 
+  // DEBUG: Log Mux video fields
+  console.log('[UnifiedRecipeCard] Recipe data:', {
+    title: recipe.title || recipe.name,
+    muxPlaybackId: recipe.muxPlaybackId,
+    muxAssetId: recipe.muxAssetId,
+    imageUrl: recipe.imageUrl,
+    hasVideoSegments: !!recipe.videoSegments,
+  });
+
   return (
     <>
     <Card className="overflow-hidden shadow-lg max-w-2xl mx-auto bg-white">
