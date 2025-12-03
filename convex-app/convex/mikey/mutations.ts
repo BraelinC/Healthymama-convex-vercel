@@ -189,7 +189,24 @@ export const processIncomingDM = mutation({
       throw new Error("Failed to create conversation");
     }
 
-    // 3. Check rate limits
+    // 3. Check for duplicate message (prevents processing same webhook twice)
+    const existingMessage = await ctx.db
+      .query("dmMessages")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", conversation._id))
+      .filter((q) => q.eq(q.field("arshareMessageId"), args.arshareMessageId))
+      .first();
+
+    if (existingMessage) {
+      console.log("[Mikey] Duplicate message detected, skipping:", args.arshareMessageId);
+      return {
+        messageId: existingMessage._id,
+        conversationId: conversation._id,
+        userId: instagramAccount.userId,
+        duplicate: true,
+      };
+    }
+
+    // 4. Check rate limits
     const recentMessages = await ctx.db
       .query("dmMessages")
       .withIndex("by_conversation", (q) => q.eq("conversationId", conversation._id))
@@ -204,7 +221,7 @@ export const processIncomingDM = mutation({
       throw new Error("Rate limit exceeded");
     }
 
-    // 4. Save incoming message
+    // 5. Save incoming message
     const messageId = await ctx.db.insert("dmMessages", {
       conversationId: conversation._id,
       direction: "inbound",
@@ -214,13 +231,13 @@ export const processIncomingDM = mutation({
       createdAt: Date.now(),
     });
 
-    // 5. Update conversation
+    // 6. Update conversation
     await ctx.db.patch(conversation._id, {
       lastMessageAt: Date.now(),
       messageCount: (conversation.messageCount || 0) + 1,
     });
 
-    // 6. Extract and validate Instagram reel URL
+    // 7. Extract and validate Instagram reel URL
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const urls = args.messageText.match(urlRegex);
 
