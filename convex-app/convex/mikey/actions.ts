@@ -1,6 +1,7 @@
 /**
  * Mikey: Instagram DM Automation - Actions
- * External API calls (Arshare, recipe extraction)
+ * External API calls (Ayrshare, recipe extraction)
+ * Updated: Dec 3, 2024
  */
 
 import { v } from "convex/values";
