@@ -179,19 +179,25 @@ export const importInstagramRecipe = action({
     const imageUrl = isPinterest ? pinterestThumbnailUrl :
                      (isYouTube ? youtubeThumbnailUrl : (instagramThumbnailUrl || instagramVideoUrl));
 
-    // Duplicate Detection: Check if recipe already exists in same cookbook
-    const existingRecipe = await ctx.runQuery(api.recipes.userRecipes.getUserRecipeByTitle, {
-      userId,
-      title,
-    });
+    // Duplicate Detection: Only check non-Instagram recipes
+    // For Instagram recipes, allow re-imports (message-level dedup handles webhooks)
+    if (isPinterest || isYouTube) {
+      const existingRecipe = await ctx.runQuery(api.recipes.userRecipes.getUserRecipeByTitle, {
+        userId,
+        title,
+      });
 
-    if (existingRecipe && existingRecipe.cookbookCategory === cookbookCategory) {
-      console.log(`[${source || 'Video Import'}] Recipe "${title}" already imported for user ${userId}`);
-      return {
-        success: false,
-        error: "This recipe has already been imported",
-        recipeId: existingRecipe._id,
-      };
+      if (existingRecipe && existingRecipe.cookbookCategory === cookbookCategory) {
+        console.log(`[${source || 'Video Import'}] Recipe "${title}" already exists in ${cookbookCategory}`);
+        return {
+          success: false,
+          error: "This recipe has already been imported",
+          recipeId: existingRecipe._id,
+        };
+      }
+    } else {
+      // For Instagram: Skip recipe-level dedup, rely on message-level dedup only
+      console.log(`[Instagram Import] Allowing import - message-level dedup prevents webhook duplicates`);
     }
 
     // Save Recipe with PRE-PARSED INGREDIENTS for instant grocery lists
