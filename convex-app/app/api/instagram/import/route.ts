@@ -893,6 +893,12 @@ export async function POST(request: NextRequest) {
 
         muxData = await uploadVideoFromUrl(downloadedVideoUrl, { passthrough });
         console.log(`[${platform} Import] ✅ Mux upload complete: ${muxData.playbackId}`);
+
+        // Use Mux thumbnail if we don't have one yet
+        if (!thumbnailUrl && muxData.playbackId) {
+          thumbnailUrl = `https://image.mux.com/${muxData.playbackId}/thumbnail.jpg`;
+          console.log(`[${platform} Import] Using Mux thumbnail: ${thumbnailUrl}`);
+        }
       } catch (error: any) {
         console.error(`[${platform} Import] ⚠️ Mux upload failed:`, error.message);
         // Continue without Mux - will use original video URL as fallback
