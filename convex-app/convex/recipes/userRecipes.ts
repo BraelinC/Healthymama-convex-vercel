@@ -668,6 +668,28 @@ export const saveSharedRecipeToUserCookbook = mutation({
         category: undefined,
       };
     }
+    // For community recipes (Instagram/YouTube/Pinterest) without share cache,
+    // copy data from top-level fields (community recipes don't use customRecipeData)
+    else if (sharedRecipe.recipeType === "community") {
+      // Get enriched data which includes ingredients/instructions from source
+      const enrichedRecipe = await enrichUserRecipeWithSource(ctx, sharedRecipe);
+      if (enrichedRecipe.ingredients && enrichedRecipe.instructions) {
+        customRecipeDataCopy = {
+          title: enrichedRecipe.title || sharedRecipe.cachedTitle,
+          description: enrichedRecipe.description,
+          imageUrl: enrichedRecipe.imageUrl || sharedRecipe.cachedImageUrl,
+          ingredients: enrichedRecipe.ingredients,
+          instructions: enrichedRecipe.instructions,
+          servings: enrichedRecipe.servings,
+          prep_time: enrichedRecipe.prep_time,
+          cook_time: enrichedRecipe.cook_time,
+          time_minutes: enrichedRecipe.time_minutes,
+          cuisine: enrichedRecipe.cuisine,
+          diet: enrichedRecipe.diet,
+          category: enrichedRecipe.category,
+        };
+      }
+    }
 
     // Create new userRecipe entry for User B
     const newRecipeId = await ctx.db.insert("userRecipes", {
