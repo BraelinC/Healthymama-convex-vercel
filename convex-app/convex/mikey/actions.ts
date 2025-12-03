@@ -743,6 +743,17 @@ export const processWebhookDM = action({
         arshareMessageId: args.arshareMessageId,
       });
 
+      // Check if this is a duplicate webhook (10-second blocking window triggered)
+      if (result.duplicate) {
+        console.log("[Mikey Webhook] ⚠️ Skipping duplicate webhook - already processed");
+        console.log("[Mikey Webhook] Reason:", result.reason || "duplicate");
+        return {
+          success: true,
+          skipped: true,
+          reason: result.reason || "duplicate",
+        };
+      }
+
       // 2. Handle based on message type
       if (result.needsHelpMessage) {
         // No URL found - send help message

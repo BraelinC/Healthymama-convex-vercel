@@ -175,28 +175,41 @@ http.route({
             headers: { "Content-Type": "application/json" },
           });
         } catch (botError: any) {
-          // If not a bot account, try regular user
-          console.log("[Ayrshare Webhook] Not a bot account, trying regular user...");
+          console.error("[Ayrshare Webhook] ⚠️ Bot account processing failed:", botError.message);
 
-          try {
-            await ctx.runMutation(internal.userInstagram.processUserIncomingDM, {
-              ayrshareRefId: refId || "",
-              instagramUserId: senderDetails?.id || body.senderId || "",
-              instagramUsername: senderDetails?.username || body.senderUsername || "unknown",
-              messageText: typeof message === "string" ? message : message?.text || "",
-              instagramMessageId: messageId || conversationId || body.id || `${Date.now()}`,
-            });
+          // Only fallback to user path if account not found
+          // Don't fallback for recipe import errors, duplicates, or other processing errors
+          if (botError.message?.includes("Instagram account not found")) {
+            console.log("[Ayrshare Webhook] Not a bot account, trying regular user...");
 
-            console.log("[Ayrshare Webhook] ✅ DM processed as regular user message");
+            try {
+              await ctx.runMutation(internal.userInstagram.processUserIncomingDM, {
+                ayrshareRefId: refId || "",
+                instagramUserId: senderDetails?.id || body.senderId || "",
+                instagramUsername: senderDetails?.username || body.senderUsername || "unknown",
+                messageText: typeof message === "string" ? message : message?.text || "",
+                instagramMessageId: messageId || conversationId || body.id || `${Date.now()}`,
+              });
 
-            return new Response(JSON.stringify({ success: true, processed: true, type: "user" }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            });
-          } catch (userError: any) {
-            console.error("[Ayrshare Webhook] ❌ Could not process DM:", userError.message);
-            throw userError;
+              console.log("[Ayrshare Webhook] ✅ DM processed as regular user message");
+
+              return new Response(JSON.stringify({ success: true, processed: true, type: "user" }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              });
+            } catch (userError: any) {
+              console.error("[Ayrshare Webhook] ❌ Could not process DM:", userError.message);
+              throw userError;
+            }
           }
+
+          // For other errors (duplicates, import failures), return success without fallback
+          // This prevents duplicate processing - the error message was already sent to user
+          console.log("[Ayrshare Webhook] Skipping fallback for error:", botError.message);
+          return new Response(
+            JSON.stringify({ success: true, processed: false, skipped: true, reason: botError.message }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
         }
       }
 
