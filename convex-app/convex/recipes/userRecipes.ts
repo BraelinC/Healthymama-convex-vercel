@@ -56,6 +56,12 @@ async function enrichUserRecipeWithSource(ctx: any, userRecipe: any) {
 
   // Source recipe not found - use cached data or old fields
   if (!sourceRecipe) {
+    console.log(`[enrichUserRecipe] No source recipe found for ${userRecipe._id}, using cached/top-level data`);
+    console.log(`[enrichUserRecipe] 🎥 MUX fields:`, {
+      muxPlaybackId: userRecipe.muxPlaybackId,
+      muxAssetId: userRecipe.muxAssetId,
+      instagramVideoUrl: userRecipe.instagramVideoUrl,
+    });
     return {
       ...userRecipe,
       title: userRecipe.cachedTitle || userRecipe.title || "Recipe Unavailable",
