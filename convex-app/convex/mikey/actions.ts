@@ -725,6 +725,7 @@ async function sendArshareMessage({
 export const processWebhookDM = action({
   args: {
     profileKey: v.string(),
+    botInstagramUserId: v.string(),  // The bot's Instagram user ID (recipientId from webhook)
     instagramUserId: v.string(),
     instagramUsername: v.string(),
     messageText: v.string(),
@@ -737,6 +738,7 @@ export const processWebhookDM = action({
       // 1. Save incoming message to database
       const result = await ctx.runMutation(api.mikey.mutations.processIncomingDM, {
         profileKey: args.profileKey,
+        botInstagramUserId: args.botInstagramUserId,  // Pass bot's Instagram user ID
         instagramUserId: args.instagramUserId,
         instagramUsername: args.instagramUsername,
         messageText: args.messageText,

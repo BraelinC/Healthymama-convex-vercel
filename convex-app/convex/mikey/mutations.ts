@@ -128,20 +128,28 @@ export const deleteInstagramAccount = mutation({
 export const processIncomingDM = mutation({
   args: {
     profileKey: v.string(), // Changed from arshareAccountId to profileKey
+    botInstagramUserId: v.string(),  // The bot's Instagram user ID (recipientId from webhook)
     instagramUserId: v.string(),
     instagramUsername: v.string(),
     messageText: v.string(),
     arshareMessageId: v.string(),
   },
   handler: async (ctx, args) => {
-    // 1. Find Instagram account by profileKey (which is actually refId from webhook)
-    // Webhooks send refId, not profileKey, so search by refId
+    // 1. Find Instagram account - try by Instagram user ID FIRST (most reliable)
     let instagramAccount = await ctx.db
       .query("instagramAccounts")
-      .withIndex("by_refId", (q) => q.eq("ayrshareRefId", args.profileKey))
+      .withIndex("by_instagramUserId", (q) => q.eq("instagramUserId", args.botInstagramUserId))
       .first();
 
-    // Fallback: try searching by profileKey if refId lookup fails
+    // Fallback 1: try searching by refId
+    if (!instagramAccount) {
+      instagramAccount = await ctx.db
+        .query("instagramAccounts")
+        .withIndex("by_refId", (q) => q.eq("ayrshareRefId", args.profileKey))
+        .first();
+    }
+
+    // Fallback 2: try searching by profileKey
     if (!instagramAccount) {
       instagramAccount = await ctx.db
         .query("instagramAccounts")
@@ -150,8 +158,17 @@ export const processIncomingDM = mutation({
     }
 
     if (!instagramAccount) {
-      console.error("[Mikey] Instagram account not found for profileKey/refId:", args.profileKey);
+      console.error("[Mikey] Instagram account not found for botInstagramUserId:", args.botInstagramUserId, "or profileKey/refId:", args.profileKey);
       throw new Error("Instagram account not found");
+    }
+
+    // Auto-populate instagramUserId if not set
+    if (!instagramAccount.instagramUserId && args.botInstagramUserId) {
+      console.log("[Mikey] Auto-populating instagramUserId for bot account:", args.botInstagramUserId);
+      await ctx.db.patch(instagramAccount._id, {
+        instagramUserId: args.botInstagramUserId,
+        updatedAt: Date.now(),
+      });
     }
 
     // 2. Find or create conversation

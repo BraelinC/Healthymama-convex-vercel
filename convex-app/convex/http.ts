@@ -90,7 +90,7 @@ http.route({
         body.action === "message" ||
         (body.action === "messages" && body.subAction === "messageCreated")
       ) {
-        const { profileKey, refId, platform, senderDetails, message, messageId, conversationId } = body;
+        const { profileKey, refId, platform, senderDetails, message, messageId, conversationId, recipientId } = body;
 
         if (platform !== "instagram") {
           return new Response(JSON.stringify({ success: true, processed: false }), {
@@ -189,6 +189,7 @@ http.route({
         try {
           await ctx.runAction(internal.mikey.actions.processWebhookDM, {
             profileKey: refId || "",
+            botInstagramUserId: recipientId || "",  // The bot's Instagram user ID (who received the message)
             instagramUserId: senderDetails?.id || body.senderId || "",
             instagramUsername: senderDetails?.username || body.senderUsername || "unknown",
             messageText,

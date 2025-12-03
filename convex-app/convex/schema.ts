@@ -1278,6 +1278,7 @@ export default defineSchema({
     arshareAccessToken: v.optional(v.string()), // DEPRECATED: Old Arshare access token
     ayrshareProfileKey: v.optional(v.string()), // Ayrshare Profile Key for messaging
     ayrshareRefId: v.optional(v.string()),      // Ayrshare Profile RefId
+    instagramUserId: v.optional(v.string()),    // Instagram user ID (from webhook recipientId)
 
     // OLD: Legacy fields (keep for existing accounts)
     password: v.optional(v.string()),
@@ -1298,7 +1299,8 @@ export default defineSchema({
   })
     .index("by_status", ["status"])
     .index("by_profileKey", ["ayrshareProfileKey"])
-    .index("by_refId", ["ayrshareRefId"]),
+    .index("by_refId", ["ayrshareRefId"])
+    .index("by_instagramUserId", ["instagramUserId"]),
 
   dmConversations: defineTable({
     instagramAccountId: v.id("instagramAccounts"), // Which bot account
