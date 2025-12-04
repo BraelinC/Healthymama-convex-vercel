@@ -1337,7 +1337,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_conversation", ["conversationId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_conversation_arshareId", ["conversationId", "arshareMessageId"]), // OCC-protected duplicate detection
 
   // Temporary storage for pending Ayrshare profile connections
   pendingAyrshareProfiles: defineTable({

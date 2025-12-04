@@ -206,19 +206,29 @@ export const processIncomingDM = mutation({
       throw new Error("Failed to create conversation");
     }
 
-    // 3. Check for duplicate message (prevents processing same webhook twice)
+    // 3. ATOMIC duplicate check using composite index + .unique()
+    // Convex OCC ensures only one mutation succeeds if race condition occurs
     const existingMessage = await ctx.db
       .query("dmMessages")
-      .withIndex("by_conversation", (q) => q.eq("conversationId", conversation._id))
-      .filter((q) => q.eq(q.field("arshareMessageId"), args.arshareMessageId))
-      .first();
+      .withIndex("by_conversation_arshareId", (q) =>
+        q.eq("conversationId", conversation._id)
+         .eq("arshareMessageId", args.arshareMessageId)
+      )
+      .unique();
 
     if (existingMessage) {
-      console.log("[Mikey] Duplicate message detected, skipping:", args.arshareMessageId);
+      console.warn("[Mikey] ⚠️ Duplicate message detected, skipping:", {
+        arshareMessageId: args.arshareMessageId,
+        conversationId: conversation._id,
+        existingMessageId: existingMessage._id,
+        originalCreatedAt: new Date(existingMessage.createdAt).toISOString(),
+        attemptedAt: new Date().toISOString(),
+      });
+
       return {
         messageId: existingMessage._id,
         conversationId: conversation._id,
-        userId: instagramAccount.userId,
+        userId: instagramAccount.userId || instagramAccount.createdBy,
         duplicate: true,
       };
     }
