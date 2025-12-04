@@ -72,6 +72,23 @@ export const getUserProfile = query({
 });
 
 /**
+ * Get user profile by Instagram username
+ */
+export const getUserProfileByUsername = query({
+  args: {
+    instagramUsername: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("userProfiles")
+      .filter((q) => q.eq(q.field("instagramUsername"), args.instagramUsername))
+      .first();
+
+    return profile;
+  },
+});
+
+/**
  * Check if user has completed onboarding (has a profile)
  */
 export const hasCompletedOnboarding = query({

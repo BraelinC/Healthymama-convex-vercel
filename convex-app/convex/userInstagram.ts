@@ -4,7 +4,7 @@
  */
 
 import { v } from "convex/values";
-import { mutation, query, action } from "./_generated/server";
+import { mutation, query, action, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 
 /**
@@ -68,18 +68,25 @@ export const processUserIncomingDM = mutation({
       console.log("[User Instagram] Updated conversation:", conversation._id);
     }
 
-    // 3. Save message
+    // 3. Detect if message contains Instagram reel URL
+    const isReelUrl = args.messageText?.includes('instagram.com/reel/') ||
+                      args.messageText?.includes('instagram.com/p/') ||
+                      args.messageText?.includes('instagram.com/tv/') ||
+                      args.messageText?.includes('lookaside.fbsbx.com');
+
+    // 4. Save message
     const messageId = await ctx.db.insert("userInstagramMessages", {
       conversationId: conversation!._id,
       userId: userId,
       direction: "inbound",
       messageText: args.messageText,
       instagramMessageId: args.instagramMessageId,
+      attachmentType: isReelUrl ? "reel" as const : "text" as const,
       read: false,
       createdAt: now,
     });
 
-    console.log("[User Instagram] Saved message:", messageId);
+    console.log("[User Instagram] Saved message:", messageId, "attachmentType:", isReelUrl ? "reel" : "text");
 
     return { success: true, conversationId: conversation!._id, messageId };
   },
@@ -228,27 +235,40 @@ export const saveOutboundMessage = mutation({
     userId: v.string(),
     messageText: v.string(),
     instagramMessageId: v.string(),
+    // Video support fields
+    recipeId: v.optional(v.id("userRecipes")),
+    muxPlaybackId: v.optional(v.string()),
+    videoThumbnailUrl: v.optional(v.string()),
+    attachmentType: v.optional(v.union(v.literal("reel"), v.literal("recipe"), v.literal("text"))),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
 
-    // Save message
+    // Save message as inbound (bot sending TO user)
     const messageId = await ctx.db.insert("userInstagramMessages", {
       conversationId: args.conversationId,
       userId: args.userId,
-      direction: "outbound",
+      direction: "inbound", // Bot sent this TO the user
       messageText: args.messageText,
       instagramMessageId: args.instagramMessageId,
-      read: true, // Outbound messages are always "read"
+      recipeId: args.recipeId,
+      muxPlaybackId: args.muxPlaybackId,
+      videoThumbnailUrl: args.videoThumbnailUrl,
+      attachmentType: args.attachmentType,
+      read: false, // Mark as unread so user sees notification
       createdAt: now,
     });
 
-    // Update conversation
-    await ctx.db.patch(args.conversationId, {
-      lastMessageAt: now,
-      lastMessageText: args.messageText,
-      updatedAt: now,
-    });
+    // Update conversation and increment unread count
+    const conversation = await ctx.db.get(args.conversationId);
+    if (conversation) {
+      await ctx.db.patch(args.conversationId, {
+        lastMessageAt: now,
+        lastMessageText: args.messageText,
+        unreadCount: conversation.unreadCount + 1,
+        updatedAt: now,
+      });
+    }
 
     return { success: true, messageId };
   },
@@ -263,5 +283,90 @@ export const getConversation = query({
   },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.conversationId);
+  },
+});
+
+/**
+ * Get conversation by userId and Instagram user ID
+ */
+export const getUserConversationByInstagram = query({
+  args: {
+    userId: v.string(),
+    instagramUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const conversation = await ctx.db
+      .query("userInstagramConversations")
+      .withIndex("by_user_and_instagram", (q) =>
+        q.eq("userId", args.userId).eq("instagramUserId", args.instagramUserId)
+      )
+      .first();
+
+    return conversation;
+  },
+});
+
+/**
+ * Create a new conversation for a user
+ */
+export const createUserConversation = mutation({
+  args: {
+    userId: v.string(),
+    instagramUserId: v.string(),
+    instagramUsername: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    const conversationId = await ctx.db.insert("userInstagramConversations", {
+      userId: args.userId,
+      instagramUserId: args.instagramUserId,
+      instagramUsername: args.instagramUsername,
+      lastMessageAt: now,
+      lastMessageText: "",
+      unreadCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const conversation = await ctx.db.get(conversationId);
+    return conversation;
+  },
+});
+
+/**
+ * Save user's outbound message (when user sends TO the bot)
+ */
+export const saveUserOutboundMessage = internalMutation({
+  args: {
+    conversationId: v.id("userInstagramConversations"),
+    userId: v.string(),
+    messageText: v.string(),
+    instagramMessageId: v.string(),
+    attachmentType: v.optional(v.union(v.literal("reel"), v.literal("recipe"), v.literal("text"))),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    // Save message as outbound (user sent it)
+    const messageId = await ctx.db.insert("userInstagramMessages", {
+      conversationId: args.conversationId,
+      userId: args.userId,
+      direction: "outbound",
+      messageText: args.messageText,
+      instagramMessageId: args.instagramMessageId,
+      attachmentType: args.attachmentType || "text",
+      read: true, // User's own messages are always "read"
+      createdAt: now,
+    });
+
+    // Update conversation
+    await ctx.db.patch(args.conversationId, {
+      lastMessageAt: now,
+      lastMessageText: args.messageText,
+      updatedAt: now,
+    });
+
+    return { success: true, messageId };
   },
 });

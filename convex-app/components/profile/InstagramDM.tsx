@@ -1,17 +1,126 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { Id, Doc } from "@/convex/_generated/dataModel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageCircle, Send, Loader2, User, ArrowLeft, Instagram } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useRouter } from "next/navigation";
+import MuxPlayer from "@mux/mux-player-react";
 
 interface InstagramDMProps {
   userId: string;
+}
+
+/**
+ * Message item component that handles different attachment types
+ */
+function MessageItem({ message }: { message: Doc<"userInstagramMessages"> }) {
+  const router = useRouter();
+
+  // Load recipe data if message has a recipeId
+  const recipe = useQuery(
+    api.recipes.userRecipes.getRecipeById,
+    message.recipeId ? { recipeId: message.recipeId } : "skip"
+  );
+
+  const isUserSent = message.direction === "outbound"; // User sent this message
+  const isRecipeMessage = message.attachmentType === "recipe" && message.recipeId;
+  const isReelMessage = message.attachmentType === "reel";
+
+  const handleRecipeClick = () => {
+    if (message.recipeId) {
+      router.push(`/recipes/${message.recipeId}`);
+    }
+  };
+
+  return (
+    <div
+      className={`flex ${isUserSent ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-2`}
+    >
+      <div className="flex flex-col max-w-[75%]">
+        <div
+          className={`px-4 py-2.5 ${
+            isUserSent
+              ? "bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-3xl rounded-br-md shadow-md"
+              : "bg-gray-100 text-gray-900 border border-gray-200 rounded-3xl rounded-bl-md"
+          }`}
+        >
+          {/* USER SENT: Outbound message */}
+          {isUserSent && (
+            <>
+              {isReelMessage ? (
+                <p className="text-sm">You sent a reel message</p>
+              ) : isRecipeMessage && recipe ? (
+                <p className="text-sm">You sent: {recipe.title}</p>
+              ) : (
+                <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                  {message.messageText}
+                </p>
+              )}
+            </>
+          )}
+
+          {/* BOT SENT: Inbound message (recipe response) */}
+          {!isUserSent && isRecipeMessage && recipe && (
+            <div className="space-y-2">
+              {/* Mux Video Player */}
+              {message.muxPlaybackId && (
+                <div className="rounded-lg overflow-hidden -mx-1 -my-1 mb-2">
+                  <MuxPlayer
+                    playbackId={message.muxPlaybackId}
+                    streamType="on-demand"
+                    muted={false}
+                    autoPlay={false}
+                    className="w-full aspect-video"
+                    style={{ width: "100%", aspectRatio: "16/9" }}
+                  />
+                </div>
+              )}
+
+              {/* Recipe Link */}
+              <button
+                onClick={handleRecipeClick}
+                className="text-white hover:underline font-medium text-sm flex items-center gap-1 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-full transition-colors"
+              >
+                View full recipe →
+              </button>
+
+              {/* Bot reply text (if any) */}
+              {message.messageText && (
+                <p className="text-sm mt-2 whitespace-pre-wrap break-words leading-relaxed">
+                  {message.messageText}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* BOT SENT: Regular text message */}
+          {!isUserSent && !isRecipeMessage && (
+            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+              {message.messageText}
+            </p>
+          )}
+        </div>
+
+        {/* Timestamp */}
+        <span
+          className={`text-xs text-gray-400 mt-1 px-2 ${
+            isUserSent ? "text-right" : "text-left"
+          }`}
+        >
+          {new Date(message.createdAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function InstagramDM({ userId }: InstagramDMProps) {
@@ -28,9 +137,9 @@ export function InstagramDM({ userId }: InstagramDMProps) {
     selectedConversationId ? { conversationId: selectedConversationId } : "skip"
   );
 
-  // Actions
+  // Actions and mutations
   const sendMessage = useAction(api.userInstagram.sendUserMessage);
-  const markAsRead = useAction(api.userInstagram.markConversationAsRead);
+  const markAsRead = useMutation(api.userInstagram.markConversationAsRead);
 
   // Auto-scroll to bottom when messages change
   const scrollToBottom = () => {
@@ -236,39 +345,9 @@ export function InstagramDM({ userId }: InstagramDMProps) {
                 <p className="text-sm">No messages yet</p>
               </div>
             ) : (
-              selectedMessages.map((message) => {
-                const isOutgoing = message.direction === "outbound";
-                return (
-                  <div
-                    key={message._id}
-                    className={`flex ${isOutgoing ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-2`}
-                  >
-                    <div className="flex flex-col max-w-[75%]">
-                      <div
-                        className={`px-4 py-2.5 ${
-                          isOutgoing
-                            ? "bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-3xl rounded-br-md shadow-md"
-                            : "bg-gray-100 text-gray-900 border border-gray-200 rounded-3xl rounded-bl-md"
-                        }`}
-                      >
-                        <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                          {message.messageText}
-                        </p>
-                      </div>
-                      <span
-                        className={`text-xs text-gray-400 mt-1 px-2 ${
-                          isOutgoing ? "text-right" : "text-left"
-                        }`}
-                      >
-                        {new Date(message.createdAt).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
+              selectedMessages.map((message) => (
+                <MessageItem key={message._id} message={message} />
+              ))
             )}
             {/* Scroll anchor */}
             <div ref={messagesEndRef} />

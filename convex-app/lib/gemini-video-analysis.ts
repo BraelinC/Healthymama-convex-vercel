@@ -249,7 +249,31 @@ Return ONLY this JSON (no markdown, no extra text):
 
     jsonText = jsonText.substring(firstBrace, lastBrace + 1);
 
-    const recipe = JSON.parse(jsonText);
+    // Try to parse JSON with repair fallback
+    let recipe;
+    try {
+      recipe = JSON.parse(jsonText);
+    } catch (parseError: any) {
+      console.error('[Gemini Video] JSON parse error:', parseError.message);
+      console.error('[Gemini Video] Malformed JSON substring:', jsonText.substring(0, 600) + '...');
+
+      // Try to repair common JSON issues
+      try {
+        // Fix unterminated strings by replacing unescaped newlines within strings
+        let repairedJson = jsonText
+          .replace(/([^\\])"([^"]*)\n/g, '$1"$2\\n')  // Fix newlines in strings
+          .replace(/,\s*}/g, '}')  // Remove trailing commas
+          .replace(/,\s*]/g, ']'); // Remove trailing commas in arrays
+
+        console.log('[Gemini Video] Attempting JSON repair...');
+        recipe = JSON.parse(repairedJson);
+        console.log('[Gemini Video] ✅ JSON repair successful!');
+      } catch (repairError: any) {
+        console.error('[Gemini Video] JSON repair also failed:', repairError.message);
+        console.error('[Gemini Video] Original JSON:', jsonText);
+        throw new Error(`Failed to extract recipe: ${JSON.stringify({ success: false, error: parseError.message })}`);
+      }
+    }
 
     // Validate
     if (!recipe.title || !recipe.ingredients || !recipe.instructions) {
@@ -460,7 +484,29 @@ CRITICAL: Segments array MUST be sorted by startTime (earliest to latest), regar
 
     jsonText = jsonText.substring(firstBrace, lastBrace + 1);
 
-    const analysis: VideoAnalysisResult = JSON.parse(jsonText);
+    // Try to parse JSON with repair fallback
+    let analysis: VideoAnalysisResult;
+    try {
+      analysis = JSON.parse(jsonText);
+    } catch (parseError: any) {
+      console.error('[Gemini Video] JSON parse error:', parseError.message);
+      console.error('[Gemini Video] Malformed JSON substring:', jsonText.substring(0, 600) + '...');
+
+      // Try to repair common JSON issues
+      try {
+        let repairedJson = jsonText
+          .replace(/([^\\])"([^"]*)\n/g, '$1"$2\\n')  // Fix newlines in strings
+          .replace(/,\s*}/g, '}')  // Remove trailing commas
+          .replace(/,\s*]/g, ']'); // Remove trailing commas in arrays
+
+        console.log('[Gemini Video] Attempting JSON repair...');
+        analysis = JSON.parse(repairedJson);
+        console.log('[Gemini Video] ✅ JSON repair successful!');
+      } catch (repairError: any) {
+        console.error('[Gemini Video] JSON repair failed:', repairError.message);
+        throw new Error(`Failed to parse video analysis: ${parseError.message}`);
+      }
+    }
 
     // Validate response
     if (!analysis.segments || !Array.isArray(analysis.segments)) {
@@ -715,7 +761,29 @@ Return ONLY this JSON (no markdown, no extra text):
 
     jsonText = jsonText.substring(firstBrace, lastBrace + 1);
 
-    const recipe = JSON.parse(jsonText);
+    // Try to parse JSON with repair fallback
+    let recipe;
+    try {
+      recipe = JSON.parse(jsonText);
+    } catch (parseError: any) {
+      console.error('[Gemini Image] JSON parse error:', parseError.message);
+      console.error('[Gemini Image] Malformed JSON substring:', jsonText.substring(0, 600) + '...');
+
+      // Try to repair common JSON issues
+      try {
+        let repairedJson = jsonText
+          .replace(/([^\\])"([^"]*)\n/g, '$1"$2\\n')  // Fix newlines in strings
+          .replace(/,\s*}/g, '}')  // Remove trailing commas
+          .replace(/,\s*]/g, ']'); // Remove trailing commas in arrays
+
+        console.log('[Gemini Image] Attempting JSON repair...');
+        recipe = JSON.parse(repairedJson);
+        console.log('[Gemini Image] ✅ JSON repair successful!');
+      } catch (repairError: any) {
+        console.error('[Gemini Image] JSON repair failed:', repairError.message);
+        throw new Error(`Failed to extract recipe from image: ${parseError.message}`);
+      }
+    }
 
     // Validate
     if (!recipe.title || !recipe.ingredients || !recipe.instructions) {

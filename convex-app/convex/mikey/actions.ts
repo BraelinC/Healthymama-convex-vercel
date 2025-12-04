@@ -293,16 +293,68 @@ export const importRecipeFromDM = action({
       const replyText = `✨ Your recipe is ready!\n\n👉 View it here: ${recipeUrl}\n\nYou can add it to your cookbook from the recipe page! 🍳`;
 
       if (conversation) {
-        await sendArshareMessage({
+        // Send via Ayrshare
+        const sendResult = await sendArshareMessage({
           profileKey: args.profileKey,
           recipientId: conversation.instagramUserId,
           message: replyText,
         });
 
+        // Save to bot's admin DM table
         await ctx.runMutation(api.mikey.mutations.logOutboundMessage, {
           conversationId: args.conversationId,
           messageText: replyText,
         });
+
+        // Also save to user's Instagram messages table (for DM UI display)
+        // This allows the user to see the bot's reply with video in their DM interface
+        try {
+          // First, find or create user's conversation
+          const userProfile = await ctx.runQuery(api.userProfile.getUserProfileByUsername, {
+            instagramUsername: conversation.instagramUsername,
+          });
+
+          if (userProfile) {
+            // Find or create conversation in user's table
+            let userConversation = await ctx.runQuery(api.userInstagram.getUserConversationByInstagram, {
+              userId: userProfile.userId,
+              instagramUserId: conversation.instagramUserId,
+            });
+
+            if (!userConversation) {
+              // Create new conversation for user
+              userConversation = await ctx.runMutation(api.userInstagram.createUserConversation, {
+                userId: userProfile.userId,
+                instagramUserId: conversation.instagramUserId,
+                instagramUsername: conversation.instagramUsername,
+              });
+            }
+
+            // Get recipe data for video metadata
+            const recipe = await ctx.runQuery(api.recipes.userRecipes.getRecipeById, {
+              recipeId: result.recipeId as Id<"userRecipes">,
+            });
+
+            // Save bot reply to user's messages with video metadata
+            await ctx.runMutation(api.userInstagram.saveOutboundMessage, {
+              conversationId: userConversation._id,
+              userId: userProfile.userId,
+              messageText: replyText,
+              instagramMessageId: sendResult.messageId || `bot_${Date.now()}`,
+              recipeId: result.recipeId as Id<"userRecipes">,
+              muxPlaybackId: recipe?.muxPlaybackId,
+              videoThumbnailUrl: recipe?.instagramThumbnailUrl,
+              attachmentType: "recipe" as const,
+            });
+
+            console.log("[Mikey] ✅ Bot reply saved to user's DM table with video metadata");
+          } else {
+            console.log("[Mikey] ⚠️ User profile not found, skipping user DM save");
+          }
+        } catch (userDmError: any) {
+          console.error("[Mikey] ❌ Failed to save to user DM table:", userDmError.message);
+          // Don't fail the whole operation if user DM save fails
+        }
       }
 
       console.log("[Mikey] Recipe sent successfully to", conversation?.instagramUsername);
@@ -735,7 +787,7 @@ export const processWebhookDM = action({
     try {
       console.log("[Mikey Webhook] Processing DM from:", args.instagramUsername);
 
-      // 1. Save incoming message to database
+      // 1. Save incoming message to bot's database
       const result = await ctx.runMutation(api.mikey.mutations.processIncomingDM, {
         profileKey: args.profileKey,
         botInstagramUserId: args.botInstagramUserId,  // Pass bot's Instagram user ID
@@ -744,6 +796,53 @@ export const processWebhookDM = action({
         messageText: args.messageText,
         arshareMessageId: args.arshareMessageId,
       });
+
+      // 1b. Also save to user's own DM table as an outbound message (if they have an account)
+      // This allows users to see their own sent messages in the DM UI
+      if (result.userId && !result.duplicate) {
+        try {
+          // Get user profile to find conversation
+          const userProfile = await ctx.runQuery(api.userProfile.getUserProfileByUsername, {
+            instagramUsername: args.instagramUsername,
+          });
+
+          if (userProfile) {
+            // Find or create conversation
+            let userConversation = await ctx.runQuery(api.userInstagram.getUserConversationByInstagram, {
+              userId: userProfile.userId,
+              instagramUserId: args.botInstagramUserId, // Bot's Instagram ID
+            });
+
+            if (!userConversation) {
+              userConversation = await ctx.runMutation(api.userInstagram.createUserConversation, {
+                userId: userProfile.userId,
+                instagramUserId: args.botInstagramUserId,
+                instagramUsername: "Mikey Bot",
+              });
+            }
+
+            // Detect if it's a reel URL
+            const isReelUrl = args.messageText?.includes('instagram.com/reel/') ||
+                              args.messageText?.includes('instagram.com/p/') ||
+                              args.messageText?.includes('instagram.com/tv/') ||
+                              args.messageText?.includes('lookaside.fbsbx.com');
+
+            // Save user's outbound message
+            await ctx.runMutation(internal.userInstagram.saveUserOutboundMessage, {
+              conversationId: userConversation._id,
+              userId: userProfile.userId,
+              messageText: args.messageText,
+              instagramMessageId: args.arshareMessageId,
+              attachmentType: isReelUrl ? "reel" as const : "text" as const,
+            });
+
+            console.log("[Mikey Webhook] ✅ Saved user's sent message to their DM table");
+          }
+        } catch (userDmError: any) {
+          console.error("[Mikey Webhook] ⚠️ Failed to save to user DM table:", userDmError.message);
+          // Don't fail the whole webhook if this fails
+        }
+      }
 
       // Check if this is a duplicate webhook (10-second blocking window triggered)
       if (result.duplicate) {

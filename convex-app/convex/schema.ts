@@ -1383,8 +1383,18 @@ export default defineSchema({
     direction: v.union(v.literal("inbound"), v.literal("outbound")),
     messageText: v.string(),
     instagramMessageId: v.string(),        // Ayrshare/Instagram message ID
+    recipeId: v.optional(v.id("userRecipes")), // Recipe attached to message
     read: v.boolean(),                     // Whether user has read this message
     createdAt: v.number(),
+
+    // Video support fields
+    muxPlaybackId: v.optional(v.string()), // Mux video playback ID for recipe videos
+    videoThumbnailUrl: v.optional(v.string()), // Thumbnail URL for video
+    attachmentType: v.optional(v.union(
+      v.literal("reel"),   // User sent Instagram reel
+      v.literal("recipe"), // Bot sent recipe with video
+      v.literal("text")    // Plain text message
+    )),
   })
     .index("by_conversation", ["conversationId", "createdAt"])
     .index("by_user", ["userId", "createdAt"]),
