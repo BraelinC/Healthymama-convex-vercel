@@ -776,22 +776,14 @@ export const processWebhookDM = action({
         // Instagram reel URL found - import recipe
         console.log("[Mikey Webhook] Importing Instagram reel:", result.instagramReelUrl);
 
-        // Get Instagram account by refId (webhooks send refId, not profileKey)
-        const instagramAccount = await ctx.runQuery(api.mikey.queries.getInstagramAccountByRefId, {
-          refId: args.profileKey, // Webhooks actually send refId in the profileKey field
+        // Use profileKey from mutation result (bot account's ayrshareProfileKey)
+        await ctx.runAction(api.mikey.actions.importRecipeFromDM, {
+          instagramReelUrl: result.instagramReelUrl,
+          userId: result.userId,
+          conversationId: result.conversationId,
+          messageId: result.messageId,
+          profileKey: result.profileKey, // Mutation already returns the bot's ayrshareProfileKey
         });
-
-        if (instagramAccount) {
-          await ctx.runAction(api.mikey.actions.importRecipeFromDM, {
-            instagramReelUrl: result.instagramReelUrl,
-            userId: result.userId,
-            conversationId: result.conversationId,
-            messageId: result.messageId,
-            profileKey: instagramAccount.ayrshareProfileKey!, // Pass the actual profileKey for sending messages
-          });
-        } else {
-          console.error("[Mikey Webhook] Instagram account not found for refId:", args.profileKey);
-        }
       }
 
       console.log("[Mikey Webhook] DM processed successfully");

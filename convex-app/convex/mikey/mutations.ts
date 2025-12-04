@@ -330,7 +330,7 @@ export const processIncomingDM = mutation({
     return {
       messageId,
       conversationId: conversation._id,
-      profileKey: args.profileKey,
+      profileKey: instagramAccount.ayrshareProfileKey || args.profileKey, // Return bot's profileKey for Ayrshare API
       instagramReelUrl,
       userId: senderUserId || instagramAccount.createdBy || "anonymous",
     };
