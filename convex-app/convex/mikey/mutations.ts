@@ -141,12 +141,24 @@ export const processIncomingDM = mutation({
       .withIndex("by_instagramUserId", (q) => q.eq("instagramUserId", args.botInstagramUserId))
       .first();
 
+    console.log("[Mikey] Lookup #1 (by_instagramUserId):", {
+      botInstagramUserId: args.botInstagramUserId,
+      found: !!instagramAccount,
+      accountUsername: instagramAccount?.username,
+    });
+
     // Fallback 1: try searching by refId
     if (!instagramAccount) {
       instagramAccount = await ctx.db
         .query("instagramAccounts")
         .withIndex("by_refId", (q) => q.eq("ayrshareRefId", args.profileKey))
         .first();
+
+      console.log("[Mikey] Lookup #2 (by_refId):", {
+        refId: args.profileKey,
+        found: !!instagramAccount,
+        accountUsername: instagramAccount?.username,
+      });
     }
 
     // Fallback 2: try searching by profileKey
@@ -155,12 +167,20 @@ export const processIncomingDM = mutation({
         .query("instagramAccounts")
         .withIndex("by_profileKey", (q) => q.eq("ayrshareProfileKey", args.profileKey))
         .first();
+
+      console.log("[Mikey] Lookup #3 (by_profileKey):", {
+        profileKey: args.profileKey,
+        found: !!instagramAccount,
+        accountUsername: instagramAccount?.username,
+      });
     }
 
     if (!instagramAccount) {
-      console.error("[Mikey] Instagram account not found for botInstagramUserId:", args.botInstagramUserId, "or profileKey/refId:", args.profileKey);
+      console.error("[Mikey] ❌ All 3 lookups failed for botInstagramUserId:", args.botInstagramUserId, "or profileKey/refId:", args.profileKey);
       throw new Error("Instagram account not found");
     }
+
+    console.log("[Mikey] ✅ Bot account found:", instagramAccount.username);
 
     // Auto-populate instagramUserId if not set
     if (!instagramAccount.instagramUserId && args.botInstagramUserId) {
@@ -583,5 +603,43 @@ export const logWebhookId = mutation({
       conversationId: args.conversationId,
       createdAt: Date.now(),
     });
+  },
+});
+
+/**
+ * DEBUG/FIX: Manually set instagramUserId for a bot account
+ * TEMPORARY - for fixing the double refId issue
+ */
+export const fixBotInstagramUserId = mutation({
+  args: {
+    accountId: v.id("instagramAccounts"),
+    instagramUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const account = await ctx.db.get(args.accountId);
+    if (!account) {
+      throw new Error("Account not found");
+    }
+
+    console.log("[Mikey] Manually setting instagramUserId for bot account:", {
+      accountId: args.accountId,
+      username: account.username,
+      oldInstagramUserId: account.instagramUserId || "NOT SET",
+      newInstagramUserId: args.instagramUserId,
+    });
+
+    await ctx.db.patch(args.accountId, {
+      instagramUserId: args.instagramUserId,
+      updatedAt: Date.now(),
+    });
+
+    console.log("[Mikey] ✅ instagramUserId updated successfully");
+
+    return {
+      success: true,
+      accountId: args.accountId,
+      username: account.username,
+      instagramUserId: args.instagramUserId,
+    };
   },
 });

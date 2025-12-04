@@ -402,3 +402,24 @@ export const checkRecentWebhookId = query({
     return recentWebhooks;
   },
 });
+
+/**
+ * DEBUG: Query to inspect all bot accounts and their field values
+ * TEMPORARY - for investigation only
+ */
+export const debugBotAccounts = query({
+  args: {},
+  handler: async (ctx) => {
+    const accounts = await ctx.db.query("instagramAccounts").collect();
+    return accounts.map(acc => ({
+      _id: acc._id,
+      username: acc.username,
+      ayrshareRefId: acc.ayrshareRefId,
+      ayrshareProfileKey: acc.ayrshareProfileKey,
+      instagramUserId: acc.instagramUserId,
+      status: acc.status,
+      createdBy: acc.createdBy,
+      userId: acc.userId,
+    }));
+  },
+});
