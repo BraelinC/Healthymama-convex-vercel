@@ -135,60 +135,45 @@ export const processIncomingDM = mutation({
     arshareMessageId: v.string(),
   },
   handler: async (ctx, args) => {
-    // 1. Find Instagram account - try by Instagram user ID FIRST (most reliable)
+    // Simple approach: Find ANY bot account, or use the first one if only one exists
     let instagramAccount = await ctx.db
       .query("instagramAccounts")
       .withIndex("by_instagramUserId", (q) => q.eq("instagramUserId", args.botInstagramUserId))
       .first();
 
-    console.log("[Mikey] Lookup #1 (by_instagramUserId):", {
-      botInstagramUserId: args.botInstagramUserId,
-      found: !!instagramAccount,
-      accountUsername: instagramAccount?.username,
-    });
-
-    // Fallback 1: try searching by refId
+    // If not found by Instagram user ID, just get the first/only bot account
     if (!instagramAccount) {
-      instagramAccount = await ctx.db
-        .query("instagramAccounts")
-        .withIndex("by_refId", (q) => q.eq("ayrshareRefId", args.profileKey))
-        .first();
+      const allAccounts = await ctx.db.query("instagramAccounts").collect();
 
-      console.log("[Mikey] Lookup #2 (by_refId):", {
-        refId: args.profileKey,
-        found: !!instagramAccount,
-        accountUsername: instagramAccount?.username,
-      });
+      if (allAccounts.length === 0) {
+        console.error("[Mikey] ❌ No bot accounts configured");
+        throw new Error("No bot accounts found - please connect an Instagram account via /mikey dashboard");
+      }
+
+      // Use the first available account
+      instagramAccount = allAccounts[0];
+      console.log("[Mikey] 🔧 Using bot account:", instagramAccount.username, "(credentials will be auto-updated)");
+    } else {
+      console.log("[Mikey] ✅ Bot account found:", instagramAccount.username);
     }
 
-    // Fallback 2: try searching by profileKey
-    if (!instagramAccount) {
-      instagramAccount = await ctx.db
-        .query("instagramAccounts")
-        .withIndex("by_profileKey", (q) => q.eq("ayrshareProfileKey", args.profileKey))
-        .first();
+    // Auto-update credentials if they changed (handles Ayrshare reconnects)
+    const updates: any = {};
 
-      console.log("[Mikey] Lookup #3 (by_profileKey):", {
-        profileKey: args.profileKey,
-        found: !!instagramAccount,
-        accountUsername: instagramAccount?.username,
-      });
+    if (instagramAccount.instagramUserId !== args.botInstagramUserId) {
+      updates.instagramUserId = args.botInstagramUserId;
+    }
+    if (instagramAccount.ayrshareRefId !== args.profileKey) {
+      updates.ayrshareRefId = args.profileKey;
+    }
+    if (instagramAccount.ayrshareProfileKey !== args.profileKey) {
+      updates.ayrshareProfileKey = args.profileKey;
     }
 
-    if (!instagramAccount) {
-      console.error("[Mikey] ❌ All 3 lookups failed for botInstagramUserId:", args.botInstagramUserId, "or profileKey/refId:", args.profileKey);
-      throw new Error("Instagram account not found");
-    }
-
-    console.log("[Mikey] ✅ Bot account found:", instagramAccount.username);
-
-    // Auto-populate instagramUserId if not set
-    if (!instagramAccount.instagramUserId && args.botInstagramUserId) {
-      console.log("[Mikey] Auto-populating instagramUserId for bot account:", args.botInstagramUserId);
-      await ctx.db.patch(instagramAccount._id, {
-        instagramUserId: args.botInstagramUserId,
-        updatedAt: Date.now(),
-      });
+    if (Object.keys(updates).length > 0) {
+      updates.updatedAt = Date.now();
+      await ctx.db.patch(instagramAccount._id, updates);
+      console.log("[Mikey] ✅ Bot credentials auto-updated");
     }
 
     // 2. Find or create conversation
@@ -198,6 +183,19 @@ export const processIncomingDM = mutation({
       .first();
 
     if (!conversation) {
+      // Check capacity BEFORE creating new conversation
+      const currentCount = instagramAccount.currentUserCount || 0;
+      const maxUsers = instagramAccount.maxUsers || 100;
+
+      if (currentCount >= 95) {
+        console.error("[Mikey] ❌ CAPACITY EXCEEDED:", {
+          currentCount,
+          maxUsers,
+          newUser: args.instagramUsername,
+        });
+        throw new Error("Bot capacity exceeded (95+ users). Cannot accept new conversations.");
+      }
+
       // Create new conversation
       const conversationId = await ctx.db.insert("dmConversations", {
         instagramAccountId: instagramAccount._id,
@@ -211,14 +209,18 @@ export const processIncomingDM = mutation({
 
       conversation = await ctx.db.get(conversationId);
 
-      // Increment user count on Instagram account
+      // Increment user count
+      const newCount = currentCount + 1;
       await ctx.db.patch(instagramAccount._id, {
-        currentUserCount: (instagramAccount.currentUserCount || 0) + 1,
-        status:
-          (instagramAccount.currentUserCount || 0) + 1 >= instagramAccount.maxUsers
-            ? "full"
-            : "active",
+        currentUserCount: newCount,
+        status: newCount >= 95 ? "full" : "active",
         updatedAt: Date.now(),
+      });
+
+      console.log("[Mikey] ✅ New conversation created:", {
+        user: args.instagramUsername,
+        newUserCount: newCount,
+        capacity: `${newCount}/95`,
       });
     }
 
