@@ -148,40 +148,9 @@ http.route({
         if (body.attachments && Array.isArray(body.attachments)) {
           const reelAttachment = body.attachments.find((att: any) => att.type === "ig_reel");
           if (reelAttachment?.url) {
-            // Extract asset_id from CDN URL
-            const assetIdMatch = reelAttachment.url.match(/asset_id=(\d+)/);
-            if (assetIdMatch) {
-              const mediaId = assetIdMatch[1];
-              console.log("[Ayrshare Webhook] Extracted media ID from attachment:", mediaId);
-
-              try {
-                // Get Instagram permalink via Graph API
-                const graphResponse = await fetch(
-                  `https://graph.facebook.com/v18.0/${mediaId}?fields=permalink&access_token=${process.env.INSTAGRAM_ACCESS_TOKEN || process.env.AYRSHARE_API_KEY}`
-                );
-
-                if (graphResponse.ok) {
-                  const graphData = await graphResponse.json();
-                  if (graphData.permalink) {
-                    messageText = messageText ? `${messageText}\n${graphData.permalink}` : graphData.permalink;
-                    console.log("[Ayrshare Webhook] Instagram reel permalink:", graphData.permalink);
-                  } else {
-                    console.log("[Ayrshare Webhook] No permalink in Graph API response, using CDN URL");
-                    messageText = messageText ? `${messageText}\n${reelAttachment.url}` : reelAttachment.url;
-                  }
-                } else {
-                  console.log("[Ayrshare Webhook] Graph API call failed, using CDN URL");
-                  messageText = messageText ? `${messageText}\n${reelAttachment.url}` : reelAttachment.url;
-                }
-              } catch (error) {
-                console.error("[Ayrshare Webhook] Error fetching permalink:", error);
-                messageText = messageText ? `${messageText}\n${reelAttachment.url}` : reelAttachment.url;
-              }
-            } else {
-              // No asset_id found, use URL as-is
-              messageText = messageText ? `${messageText}\n${reelAttachment.url}` : reelAttachment.url;
-              console.log("[Ayrshare Webhook] Instagram reel found in attachments (no asset_id):", reelAttachment.url);
-            }
+            // Use CDN URL directly (no Graph API needed)
+            messageText = messageText ? `${messageText}\n${reelAttachment.url}` : reelAttachment.url;
+            console.log("[Ayrshare Webhook] Instagram reel found in attachments:", reelAttachment.url);
           }
         }
 
