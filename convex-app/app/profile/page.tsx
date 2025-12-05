@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { User, ArrowLeft, AtSign, Check, X, Loader2 } from "lucide-react";
 import { ProfileImageUploader } from "@/components/profile/ProfileImageUploader";
 import { InstagramConnect } from "@/components/profile/InstagramConnect";
-import { InstagramDM } from "@/components/profile/InstagramDM";
+// import { InstagramDM } from "@/components/profile/InstagramDM"; // HIDDEN: Not working properly
 import { MikeyConnectCard } from "@/components/mikey/MikeyConnectCard";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
@@ -229,7 +229,7 @@ export default function ProfilePage() {
 
           <MikeyConnectCard userId={userId} />
 
-          {/* Instagram DM Interface */}
+          {/* Instagram DM Interface - HIDDEN: Not working properly
           {userProfile?.instagramConnected && (
             <>
               <div className="flex items-center gap-4">
@@ -241,6 +241,7 @@ export default function ProfilePage() {
               <InstagramDM userId={userId} />
             </>
           )}
+          */}
         </div>
       </div>
     </div>
