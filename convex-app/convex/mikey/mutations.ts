@@ -366,7 +366,7 @@ export const processIncomingDM = mutation({
     return {
       messageId,
       conversationId: conversation._id,
-      profileKey: instagramAccount.ayrshareProfileKey || args.profileKey, // Return bot's profileKey for Ayrshare API
+      profileKey: args.profileKey, // Use webhook's current profileKey (handles reconnects)
       instagramReelUrl,
       userId: senderUserId || instagramAccount.createdBy || "anonymous",
     };
