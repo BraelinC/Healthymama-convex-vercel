@@ -176,35 +176,17 @@ export const processIncomingDM = mutation({
       console.log("[Mikey] ✅ Bot credentials auto-updated");
     }
 
-    // 2. Check if user has a HealthyMama account (required to use bot)
-    const userProfile = await ctx.db
-      .query("userProfiles")
-      .filter((q) => q.eq(q.field("instagramUsername"), args.instagramUsername))
-      .first();
-
-    // 3. Find or create conversation
+    // 2. Find or create conversation (allow all users - no verification)
     let conversation = await ctx.db
       .query("dmConversations")
       .withIndex("by_instagram_user", (q) => q.eq("instagramUserId", args.instagramUserId))
       .first();
 
     if (!conversation) {
-      // NEW USER - Check if they have a HealthyMama account
-      if (!userProfile) {
-        console.log("[Mikey] ⚠️ User has no HealthyMama account:", args.instagramUsername);
-        throw new Error("User must have a HealthyMama account to use the bot");
-      }
+      // NEW USER - Allow anyone (access control temporarily disabled)
+      console.log("[Mikey] ✅ Creating conversation for new user:", args.instagramUsername);
 
-      // Check capacity BEFORE creating new conversation
       const currentCount = instagramAccount.currentUserCount || 0;
-
-      if (currentCount >= 95) {
-        console.error("[Mikey] ❌ CAPACITY EXCEEDED:", {
-          currentCount,
-          newUser: args.instagramUsername,
-        });
-        throw new Error("Bot capacity exceeded (95+ users). Cannot accept new conversations.");
-      }
 
       // Create new conversation
       const conversationId = await ctx.db.insert("dmConversations", {
@@ -229,7 +211,6 @@ export const processIncomingDM = mutation({
 
       console.log("[Mikey] ✅ New conversation created:", {
         user: args.instagramUsername,
-        userId: userProfile.userId,
         newUserCount: newCount,
         capacity: `${newCount}/95`,
       });
