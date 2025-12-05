@@ -191,7 +191,7 @@ http.route({
             profileKey: refId || "",
             botInstagramUserId: recipientId || "",  // The bot's Instagram user ID (who received the message)
             instagramUserId: senderDetails?.id || body.senderId || "",
-            instagramUsername: senderDetails?.username || body.senderUsername || "unknown",
+            instagramUsername: senderDetails?.username || senderDetails?.name || body.senderUsername || body.senderName || "unknown",
             messageText,
             arshareMessageId: body.id || messageId || `${conversationId}_${Date.now()}`,
           });
@@ -214,7 +214,7 @@ http.route({
               await ctx.runMutation(internal.userInstagram.processUserIncomingDM, {
                 ayrshareRefId: refId || "",
                 instagramUserId: senderDetails?.id || body.senderId || "",
-                instagramUsername: senderDetails?.username || body.senderUsername || "unknown",
+                instagramUsername: senderDetails?.username || senderDetails?.name || body.senderUsername || body.senderName || "unknown",
                 messageText: typeof message === "string" ? message : message?.text || "",
                 instagramMessageId: messageId || conversationId || body.id || `${Date.now()}`,
               });
