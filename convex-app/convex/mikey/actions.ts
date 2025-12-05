@@ -735,6 +735,9 @@ async function sendArshareMessage({
   const AYRSHARE_BASE_URL = "https://api.ayrshare.com";
   const AYRSHARE_API_KEY = process.env.AYRSHARE_API_KEY;
 
+  console.log("[Ayrshare] Sending message with profileKey:", profileKey);
+  console.log("[Ayrshare] Recipient ID:", recipientId);
+
   if (!AYRSHARE_API_KEY) {
     throw new Error("AYRSHARE_API_KEY is not configured");
   }

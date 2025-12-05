@@ -156,8 +156,11 @@ http.route({
 
         // Try to process as Mikey bot DM first (check instagramAccounts table)
         try {
+          // NOTE: Ayrshare sends "refId" in webhooks, NOT "profileKey"
+          // The refId is used to identify the account, but the actual profileKey
+          // for SENDING messages is stored in the database (set when account was created)
           await ctx.runAction(internal.mikey.actions.processWebhookDM, {
-            profileKey: refId || "",
+            profileKey: refId || "",  // This is actually the refId - mutation will use stored profileKey for sending
             botInstagramUserId: recipientId || "",  // The bot's Instagram user ID (who received the message)
             instagramUserId: senderDetails?.id || body.senderId || "",
             instagramUsername: senderDetails?.username || senderDetails?.name || body.senderUsername || body.senderName || "unknown",

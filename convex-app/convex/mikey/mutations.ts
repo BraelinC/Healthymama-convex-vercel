@@ -147,7 +147,7 @@ export const processIncomingDM = mutation({
 
       if (allAccounts.length === 0) {
         console.error("[Mikey] ❌ No bot accounts configured");
-        throw new Error("No bot accounts found - please connect an Instagram account via /mikey dashboard");
+        throw new Error("Instagram account not found");
       }
 
       // Use the first available account
@@ -158,23 +158,29 @@ export const processIncomingDM = mutation({
     }
 
     // Auto-update credentials if they changed (handles Ayrshare reconnects)
+    // IMPORTANT: args.profileKey is actually the refId from the webhook - DON'T overwrite ayrshareProfileKey!
     const updates: any = {};
 
     if (instagramAccount.instagramUserId !== args.botInstagramUserId) {
       updates.instagramUserId = args.botInstagramUserId;
     }
+    // Only update refId from webhook - the profileKey is set when account is created
     if (instagramAccount.ayrshareRefId !== args.profileKey) {
       updates.ayrshareRefId = args.profileKey;
+      console.log("[Mikey] 📝 Updating ayrshareRefId from webhook:", args.profileKey.substring(0, 8) + "...");
     }
-    if (instagramAccount.ayrshareProfileKey !== args.profileKey) {
-      updates.ayrshareProfileKey = args.profileKey;
-    }
+    // DON'T overwrite ayrshareProfileKey with refId - they are DIFFERENT values!
+    // ayrshareProfileKey is set when the account is created via addInstagramAccountWithProfileKey
 
     if (Object.keys(updates).length > 0) {
       updates.updatedAt = Date.now();
       await ctx.db.patch(instagramAccount._id, updates);
       console.log("[Mikey] ✅ Bot credentials auto-updated");
     }
+
+    // Log what we're using for debugging
+    console.log("[Mikey] 🔑 Using ayrshareProfileKey for sending:",
+      instagramAccount.ayrshareProfileKey ? instagramAccount.ayrshareProfileKey.substring(0, 8) + "..." : "NOT SET");
 
     // 2. Find or create conversation (allow all users - no verification)
     let conversation = await ctx.db
@@ -317,7 +323,8 @@ export const processIncomingDM = mutation({
       return {
         messageId,
         conversationId: conversation._id,
-        profileKey: args.profileKey,
+        // CRITICAL: Return the REAL ayrshareProfileKey (for sending messages), NOT the refId from webhook!
+        profileKey: instagramAccount.ayrshareProfileKey || "",
         needsErrorMessage: true,
         errorType: isInstagramUrl ? "non_reel_instagram" : "no_instagram_url",
       };
@@ -347,7 +354,8 @@ export const processIncomingDM = mutation({
     return {
       messageId,
       conversationId: conversation._id,
-      profileKey: args.profileKey, // Use webhook's current profileKey (handles reconnects)
+      // CRITICAL: Return the REAL ayrshareProfileKey (for sending messages), NOT the refId from webhook!
+      profileKey: instagramAccount.ayrshareProfileKey || "",
       instagramReelUrl,
       userId: senderUserId || instagramAccount.createdBy || "anonymous",
     };
