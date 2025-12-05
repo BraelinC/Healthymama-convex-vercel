@@ -273,9 +273,12 @@ export const importRecipeFromDM = action({
       console.log("[Mikey] Recipe ID received from importInstagramRecipe:", result.recipeId);
       console.log("[Mikey] Recipe ID type:", typeof result.recipeId);
 
-      if (!result.success || !result.recipeId) {
-        throw new Error(result.error || "Recipe import failed");
+      // If recipe already imported, we still have the recipeId - send it to user
+      if (!result.recipeId) {
+        throw new Error(result.error || "Recipe import failed - no recipe ID");
       }
+
+      const isDuplicate = !result.success && result.error?.includes("already been imported");
 
       // Generate recipe page URL (reuse appUrl from above)
       const recipeUrl = `${appUrl}/recipe/${result.recipeId}`;
@@ -289,8 +292,10 @@ export const importRecipeFromDM = action({
         uniquePageUrl: recipeUrl,
       });
 
-      // Send recipe link back to user
-      const replyText = `✨ Your recipe is ready!\n\n👉 View it here: ${recipeUrl}\n\nYou can add it to your cookbook from the recipe page! 🍳`;
+      // Send recipe link back to user (different message for duplicates)
+      const replyText = isDuplicate
+        ? `📌 You've already imported this recipe!\n\n👉 View it here: ${recipeUrl}\n\nYou can find it in your recipes! 🍳`
+        : `✨ Your recipe is ready!\n\n👉 View it here: ${recipeUrl}\n\nYou can add it to your cookbook from the recipe page! 🍳`;
 
       if (conversation) {
         // Send via Ayrshare
