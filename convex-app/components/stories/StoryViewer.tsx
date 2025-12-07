@@ -198,7 +198,7 @@ export function StoryViewer({ isOpen, onClose, storyUser }: StoryViewerProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md p-0 bg-black border-none overflow-hidden h-[90vh] max-h-[800px]">
+      <DialogContent className="max-w-md p-0 bg-black border-none overflow-hidden h-[90vh] max-h-[800px]" hideCloseButton>
         <VisuallyHidden>
           <DialogTitle>{storyUser.userName}&apos;s Story</DialogTitle>
         </VisuallyHidden>
