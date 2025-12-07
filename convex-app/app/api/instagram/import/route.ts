@@ -1133,8 +1133,18 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // THIRD: Fallback to caption parsing
+      // THIRD: Fallback to caption parsing (only if caption has actual recipe content)
       if (!instagramRecipe) {
+        // Don't fallback for DM-shared reels with no useful caption
+        const isUselessCaption = !description ||
+          description === 'Instagram reel shared via DM' ||
+          description.length < 50; // Too short to contain a real recipe
+
+        if (isUselessCaption) {
+          console.error('[Instagram Import] ❌ Video extraction failed and no useful caption to fallback to');
+          throw new Error('Failed to extract recipe from video. Please try again or try a different video.');
+        }
+
         console.log('[Instagram Import] Falling back to caption parsing...');
         instagramRecipe = await parseRecipeWithAI(
           description,
