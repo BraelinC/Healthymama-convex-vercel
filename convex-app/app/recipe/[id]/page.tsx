@@ -86,19 +86,36 @@ export default function RecipePage({ params }: RecipePageProps) {
 
   // Handle toggle favorite
   const handleToggleFavorite = async () => {
-    if (!user?.id || !recipe?._id) return;
+    if (!user?.id) {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in to save favorites",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!recipe?._id) {
+      toast({
+        title: "Error",
+        description: "Recipe not ready yet",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
+      console.log("[Favorite] Toggling favorite for recipe:", recipe._id, "user:", user.id);
       await toggleFavorite({ userId: user.id, userRecipeId: recipe._id });
       toast({
         title: "Success",
         description: recipe.isFavorited ? "Removed from favorites" : "Added to favorites",
       });
-    } catch (error) {
-      console.error("Toggle favorite error:", error);
+    } catch (error: any) {
+      console.error("[Favorite] Toggle favorite error:", error);
       toast({
         title: "Error",
-        description: "Failed to update favorite status",
+        description: error.message || "Failed to update favorite status",
         variant: "destructive",
       });
     }

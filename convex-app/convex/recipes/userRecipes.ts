@@ -774,10 +774,18 @@ export const toggleRecipeFavorite = mutation({
     userRecipeId: v.id("userRecipes"),
   },
   handler: async (ctx, args) => {
-    // Verify ownership
     const recipe = await ctx.db.get(args.userRecipeId);
-    if (!recipe || recipe.userId !== args.userId) {
-      throw new Error("Recipe not found or access denied");
+    if (!recipe) {
+      throw new Error("Recipe not found");
+    }
+
+    // If user doesn't own the recipe, transfer ownership to them first
+    // This handles Instagram DM imports where recipe was saved with bot's userId
+    if (recipe.userId !== args.userId) {
+      await ctx.db.patch(args.userRecipeId, {
+        userId: args.userId,
+        updatedAt: Date.now(),
+      });
     }
 
     const newFavoriteStatus = !recipe.isFavorited;
