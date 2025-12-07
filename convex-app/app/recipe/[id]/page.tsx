@@ -69,12 +69,20 @@ export default function RecipePage({ params }: RecipePageProps) {
   const { user, isLoaded, isSignedIn } = useUser();
   const { toast } = useToast();
   const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
+  const [localFavorited, setLocalFavorited] = useState<boolean | null>(null);
 
   // Fetch recipe data
   const recipe = useQuery(
     api.recipes.userRecipes.getUserRecipeById,
     recipeId ? { recipeId: recipeId as Id<"userRecipes"> } : "skip"
   );
+
+  // Sync local favorited state with recipe data
+  useEffect(() => {
+    if (recipe && localFavorited === null) {
+      setLocalFavorited(recipe.isFavorited || false);
+    }
+  }, [recipe, localFavorited]);
 
   // Update SEO metadata when recipe loads
   useRecipeMetadata(recipe);
@@ -106,10 +114,12 @@ export default function RecipePage({ params }: RecipePageProps) {
 
     try {
       console.log("[Favorite] Toggling favorite for recipe:", recipe._id, "user:", user.id);
-      await toggleFavorite({ userId: user.id, userRecipeId: recipe._id });
+      const result = await toggleFavorite({ userId: user.id, userRecipeId: recipe._id });
+      const newFavoritedState = result.isFavorited;
+      setLocalFavorited(newFavoritedState);
       toast({
         title: "Success",
-        description: recipe.isFavorited ? "Removed from favorites" : "Added to favorites",
+        description: newFavoritedState ? "Added to favorites" : "Removed from favorites",
       });
     } catch (error: any) {
       console.error("[Favorite] Toggle favorite error:", error);
@@ -260,7 +270,7 @@ export default function RecipePage({ params }: RecipePageProps) {
               steps: recipe.instructions, // Map instructions to steps
             }}
             userId={user?.id}
-            isFavorited={recipe.isFavorited}
+            isFavorited={localFavorited ?? recipe.isFavorited ?? false}
             onToggleFavorite={handleToggleFavorite}
             onAddToCookbook={recipe._id ? handleAddToCookbook : undefined}
             onShare={handleShare}
