@@ -767,6 +767,7 @@ export const saveSharedRecipeToUserCookbook = mutation({
 
 /**
  * Toggle favorite status of a recipe
+ * If user doesn't own the recipe, creates a copy in their favorites
  */
 export const toggleRecipeFavorite = mutation({
   args: {
@@ -779,23 +780,101 @@ export const toggleRecipeFavorite = mutation({
       throw new Error("Recipe not found");
     }
 
-    // If user doesn't own the recipe, transfer ownership to them first
-    // This handles Instagram DM imports where recipe was saved with bot's userId
-    if (recipe.userId !== args.userId) {
+    // If user owns the recipe, just toggle favorite
+    if (recipe.userId === args.userId) {
+      const newFavoriteStatus = !recipe.isFavorited;
       await ctx.db.patch(args.userRecipeId, {
-        userId: args.userId,
+        isFavorited: newFavoriteStatus,
         updatedAt: Date.now(),
       });
+      return { isFavorited: newFavoriteStatus };
     }
 
-    const newFavoriteStatus = !recipe.isFavorited;
+    // User doesn't own the recipe - check if they already have a copy
+    const existingCopy = await ctx.db
+      .query("userRecipes")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .filter((q) => q.eq(q.field("sharedFromRecipeId"), args.userRecipeId))
+      .first();
 
-    await ctx.db.patch(args.userRecipeId, {
-      isFavorited: newFavoriteStatus,
-      updatedAt: Date.now(),
+    if (existingCopy) {
+      // Toggle favorite on existing copy
+      const newFavoriteStatus = !existingCopy.isFavorited;
+      await ctx.db.patch(existingCopy._id, {
+        isFavorited: newFavoriteStatus,
+        updatedAt: Date.now(),
+      });
+      return { isFavorited: newFavoriteStatus, recipeId: existingCopy._id };
+    }
+
+    // Create a copy for the user in favorites
+    // Get enriched data for community recipes (Instagram imports)
+    let customRecipeDataCopy = undefined;
+    if (recipe.recipeType === "custom" || recipe.recipeType === "ai_generated") {
+      customRecipeDataCopy = recipe.customRecipeData;
+    } else if (recipe.recipeType === "community") {
+      const enrichedRecipe = await enrichUserRecipeWithSource(ctx, recipe);
+      if (enrichedRecipe.ingredients && enrichedRecipe.instructions) {
+        customRecipeDataCopy = {
+          title: enrichedRecipe.title || recipe.cachedTitle,
+          description: enrichedRecipe.description,
+          imageUrl: enrichedRecipe.imageUrl || recipe.cachedImageUrl,
+          ingredients: enrichedRecipe.ingredients,
+          instructions: enrichedRecipe.instructions,
+          servings: enrichedRecipe.servings,
+          prep_time: enrichedRecipe.prep_time,
+          cook_time: enrichedRecipe.cook_time,
+          time_minutes: enrichedRecipe.time_minutes,
+          cuisine: enrichedRecipe.cuisine,
+          diet: enrichedRecipe.diet,
+          category: enrichedRecipe.category,
+        };
+      }
+    }
+
+    // Create new recipe copy for the user
+    const now = Date.now();
+    const newRecipeId = await ctx.db.insert("userRecipes", {
+      userId: args.userId,
+      recipeType: customRecipeDataCopy ? "custom" : recipe.recipeType,
+      ...(customRecipeDataCopy
+        ? { customRecipeData: customRecipeDataCopy }
+        : {
+            sourceRecipeId: recipe.sourceRecipeId,
+            sourceRecipeType: recipe.sourceRecipeType,
+          }
+      ),
+
+      // Reference to original recipe
+      sharedFromRecipeId: args.userRecipeId,
+      sharedFromUserId: recipe.userId,
+
+      // Cached data
+      cachedTitle: recipe.title || recipe.cachedTitle,
+      cachedImageUrl: recipe.imageUrl || recipe.cachedImageUrl,
+
+      // Save to favorites cookbook
+      cookbookCategory: "favorites",
+      isFavorited: true,
+
+      // Copy video data
+      muxPlaybackId: recipe.muxPlaybackId,
+      muxAssetId: recipe.muxAssetId,
+      instagramVideoUrl: recipe.instagramVideoUrl,
+      instagramUsername: recipe.instagramUsername,
+      videoSegments: recipe.videoSegments,
+
+      // Copy other fields
+      title: recipe.title,
+      ingredients: recipe.ingredients,
+      instructions: recipe.instructions,
+      imageUrl: recipe.imageUrl,
+
+      createdAt: now,
+      updatedAt: now,
     });
 
-    return { isFavorited: newFavoriteStatus };
+    return { isFavorited: true, recipeId: newRecipeId };
   },
 });
 
