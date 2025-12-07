@@ -126,6 +126,7 @@ export async function extractRecipeFromVideo(
   }
 
   console.log('[Gemini Video] Extracting recipe from video (no caption recipe found)');
+  console.log('[Gemini Video] Video URL being processed:', videoUrl.substring(0, 150) + '...');
 
   const prompt = `You are a recipe extraction expert. Watch this cooking video and extract the complete recipe.
 
@@ -154,7 +155,9 @@ Return ONLY this JSON (no markdown, no extra text):
   "prep_time": "15 minutes",
   "cook_time": "30 minutes",
   "cuisine": "Italian"
-}`;
+}
+
+[Request ID: ${Date.now()}-${Math.random().toString(36).substring(7)}]`;
 
   try {
     // Download and encode video
@@ -181,7 +184,11 @@ Return ONLY this JSON (no markdown, no extra text):
     const base64Video = Buffer.from(videoBuffer).toString('base64');
     const dataUrl = `data:video/mp4;base64,${base64Video}`;
 
-    console.log('[Gemini Video] Video encoded, size:', Math.round(base64Video.length / 1024), 'KB');
+    // Log video size and simple hash for debugging (detect if same video is reused)
+    const videoSizeKB = Math.round(base64Video.length / 1024);
+    const videoHash = base64Video.substring(0, 50); // First 50 chars as simple fingerprint
+    console.log('[Gemini Video] Video encoded, size:', videoSizeKB, 'KB');
+    console.log('[Gemini Video] Video fingerprint:', videoHash);
 
     // Call OpenRouter API
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -283,6 +290,14 @@ Return ONLY this JSON (no markdown, no extra text):
     console.log('[Gemini Video] ✅ Extracted recipe from video:', recipe.title);
     console.log('[Gemini Video] Ingredients:', recipe.ingredients.length);
     console.log('[Gemini Video] Instructions:', recipe.instructions.length);
+
+    // Log first ingredient and instruction for debugging (helps detect wrong extraction)
+    if (recipe.ingredients.length > 0) {
+      console.log('[Gemini Video] First ingredient:', recipe.ingredients[0]);
+    }
+    if (recipe.instructions.length > 0) {
+      console.log('[Gemini Video] First instruction:', recipe.instructions[0].substring(0, 100));
+    }
 
     return recipe;
   } catch (error: any) {
