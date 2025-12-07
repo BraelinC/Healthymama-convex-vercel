@@ -25,6 +25,18 @@ export interface VideoAnalysisResult {
   totalDuration: number;
 }
 
+// Retry configuration for OpenRouter API calls
+const MAX_RETRIES = 3;
+const INITIAL_DELAY_MS = 1000; // 1 second
+const RETRYABLE_STATUS_CODES = [500, 502, 503, 504, 429]; // Server errors + rate limit
+
+/**
+ * Sleep helper for retry delays
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 /**
  * Filter and validate video segments
  *
@@ -190,45 +202,78 @@ Return ONLY this JSON (no markdown, no extra text):
     console.log('[Gemini Video] Video encoded, size:', videoSizeKB, 'KB');
     console.log('[Gemini Video] Video fingerprint:', videoHash);
 
-    // Call OpenRouter API
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://healthymama.app',
-        'X-Title': 'HealthyMama Recipe Extraction',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'user',
-            content: [
+    // Call OpenRouter API with retry logic
+    let data: any;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://healthymama.app',
+            'X-Title': 'HealthyMama Recipe Extraction',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash',
+            messages: [
               {
-                type: 'text',
-                text: prompt,
-              },
-              {
-                type: 'video_url',
-                video_url: {
-                  url: dataUrl,
-                },
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: prompt,
+                  },
+                  {
+                    type: 'video_url',
+                    video_url: {
+                      url: dataUrl,
+                    },
+                  },
+                ],
               },
             ],
-          },
-        ],
-        temperature: 0.3,
-      }),
-    });
+            temperature: 0.3,
+          }),
+        });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Gemini Video] API error (${response.status}):`, errorText);
-      throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          const isRetryable = RETRYABLE_STATUS_CODES.includes(response.status);
+
+          if (isRetryable && attempt < MAX_RETRIES) {
+            const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+            console.log(`[Gemini Video] API error ${response.status}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})...`);
+            await sleep(delay);
+            continue; // Retry
+          }
+
+          console.error(`[Gemini Video] API error (${response.status}):`, errorText);
+          throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+        }
+
+        data = await response.json();
+        break; // Success - exit retry loop
+      } catch (error: any) {
+        lastError = error;
+
+        // Check if this is a network error that should be retried
+        if (attempt < MAX_RETRIES && !error.message?.includes('OpenRouter API error')) {
+          const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+          console.log(`[Gemini Video] Request failed: ${error.message}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})...`);
+          await sleep(delay);
+          continue;
+        }
+
+        throw error;
+      }
     }
 
-    const data = await response.json();
+    if (!data) {
+      throw lastError || new Error('Failed to get response after retries');
+    }
 
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
       throw new Error('Invalid response format from OpenRouter');
@@ -431,45 +476,78 @@ CRITICAL: Segments array MUST be sorted by startTime (earliest to latest), regar
 
     console.log('[Gemini Video] Video encoded, size:', Math.round(base64Video.length / 1024), 'KB');
 
-    // Call OpenRouter API directly (same format as text parsing)
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://healthymama.app',
-        'X-Title': 'HealthyMama Video Analysis',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'user',
-            content: [
+    // Call OpenRouter API with retry logic
+    let data: any;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://healthymama.app',
+            'X-Title': 'HealthyMama Video Analysis',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash',
+            messages: [
               {
-                type: 'text',
-                text: prompt,
-              },
-              {
-                type: 'video_url',
-                video_url: {
-                  url: dataUrl,
-                },
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: prompt,
+                  },
+                  {
+                    type: 'video_url',
+                    video_url: {
+                      url: dataUrl,
+                    },
+                  },
+                ],
               },
             ],
-          },
-        ],
-        temperature: 0.3,
-      }),
-    });
+            temperature: 0.3,
+          }),
+        });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Gemini Video] API error (${response.status}):`, errorText);
-      throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          const isRetryable = RETRYABLE_STATUS_CODES.includes(response.status);
+
+          if (isRetryable && attempt < MAX_RETRIES) {
+            const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+            console.log(`[Gemini Video] API error ${response.status}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})...`);
+            await sleep(delay);
+            continue; // Retry
+          }
+
+          console.error(`[Gemini Video] API error (${response.status}):`, errorText);
+          throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+        }
+
+        data = await response.json();
+        break; // Success - exit retry loop
+      } catch (error: any) {
+        lastError = error;
+
+        // Check if this is a network error that should be retried
+        if (attempt < MAX_RETRIES && !error.message?.includes('OpenRouter API error')) {
+          const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+          console.log(`[Gemini Video] Request failed: ${error.message}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})...`);
+          await sleep(delay);
+          continue;
+        }
+
+        throw error;
+      }
     }
 
-    const data = await response.json();
+    if (!data) {
+      throw lastError || new Error('Failed to get response after retries');
+    }
 
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
       throw new Error('Invalid response format from OpenRouter');
@@ -721,34 +799,67 @@ Return ONLY this JSON (no markdown, no extra text):
       });
     });
 
-    // Call OpenRouter API with Gemini 2.0 Flash vision
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://healthymama.app',
-        'X-Title': 'HealthyMama Pinterest Recipe Extraction',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash', // Supports vision
-        messages: [
-          {
-            role: 'user',
-            content,
-          },
-        ],
-        temperature: 0.3,
-      }),
-    });
+    // Call OpenRouter API with retry logic
+    let data: any;
+    let lastError: Error | null = null;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Gemini Image] API error (${response.status}):`, errorText);
-      throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://healthymama.app',
+            'X-Title': 'HealthyMama Pinterest Recipe Extraction',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash', // Supports vision
+            messages: [
+              {
+                role: 'user',
+                content,
+              },
+            ],
+            temperature: 0.3,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const isRetryable = RETRYABLE_STATUS_CODES.includes(response.status);
+
+          if (isRetryable && attempt < MAX_RETRIES) {
+            const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+            console.log(`[Gemini Image] API error ${response.status}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})...`);
+            await sleep(delay);
+            continue; // Retry
+          }
+
+          console.error(`[Gemini Image] API error (${response.status}):`, errorText);
+          throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+        }
+
+        data = await response.json();
+        break; // Success - exit retry loop
+      } catch (error: any) {
+        lastError = error;
+
+        // Check if this is a network error that should be retried
+        if (attempt < MAX_RETRIES && !error.message?.includes('OpenRouter API error')) {
+          const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+          console.log(`[Gemini Image] Request failed: ${error.message}, retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRIES})...`);
+          await sleep(delay);
+          continue;
+        }
+
+        throw error;
+      }
     }
 
-    const data = await response.json();
+    if (!data) {
+      throw lastError || new Error('Failed to get response after retries');
+    }
 
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
       throw new Error('Invalid response format from OpenRouter');
