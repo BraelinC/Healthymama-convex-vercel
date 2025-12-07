@@ -3,8 +3,7 @@
 import { use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { useQuery } from "convex-helpers/react/cache/hooks";
-import { useMutation } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -76,6 +75,11 @@ export default function RecipePage({ params }: RecipePageProps) {
     api.recipes.userRecipes.getUserRecipeById,
     recipeId ? { recipeId: recipeId as Id<"userRecipes"> } : "skip"
   );
+
+  // Reset local state when recipe ID changes
+  useEffect(() => {
+    setLocalFavorited(null);
+  }, [recipeId]);
 
   // Sync local favorited state with recipe data
   useEffect(() => {
