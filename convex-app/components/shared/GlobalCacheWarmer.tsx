@@ -15,6 +15,8 @@ import { Id } from "@/convex/_generated/dataModel";
  * - Initializes cache for most recent chat session
  * - Pre-fetches top 10 recent recipes for instant cookbook loading
  * - Pre-fetches friend stories and their attached recipes for instant story recipe loading
+ * - Pre-fetches my own stories for instant viewing
+ * - Preloads story images into browser cache for instant display
  * - Cache auto-expires after 2 min inactivity
  * - Silent background operation - no UI impact
  *
@@ -22,11 +24,13 @@ import { Id } from "@/convex/_generated/dataModel";
  * - First message: ~893ms → ~50ms (cache hit instead of miss)
  * - Cookbook recipes: ~500-1000ms → ~50ms (cache hit)
  * - Story recipes: Instant load when tapping recipe in story
+ * - Story images: Pre-cached in browser for instant display
  * - Saves ~850ms on preprocessing time
  */
 export function GlobalCacheWarmer() {
   const { userId, isLoaded, isSignedIn } = useAuth();
   const hasWarmedCache = useRef(false);
+  const hasPreloadedImages = useRef(false);
 
   // Get user's sessions (sorted by most recent)
   const sessions = useQuery(
@@ -44,6 +48,18 @@ export function GlobalCacheWarmer() {
   // Prefetch friend stories - this caches stories data for instant loading
   const friendStories = useQuery(
     api.stories.getFriendsStories,
+    userId && isSignedIn ? { userId } : "skip"
+  );
+
+  // Prefetch my own stories - for instant viewing when tapping my story circle
+  const myStories = useQuery(
+    api.stories.getMyStories,
+    userId && isSignedIn ? { userId } : "skip"
+  );
+
+  // Prefetch user profile for story display
+  const _myProfile = useQuery(
+    api.userProfile.getUserProfileWithImage,
     userId && isSignedIn ? { userId } : "skip"
   );
 
@@ -134,6 +150,60 @@ export function GlobalCacheWarmer() {
         // Don't mark as warmed so it can retry on next page load
       });
   }, [isLoaded, isSignedIn, userId, sessions, initializeCache]);
+
+  // Preload story images into browser cache for instant display
+  useEffect(() => {
+    if (hasPreloadedImages.current) return;
+    if (!friendStories && !myStories) return;
+
+    const imageUrls: string[] = [];
+
+    // Collect all story media URLs (images only - videos are streamed)
+    friendStories?.forEach((storyUser) => {
+      // Profile image
+      if (storyUser.profileImageUrl) {
+        imageUrls.push(storyUser.profileImageUrl);
+      }
+      // Story images (first 3 per user for thumbnails)
+      storyUser.stories.slice(0, 3).forEach((story) => {
+        if (story.mediaUrl && story.mediaType === "image") {
+          imageUrls.push(story.mediaUrl);
+        }
+      });
+    });
+
+    // My story images
+    myStories?.slice(0, 3).forEach((story) => {
+      if (story.mediaUrl && story.mediaType === "image") {
+        imageUrls.push(story.mediaUrl);
+      }
+    });
+
+    if (imageUrls.length === 0) return;
+
+    console.log(`[GlobalCache] 🖼️ Preloading ${imageUrls.length} story images...`);
+    const preloadStart = Date.now();
+    let loadedCount = 0;
+
+    // Preload images using Image objects (browser will cache them)
+    imageUrls.forEach((url) => {
+      const img = new Image();
+      img.onload = () => {
+        loadedCount++;
+        if (loadedCount === imageUrls.length) {
+          const preloadTime = Date.now() - preloadStart;
+          console.log(`[GlobalCache] ✅ All ${loadedCount} story images preloaded (${preloadTime}ms)`);
+        }
+      };
+      img.onerror = () => {
+        loadedCount++;
+        // Still count errors to track completion
+      };
+      img.src = url;
+    });
+
+    hasPreloadedImages.current = true;
+  }, [friendStories, myStories]);
 
   // No UI - silent background operation
   return null;

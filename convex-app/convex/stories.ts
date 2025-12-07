@@ -33,6 +33,9 @@ export const createStory = mutation({
   handler: async (ctx, args) => {
     const now = Date.now();
 
+    // Pre-generate and cache the media URL for faster loading
+    const cachedMediaUrl = await ctx.storage.getUrl(args.mediaStorageId);
+
     // If recipe attached, get recipe details for denormalization
     let recipeTitle: string | undefined;
     let recipeImageUrl: string | undefined;
@@ -49,6 +52,7 @@ export const createStory = mutation({
       userId: args.userId,
       mediaStorageId: args.mediaStorageId,
       mediaType: args.mediaType,
+      cachedMediaUrl: cachedMediaUrl || undefined,
       recipeId: args.recipeId,
       recipeTitle,
       recipeImageUrl,
@@ -128,10 +132,11 @@ export const getFriendsStories = query({
           }
         }
 
-        // Add media URLs to stories
+        // Add media URLs to stories (use cached URL if available for faster loading)
         const storiesWithUrls = await Promise.all(
           friendStories.map(async (story) => {
-            const mediaUrl = await ctx.storage.getUrl(story.mediaStorageId);
+            // Use cached URL if available, otherwise generate (for older stories)
+            const mediaUrl = story.cachedMediaUrl || await ctx.storage.getUrl(story.mediaStorageId);
             return {
               ...story,
               mediaUrl,
@@ -187,10 +192,11 @@ export const getMyStories = query({
       .order("desc")
       .collect();
 
-    // Add media URLs
+    // Add media URLs (use cached URL if available for faster loading)
     const storiesWithUrls = await Promise.all(
       stories.map(async (story) => {
-        const mediaUrl = await ctx.storage.getUrl(story.mediaStorageId);
+        // Use cached URL if available, otherwise generate (for older stories)
+        const mediaUrl = story.cachedMediaUrl || await ctx.storage.getUrl(story.mediaStorageId);
 
         // Get view count
         const views = await ctx.db

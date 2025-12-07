@@ -1197,6 +1197,7 @@ export default defineSchema({
     // Media content
     mediaStorageId: v.id("_storage"), // Image or video in Convex storage
     mediaType: v.union(v.literal("image"), v.literal("video")),
+    cachedMediaUrl: v.optional(v.string()), // Pre-generated URL for faster loading
 
     // Attached recipe (optional)
     recipeId: v.optional(v.id("userRecipes")),
