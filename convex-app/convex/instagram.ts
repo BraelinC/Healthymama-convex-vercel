@@ -179,21 +179,6 @@ export const importInstagramRecipe = action({
     const imageUrl = isPinterest ? pinterestThumbnailUrl :
                      (isYouTube ? youtubeThumbnailUrl : (instagramThumbnailUrl || instagramVideoUrl));
 
-    // Duplicate Detection: Check if recipe already exists in same cookbook
-    const existingRecipe = await ctx.runQuery(api.recipes.userRecipes.getUserRecipeByTitle, {
-      userId,
-      title,
-    });
-
-    if (existingRecipe && existingRecipe.cookbookCategory === cookbookCategory) {
-      console.log(`[${source || 'Video Import'}] Recipe "${title}" already imported for user ${userId}`);
-      return {
-        success: false,
-        error: "This recipe has already been imported",
-        recipeId: existingRecipe._id,
-      };
-    }
-
     // Save Recipe with PRE-PARSED INGREDIENTS for instant grocery lists
     // This parses ingredients ONCE with AI during import
     console.log(`[${source || 'Video Import'}] Calling saveRecipeWithParsedIngredients for "${title}"`);

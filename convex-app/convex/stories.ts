@@ -18,6 +18,7 @@ export const createStory = mutation({
       scale: v.number(),
       x: v.number(),
       y: v.number(),
+      rotation: v.number(),
     })),
     textOverlays: v.optional(v.array(v.object({
       id: v.string(),
