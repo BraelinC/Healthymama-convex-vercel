@@ -130,6 +130,7 @@ export async function extractRecipeFromVideo(
   prep_time?: string;
   cook_time?: string;
   cuisine?: string;
+  thumbnailTime?: number; // Best timestamp (seconds) for thumbnail - when dish looks most appetizing
 }> {
   const apiKey = process.env.OPEN_ROUTER_API_KEY;
 
@@ -148,6 +149,7 @@ EXTRACT FROM THE VIDEO:
 1. **Ingredients**: List ALL ingredients you see being used (with quantities if visible)
 2. **Instructions**: Write step-by-step cooking instructions based on what you see happening
 3. **Metadata**: Estimate servings, prep time, cook time, cuisine type
+4. **Thumbnail**: Identify the best timestamp (whole seconds) for a thumbnail - when the finished dish looks most visually appealing
 
 RULES:
 - Watch the ENTIRE video from start to finish
@@ -156,6 +158,7 @@ RULES:
 - Write instructions as clear, actionable steps
 - If you can't see quantities, use approximate measurements (e.g., "2 tablespoons oil")
 - Be specific: "dice the onions" not "add onions"
+- For thumbnailTime: Pick the moment when the completed dish is shown plated or in its best presentation
 
 Return ONLY this JSON (no markdown, no extra text):
 {
@@ -166,7 +169,8 @@ Return ONLY this JSON (no markdown, no extra text):
   "servings": "4 servings",
   "prep_time": "15 minutes",
   "cook_time": "30 minutes",
-  "cuisine": "Italian"
+  "cuisine": "Italian",
+  "thumbnailTime": 8
 }
 
 [Request ID: ${Date.now()}-${Math.random().toString(36).substring(7)}]`;
@@ -335,6 +339,7 @@ Return ONLY this JSON (no markdown, no extra text):
     console.log('[Gemini Video] ✅ Extracted recipe from video:', recipe.title);
     console.log('[Gemini Video] Ingredients:', recipe.ingredients.length);
     console.log('[Gemini Video] Instructions:', recipe.instructions.length);
+    console.log('[Gemini Video] Thumbnail time:', recipe.thumbnailTime ? `${recipe.thumbnailTime}s` : 'not specified');
 
     // Log first ingredient and instruction for debugging (helps detect wrong extraction)
     if (recipe.ingredients.length > 0) {

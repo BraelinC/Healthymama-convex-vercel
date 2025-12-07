@@ -110,6 +110,7 @@ interface ParsedRecipe {
   cuisine?: string;
   imageUrl?: string; // Recipe image from website extraction
   videoSegments?: VideoSegment[]; // AI-analyzed timestamps for each step
+  thumbnailTime?: number; // Best timestamp (seconds) for thumbnail from Gemini
 }
 
 /**
@@ -1180,6 +1181,13 @@ export async function POST(request: NextRequest) {
         console.warn(`[${platform} Import] ⚠️ Video analysis failed:`, error.message);
         // Continue without segments - user can still see full video
       }
+    }
+
+    // Step 4b: Use smart thumbnail if we have thumbnailTime from Gemini
+    if (muxData?.playbackId && recipe.thumbnailTime !== undefined) {
+      const smartThumbnailTime = Math.round(recipe.thumbnailTime); // Ensure whole seconds
+      thumbnailUrl = `https://image.mux.com/${muxData.playbackId}/thumbnail.jpg?time=${smartThumbnailTime}`;
+      console.log(`[${platform} Import] 🖼️ Using smart thumbnail at ${smartThumbnailTime}s: ${thumbnailUrl}`);
     }
 
     // Step 5: Return combined data to frontend
