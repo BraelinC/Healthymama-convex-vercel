@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { Heart, X, Video } from "lucide-react";
+import { X, Video } from "lucide-react";
 
 interface PlusButtonMenuProps {
   isOpen: boolean;
   onClose: () => void;
   onAddRecipe: () => void;
-  onViewFavorites: () => void;
   onImportVideo: () => void;
 }
 
@@ -22,7 +21,6 @@ export function PlusButtonMenu({
   isOpen,
   onClose,
   onAddRecipe,
-  onViewFavorites,
   onImportVideo,
 }: PlusButtonMenuProps) {
   const menuItems: MenuItem[] = [
@@ -32,15 +30,6 @@ export function PlusButtonMenu({
       description: "YouTube, Instagram, TikTok & more",
       onClick: () => {
         onImportVideo();
-        onClose();
-      },
-    },
-    {
-      icon: <Heart className="w-5 h-5" />,
-      title: "Favorites",
-      description: "View your saved recipes",
-      onClick: () => {
-        onViewFavorites();
         onClose();
       },
     },

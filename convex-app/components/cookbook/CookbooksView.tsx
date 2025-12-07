@@ -10,7 +10,6 @@ import { CookbookCategoryCard } from "./CookbookCategoryCard";
 import { SharedCookbookCard } from "./SharedCookbookCard";
 import { AddCookbookCard } from "./AddCookbookCard";
 import { CreateRecipe } from "../recipe/CreateRecipe";
-import { FavoritesSheet } from "../recipe/FavoritesSheet";
 import { CookbookSelectionSheet } from "./CookbookSelectionSheet";
 import { CookbookDetailSheet } from "./CookbookDetailSheet";
 import { SharedCookbookDetailSheet } from "./SharedCookbookDetailSheet";
@@ -30,7 +29,6 @@ export function CookbooksView() {
 
   const [viewMode, setViewMode] = useState<"cookbooks" | "meal-plan">("cookbooks");
   const [isCreateRecipeOpen, setIsCreateRecipeOpen] = useState(false);
-  const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [isCookbookSelectionOpen, setIsCookbookSelectionOpen] = useState(false);
   const [isCookbookDetailOpen, setIsCookbookDetailOpen] = useState(false);
   const [isCreateCookbookOpen, setIsCreateCookbookOpen] = useState(false);
@@ -46,10 +44,6 @@ export function CookbooksView() {
   // Fetch real data from Convex
   const cookbookStats = useQuery(
     api.recipes.userRecipes.getCookbookStats,
-    userId ? { userId } : "skip"
-  );
-  const favoriteRecipes = useQuery(
-    api.recipes.userRecipes.getFavoritedRecipes,
     userId ? { userId } : "skip"
   );
 
@@ -101,11 +95,6 @@ export function CookbooksView() {
   const handleAddRecipe = () => {
     console.log("Add own recipe");
     setIsCreateRecipeOpen(true);
-  };
-
-  const handleViewFavorites = () => {
-    console.log("View favorites");
-    setIsFavoritesOpen(true);
   };
 
   const handleImportInstagram = () => {
@@ -300,19 +289,6 @@ export function CookbooksView() {
         isOpen={isCreateRecipeOpen}
         onClose={() => setIsCreateRecipeOpen(false)}
       />
-
-      {/* Favorites Sheet */}
-      {userId && (
-        <FavoritesSheet
-          isOpen={isFavoritesOpen}
-          onClose={() => setIsFavoritesOpen(false)}
-          favoriteRecipes={favoriteRecipes}
-          userId={userId}
-          onToggleFavorite={handleToggleFavorite}
-          onAddToCookbook={handleAddToCookbook}
-          onShare={handleShare}
-        />
-      )}
 
       {/* Cookbook Selection Sheet */}
       {selectedRecipe && (
