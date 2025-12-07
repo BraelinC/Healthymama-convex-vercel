@@ -1107,18 +1107,27 @@ export async function POST(request: NextRequest) {
         try {
           console.log('[Instagram Import] Extracting recipe from video...');
 
-          // Extract title from caption first (if available)
+          // Only extract title from caption if it has useful content
+          // (otherwise AI makes up a title that biases video extraction)
           let captionTitle: string | undefined;
-          try {
-            const captionParse = await parseRecipeWithAI(
-              description,
-              [],
-              ''
-            );
-            captionTitle = captionParse.title;
-            console.log('[Instagram Import] Caption title:', captionTitle);
-          } catch (error) {
-            console.log('[Instagram Import] Could not extract title from caption, will use video');
+          const hasUsefulCaption = description &&
+            description !== 'Instagram reel shared via DM' &&
+            description.length >= 50;
+
+          if (hasUsefulCaption) {
+            try {
+              const captionParse = await parseRecipeWithAI(
+                description,
+                [],
+                ''
+              );
+              captionTitle = captionParse.title;
+              console.log('[Instagram Import] Caption title:', captionTitle);
+            } catch (error) {
+              console.log('[Instagram Import] Could not extract title from caption, will use video');
+            }
+          } else {
+            console.log('[Instagram Import] Skipping caption title extraction - caption too short or generic');
           }
 
           // Watch video and extract full recipe
