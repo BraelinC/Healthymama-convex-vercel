@@ -1,8 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd convex-app && bun run build",
-  "devCommand": "cd convex-app && bun run dev",
-  "installCommand": "cd convex-app && bun install",
-  "outputDirectory": "convex-app/.next",
+  "rootDirectory": "convex-app",
   "framework": "nextjs"
 }
