@@ -690,7 +690,7 @@ Otherwise, return ONLY valid JSON:
       'X-Title': 'HealthyMama Screenshot Recipe Extraction',
     },
     body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
+      model: 'google/gemini-3-flash-preview',
       messages: [{ role: 'user', content }],
       temperature: 0.2, // Low temperature for consistent extraction
       max_tokens: 4000, // Ensure we get complete recipe
