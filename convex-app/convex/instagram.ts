@@ -31,103 +31,6 @@ import { action, mutation, query } from "./_generated/server";
 import { api } from "./_generated/api";
 
 /**
- * Parse Instagram caption to extract ingredients and instructions using Gemini
- *
- * @param caption - Raw Instagram caption text
- * @returns Parsed ingredients and instructions arrays
- */
-async function parseRecipeCaption(caption: string): Promise<{
-  ingredients: string[];
-  instructions: string[];
-}> {
-  const apiKey = process.env.OPEN_ROUTER_API_KEY;
-  if (!apiKey) {
-    console.log("[Caption Parser] OPEN_ROUTER_API_KEY not set, skipping caption parsing");
-    return { ingredients: [], instructions: [] };
-  }
-
-  const prompt = `Extract ingredients (with amounts) and instructions from this Instagram recipe caption.
-
-Caption:
-"""
-${caption}
-"""
-
-RULES:
-1. Extract ALL ingredients with their quantities/amounts (e.g., "2 lbs chicken thighs", "1/4 cup honey")
-2. Extract step-by-step instructions in order
-3. If no ingredients or instructions are found, return empty arrays
-4. Clean up formatting (remove emojis, fix capitalization)
-5. Each ingredient should be a single string with amount and item
-6. Each instruction should be a single clear step
-
-Return ONLY valid JSON, no markdown code blocks:
-{
-  "ingredients": ["2 lbs chicken thighs", "4 cloves garlic minced", "1/4 cup honey"],
-  "instructions": ["Season chicken with salt and pepper", "Heat oil in pan over medium heat", "Cook chicken 5 minutes per side"]
-}`;
-
-  try {
-    console.log(`[Caption Parser] Parsing caption (${caption.length} chars)...`);
-
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://healthymama.app',
-        'X-Title': 'HealthyMama Caption Parser',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-001',
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.1,
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[Caption Parser] API error (${response.status}):`, errorText);
-      return { ingredients: [], instructions: [] };
-    }
-
-    const data = await response.json();
-
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      console.error('[Caption Parser] Invalid response format');
-      return { ingredients: [], instructions: [] };
-    }
-
-    let text = data.choices[0].message.content.trim();
-
-    // Remove markdown code blocks if present
-    if (text.startsWith('```json')) {
-      text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    } else if (text.startsWith('```')) {
-      text = text.replace(/```\n?/g, '').trim();
-    }
-
-    const parsed = JSON.parse(text);
-
-    const ingredients = Array.isArray(parsed.ingredients) ? parsed.ingredients : [];
-    const instructions = Array.isArray(parsed.instructions) ? parsed.instructions : [];
-
-    console.log(`[Caption Parser] Extracted ${ingredients.length} ingredients, ${instructions.length} instructions`);
-
-    return { ingredients, instructions };
-
-  } catch (error: any) {
-    console.error('[Caption Parser] Error parsing caption:', error.message);
-    return { ingredients: [], instructions: [] };
-  }
-}
-
-/**
  * Import an Instagram Recipe to User's Cookbook
  *
  * Main mutation for saving Instagram-extracted recipes to the database.
@@ -222,9 +125,6 @@ export const importInstagramRecipe = action({
       startTime: v.number(),
       endTime: v.number(),
     }))),
-
-    // Instagram caption text for parsing ingredients/instructions
-    captionText: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Get userId - either from args (Mikey bot) or auth context (regular users)
@@ -246,8 +146,8 @@ export const importInstagramRecipe = action({
     const {
       title,
       description,
-      ingredients: videoIngredients,
-      instructions: videoInstructions,
+      ingredients,
+      instructions,
       servings,
       prep_time,
       cook_time,
@@ -269,7 +169,6 @@ export const importInstagramRecipe = action({
       muxPlaybackId,
       muxAssetId,
       videoSegments,
-      captionText,
     } = args;
 
     // Determine cookbook category - use user selection if provided, otherwise auto-detect from source
@@ -279,27 +178,6 @@ export const importInstagramRecipe = action({
     const cookbookCategory = args.cookbookCategory || autoCategory;
     const imageUrl = isPinterest ? pinterestThumbnailUrl :
                      (isYouTube ? youtubeThumbnailUrl : (instagramThumbnailUrl || instagramVideoUrl));
-
-    // Parse caption for ingredients/instructions if provided
-    // Caption data is used as fallback if video extraction is missing data
-    let ingredients = videoIngredients || [];
-    let instructions = videoInstructions || [];
-
-    if (captionText && captionText.trim().length > 0) {
-      console.log(`[${source || 'Video Import'}] Caption provided, parsing for ingredients/instructions...`);
-
-      const parsed = await parseRecipeCaption(captionText);
-
-      // Use caption data if video extraction is missing data
-      if (parsed.ingredients.length > 0 && ingredients.length === 0) {
-        console.log(`[${source || 'Video Import'}] Using ${parsed.ingredients.length} ingredients from caption`);
-        ingredients = parsed.ingredients;
-      }
-      if (parsed.instructions.length > 0 && instructions.length === 0) {
-        console.log(`[${source || 'Video Import'}] Using ${parsed.instructions.length} instructions from caption`);
-        instructions = parsed.instructions;
-      }
-    }
 
     // Save Recipe with PRE-PARSED INGREDIENTS for instant grocery lists
     // This parses ingredients ONCE with AI during import
@@ -318,8 +196,8 @@ export const importInstagramRecipe = action({
         (isYouTube ? `Recipe from YouTube` : `Recipe from @${instagramUsername || 'Instagram'}`)
       ),
       imageUrl,
-      ingredients, // From video extraction or caption parsing
-      instructions, // From video extraction or caption parsing
+      ingredients: ingredients || [],
+      instructions: instructions || [],
 
       // Optional metadata
       servings,

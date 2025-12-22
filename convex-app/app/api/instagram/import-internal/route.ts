@@ -23,6 +23,102 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 // Initialize Convex client
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
+/**
+ * Parse Instagram caption for title, ingredients, and instructions
+ * This is a cheap text-based Gemini call (vs expensive video analysis)
+ */
+async function parseCaption(caption: string): Promise<{
+  title: string | null;
+  ingredients: string[];
+  instructions: string[];
+}> {
+  const apiKey = process.env.OPEN_ROUTER_API_KEY;
+  if (!apiKey) {
+    console.log('[Caption Parser] OPEN_ROUTER_API_KEY not set, skipping');
+    return { title: null, ingredients: [], instructions: [] };
+  }
+
+  const prompt = `Extract recipe information from this Instagram caption.
+
+Caption:
+"""
+${caption}
+"""
+
+Extract:
+1. TITLE: The recipe name (usually at the start, may have emojis)
+2. INGREDIENTS: List with amounts (e.g., "2 lbs chicken thighs", "1/4 cup honey")
+3. INSTRUCTIONS: Step-by-step cooking steps (if present)
+
+RULES:
+- Clean up formatting (remove excessive emojis, fix capitalization)
+- If no title found, return null
+- If no ingredients/instructions found, return empty arrays
+- Ingredients MUST include amounts when available
+
+Return ONLY valid JSON, no markdown:
+{
+  "title": "Recipe Name" or null,
+  "ingredients": ["2 lbs chicken thighs", "4 cloves garlic minced"],
+  "instructions": ["Season chicken with salt", "Heat pan over medium"]
+}`;
+
+  try {
+    console.log(`[Caption Parser] Parsing caption (${caption.length} chars)...`);
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://healthymama.app',
+        'X-Title': 'HealthyMama Caption Parser',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.0-flash-001',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+      })
+    });
+
+    if (!response.ok) {
+      console.error(`[Caption Parser] API error (${response.status})`);
+      return { title: null, ingredients: [], instructions: [] };
+    }
+
+    const data = await response.json();
+    if (!data.choices?.[0]?.message?.content) {
+      console.error('[Caption Parser] Invalid response format');
+      return { title: null, ingredients: [], instructions: [] };
+    }
+
+    let text = data.choices[0].message.content.trim();
+
+    // Remove markdown code blocks if present
+    if (text.startsWith('```json')) {
+      text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    } else if (text.startsWith('```')) {
+      text = text.replace(/```\n?/g, '').trim();
+    }
+
+    const parsed = JSON.parse(text);
+
+    const result = {
+      title: parsed.title || null,
+      ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : [],
+      instructions: Array.isArray(parsed.instructions) ? parsed.instructions : [],
+    };
+
+    console.log(`[Caption Parser] Extracted: title="${result.title}", ${result.ingredients.length} ingredients, ${result.instructions.length} instructions`);
+
+    return result;
+
+  } catch (error: any) {
+    console.error('[Caption Parser] Error:', error.message);
+    return { title: null, ingredients: [], instructions: [] };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Validate API key
@@ -59,21 +155,37 @@ export async function POST(request: NextRequest) {
       console.log(`[Internal Import] Caption provided: ${caption.substring(0, 100)}...`);
     }
 
-    // Step 1: Extract recipe from video using Gemini
-    console.log('[Internal Import] Extracting recipe from video with Gemini...');
+    // STEP 1: Parse CAPTION first for title, ingredients, instructions (cheap text call)
+    let captionData = { title: null as string | null, ingredients: [] as string[], instructions: [] as string[] };
+    if (caption && caption.trim().length > 0) {
+      console.log('[Internal Import] Step 1: Parsing caption (cheap)...');
+      captionData = await parseCaption(caption);
+    } else {
+      console.log('[Internal Import] Step 1: No caption provided, skipping caption parse');
+    }
+
+    // STEP 2: Parse VIDEO for thumbnail timestamp + fallback data (expensive video call)
+    console.log('[Internal Import] Step 2: Extracting from video (for thumbnail timestamp)...');
     let recipe;
     try {
       recipe = await extractRecipeFromVideo(videoUrl, creatorUsername ? `Recipe from @${creatorUsername}` : undefined);
-      console.log(`[Internal Import] Extracted: "${recipe.title}"`);
-      console.log(`[Internal Import] Ingredients: ${recipe.ingredients?.length || 0}`);
-      console.log(`[Internal Import] Instructions: ${recipe.instructions?.length || 0}`);
+      console.log(`[Internal Import] Video extracted: "${recipe.title}"`);
     } catch (error: any) {
-      console.error('[Internal Import] Recipe extraction failed:', error.message);
+      console.error('[Internal Import] Video extraction failed:', error.message);
       return NextResponse.json(
         { error: `Recipe extraction failed: ${error.message}` },
         { status: 500 }
       );
     }
+
+    // STEP 3: Merge - caption wins, video is fallback
+    const finalTitle = captionData.title || recipe.title;
+    const finalIngredients = captionData.ingredients.length > 0 ? captionData.ingredients : (recipe.ingredients || []);
+    const finalInstructions = captionData.instructions.length > 0 ? captionData.instructions : (recipe.instructions || []);
+
+    console.log(`[Internal Import] Final: "${finalTitle}"`);
+    console.log(`[Internal Import] Final ingredients: ${finalIngredients.length} (from ${captionData.ingredients.length > 0 ? 'caption' : 'video'})`);
+    console.log(`[Internal Import] Final instructions: ${finalInstructions.length} (from ${captionData.instructions.length > 0 ? 'caption' : 'video'})`)
 
     // Step 2: Upload video to Mux
     let muxData = null;
@@ -87,12 +199,12 @@ export async function POST(request: NextRequest) {
       console.warn('[Internal Import] Mux upload failed (continuing without video hosting):', error.message);
     }
 
-    // Step 3: Analyze video segments for step-by-step mode
+    // Step 3: Analyze video segments for step-by-step mode (uses final instructions)
     let videoSegments;
-    if (recipe.instructions && recipe.instructions.length > 0) {
+    if (finalInstructions.length > 0) {
       try {
         console.log('[Internal Import] Analyzing video segments...');
-        const analysis = await analyzeVideoSegments(videoUrl, recipe.instructions);
+        const analysis = await analyzeVideoSegments(videoUrl, finalInstructions);
         videoSegments = analysis.segments;
         console.log(`[Internal Import] Found ${videoSegments?.length || 0} video segments`);
       } catch (error: any) {
@@ -112,10 +224,10 @@ export async function POST(request: NextRequest) {
 
     const importResult = await convex.action(api.instagram.importInstagramRecipe, {
       userId,
-      title: recipe.title,
+      title: finalTitle,
       description: recipe.description || `Recipe from @${creatorUsername || 'Instagram'}`,
-      ingredients: recipe.ingredients || [],
-      instructions: recipe.instructions || [],
+      ingredients: finalIngredients,
+      instructions: finalInstructions,
       servings: recipe.servings,
       prep_time: recipe.prep_time,
       cook_time: recipe.cook_time,
@@ -128,7 +240,6 @@ export async function POST(request: NextRequest) {
       muxAssetId: muxData?.assetId,
       videoSegments: videoSegments,
       cookbookCategory: 'instagram', // Auto-organize in Instagram cookbook
-      captionText: caption, // Instagram caption for ingredients/instructions parsing
     });
 
     if (!importResult.success || !importResult.recipeId) {
@@ -150,7 +261,7 @@ export async function POST(request: NextRequest) {
       success: true,
       recipeId,
       recipeUrl,
-      recipeTitle: recipe.title,
+      recipeTitle: finalTitle,
     });
 
   } catch (error: any) {
