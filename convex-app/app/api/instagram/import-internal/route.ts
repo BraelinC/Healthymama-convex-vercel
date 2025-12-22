@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { videoUrl, userId, creatorUsername } = body;
+    const { videoUrl, userId, creatorUsername, caption } = body;
 
     if (!videoUrl || typeof videoUrl !== 'string') {
       return NextResponse.json(
@@ -55,6 +55,9 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Internal Import] Processing video for creator @${creatorUsername || 'unknown'}`);
     console.log(`[Internal Import] Video URL: ${videoUrl.substring(0, 100)}...`);
+    if (caption) {
+      console.log(`[Internal Import] Caption provided: ${caption.substring(0, 100)}...`);
+    }
 
     // Step 1: Extract recipe from video using Gemini
     console.log('[Internal Import] Extracting recipe from video with Gemini...');
@@ -125,6 +128,7 @@ export async function POST(request: NextRequest) {
       muxAssetId: muxData?.assetId,
       videoSegments: videoSegments,
       cookbookCategory: 'instagram', // Auto-organize in Instagram cookbook
+      captionText: caption, // Instagram caption for ingredients/instructions parsing
     });
 
     if (!importResult.success || !importResult.recipeId) {
