@@ -25,6 +25,23 @@ export interface VideoAnalysisResult {
   totalDuration: number;
 }
 
+export interface RecipeWithSegments {
+  // Recipe data
+  title: string;
+  ingredients: string[];
+  instructions: string[];
+  description?: string;
+  servings?: string;
+  prep_time?: string;
+  cook_time?: string;
+  cuisine?: string;
+  thumbnailTime?: number;
+
+  // Video segments (timestamps per instruction)
+  segments: VideoSegment[];
+  totalDuration: number;
+}
+
 // Retry configuration for OpenRouter API calls
 const MAX_RETRIES = 3;
 const INITIAL_DELAY_MS = 1000; // 1 second
@@ -112,11 +129,244 @@ function filterValidSegments(segments: VideoSegment[], totalDuration: number): V
 }
 
 /**
+ * Extract recipe AND video segments in a SINGLE API call
+ *
+ * This combines extractRecipeFromVideo() and analyzeVideoSegments() to:
+ * - Cut API costs in half (video sent once instead of twice)
+ * - Extract recipe, ingredients, instructions
+ * - Get timestamps for each instruction step
+ *
+ * @param videoUrl - Direct URL to video file (Instagram CDN)
+ * @param captionTitle - Title extracted from caption (if any)
+ * @returns Recipe with video segments for step-by-step cooking mode
+ */
+export async function extractRecipeWithSegments(
+  videoUrl: string,
+  captionTitle?: string
+): Promise<RecipeWithSegments> {
+  const apiKey = process.env.OPEN_ROUTER_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('OPEN_ROUTER_API_KEY not configured');
+  }
+
+  console.log('[Gemini Video] Extracting recipe WITH segments (single API call)');
+  console.log('[Gemini Video] Video URL:', videoUrl.substring(0, 150) + '...');
+
+  const prompt = `You are a recipe extraction and video analysis expert. Watch this cooking video and extract the complete recipe WITH timestamps for each step.
+
+${captionTitle ? `The recipe is called: "${captionTitle}"` : 'Determine the recipe name from the video.'}
+
+YOUR TASK (do both in ONE response):
+
+═══ PART 1: EXTRACT THE RECIPE ═══
+1. **Ingredients**: List ALL ingredients you see being used (with quantities if visible)
+2. **Instructions**: Write step-by-step cooking instructions based on what you see
+3. **Metadata**: Estimate servings, prep time, cook time, cuisine type
+4. **Thumbnail**: Best timestamp (seconds) when finished dish looks most appetizing
+
+═══ PART 2: SEGMENT THE VIDEO ═══
+For EACH instruction step you extracted, identify:
+- What timestamp (seconds) does this step START in the video?
+- What timestamp (seconds) does this step END?
+
+IMPORTANT FOR SEGMENTS:
+- Instagram reels often show final dish FIRST (0-10s preview), then cooking process
+- Segments should be in VIDEO TIMELINE order (sorted by startTime)
+- Each segment maps to one instruction step
+- Skip intro/preview sections
+
+RULES:
+- Watch the ENTIRE video from start to finish
+- List ingredients in order of use
+- Write instructions as clear, actionable steps
+- If you can't see quantities, use approximate measurements
+- Be specific: "dice the onions" not "add onions"
+- Segments can be short (1-3 seconds is normal for fast-paced reels)
+
+Return ONLY this JSON (no markdown, no extra text):
+{
+  "title": "Recipe Name",
+  "description": "One sentence description",
+  "ingredients": ["ingredient 1 with quantity", "ingredient 2", ...],
+  "instructions": ["Step 1: Action", "Step 2: Action", ...],
+  "servings": "4 servings",
+  "prep_time": "15 minutes",
+  "cook_time": "30 minutes",
+  "cuisine": "Italian",
+  "thumbnailTime": 8,
+  "segments": [
+    {"stepNumber": 1, "instruction": "Step 1: Action", "startTime": 5, "endTime": 12},
+    {"stepNumber": 2, "instruction": "Step 2: Action", "startTime": 12, "endTime": 20}
+  ],
+  "totalDuration": 45
+}
+
+CRITICAL: The "segments" array must have one entry per instruction, with stepNumber matching the instruction index (1-based).`;
+
+  try {
+    // Download and encode video
+    console.log('[Gemini Video] Downloading video...');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+
+    const videoData = await fetch(videoUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    });
+
+    clearTimeout(timeout);
+
+    if (!videoData.ok) {
+      throw new Error(`Failed to download video: ${videoData.status} ${videoData.statusText}`);
+    }
+
+    const videoBlob = await videoData.blob();
+    const videoBuffer = await videoBlob.arrayBuffer();
+    const base64Video = Buffer.from(videoBuffer).toString('base64');
+    const dataUrl = `data:video/mp4;base64,${base64Video}`;
+
+    const videoSizeKB = Math.round(base64Video.length / 1024);
+    console.log('[Gemini Video] Video encoded, size:', videoSizeKB, 'KB');
+
+    // Call OpenRouter API with retry logic
+    let data: any;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://healthymama.app',
+            'X-Title': 'HealthyMama Recipe+Segments Extraction',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash-lite-preview-09-2025',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: prompt },
+                  { type: 'video_url', video_url: { url: dataUrl } },
+                ],
+              },
+            ],
+            temperature: 0.3,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const isRetryable = RETRYABLE_STATUS_CODES.includes(response.status);
+
+          if (isRetryable && attempt < MAX_RETRIES) {
+            const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+            console.log(`[Gemini Video] API error ${response.status}, retrying in ${delay}ms...`);
+            await sleep(delay);
+            continue;
+          }
+
+          throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+        }
+
+        data = await response.json();
+        break;
+      } catch (error: any) {
+        lastError = error;
+        if (attempt < MAX_RETRIES && !error.message?.includes('OpenRouter API error')) {
+          const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+          console.log(`[Gemini Video] Request failed, retrying in ${delay}ms...`);
+          await sleep(delay);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (!data) {
+      throw lastError || new Error('Failed to get response after retries');
+    }
+
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error('Invalid response format from OpenRouter');
+    }
+
+    const text = data.choices[0].message.content.trim();
+
+    // Parse JSON response
+    let jsonText = text.trim();
+    if (jsonText.includes('```json')) {
+      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    } else if (jsonText.includes('```')) {
+      jsonText = jsonText.replace(/```\n?/g, '').trim();
+    }
+
+    const firstBrace = jsonText.indexOf('{');
+    const lastBrace = jsonText.lastIndexOf('}');
+    if (firstBrace === -1 || lastBrace === -1) {
+      throw new Error('No JSON object found in response');
+    }
+    jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+
+    let result: RecipeWithSegments;
+    try {
+      result = JSON.parse(jsonText);
+    } catch (parseError: any) {
+      // Try to repair common JSON issues
+      try {
+        let repairedJson = jsonText
+          .replace(/([^\\])"([^"]*)\n/g, '$1"$2\\n')
+          .replace(/,\s*}/g, '}')
+          .replace(/,\s*]/g, ']');
+        result = JSON.parse(repairedJson);
+      } catch {
+        throw new Error(`Failed to parse response: ${parseError.message}`);
+      }
+    }
+
+    // Validate required fields
+    if (!result.title || !result.ingredients || !result.instructions) {
+      throw new Error('Invalid recipe format: missing required fields');
+    }
+
+    // Ensure segments array exists
+    if (!result.segments) {
+      result.segments = [];
+    }
+
+    // Filter and validate segments
+    if (result.segments.length > 0 && result.totalDuration) {
+      result.segments = filterValidSegments(result.segments, result.totalDuration);
+    }
+
+    console.log('[Gemini Video] ✅ Extracted recipe:', result.title);
+    console.log('[Gemini Video] Ingredients:', result.ingredients.length);
+    console.log('[Gemini Video] Instructions:', result.instructions.length);
+    console.log('[Gemini Video] Segments:', result.segments.length);
+
+    return result;
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw new Error('Video download timeout (30s limit exceeded)');
+    }
+    console.error('[Gemini Video] Extraction failed:', error.message);
+    throw new Error(`Video extraction failed: ${error.message}`);
+  }
+}
+
+/**
  * Extract recipe from video (when caption has no recipe)
  *
  * @param videoUrl - Direct URL to video file (Instagram CDN)
  * @param captionTitle - Title extracted from caption (if any)
  * @returns Full recipe extracted from video
+ * @deprecated Use extractRecipeWithSegments() instead for combined extraction
  */
 export async function extractRecipeFromVideo(
   videoUrl: string,

@@ -36,7 +36,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { uploadVideoFromUrl } from '@/lib/mux';
-import { analyzeVideoSegments, VideoSegment, extractRecipeFromVideo } from '@/lib/gemini-video-analysis';
+import { extractRecipeWithSegments, VideoSegment, RecipeWithSegments } from '@/lib/gemini-video-analysis';
 import {
   extractYouTubeVideoId,
   parseYouTubeDescription,
@@ -921,6 +921,7 @@ export async function POST(request: NextRequest) {
 
     // Step 3: Extract recipe (different flow for each platform)
     let recipe: ParsedRecipe;
+    let videoSegmentsFromExtraction: VideoSegment[] | undefined;
 
     if (isPinterest) {
       // PINTEREST FLOW: External website → Video extraction → Gemini vision fallback
@@ -967,37 +968,21 @@ export async function POST(request: NextRequest) {
         console.log('[Pinterest Import] No external link found on pin or in description');
       }
 
-      // FALLBACK 1: Video extraction (for video pins)
+      // FALLBACK 1: Video extraction (for video pins) - uses combined extraction
       if (!pinterestRecipe && pinterestData!.type === 'video' && videoUrl) {
-        console.log('[Pinterest Import] Falling back to video extraction...');
+        console.log('[Pinterest Import] Falling back to video extraction (combined)...');
         try {
-          pinterestRecipe = await extractRecipeFromVideo(videoUrl, title);
-          console.log(`[Pinterest Import] ✅ Extracted from video: ${pinterestRecipe.instructions.length} instructions, ${pinterestRecipe.ingredients.length} ingredients`);
+          const extractionResult = await extractRecipeWithSegments(videoUrl, title);
+          pinterestRecipe = extractionResult;
+          videoSegmentsFromExtraction = extractionResult.segments;
+          console.log(`[Pinterest Import] ✅ Extracted from video: ${pinterestRecipe.instructions.length} instructions, ${pinterestRecipe.ingredients.length} ingredients, ${videoSegmentsFromExtraction?.length || 0} segments`);
 
-          // Upload to Mux for instant clipping
+          // Upload to Mux for instant clipping (uses outer muxData variable)
           try {
-            const muxData = await uploadVideoFromUrl(videoUrl);
-            muxPlaybackId = muxData.playbackId;
-            muxAssetId = muxData.assetId;
-            console.log(`[Pinterest Import] ✅ Uploaded to Mux: ${muxPlaybackId}`);
+            muxData = await uploadVideoFromUrl(videoUrl);
+            console.log(`[Pinterest Import] ✅ Uploaded to Mux: ${muxData.playbackId}`);
           } catch (muxError: any) {
             console.warn('[Pinterest Import] ⚠️ Mux upload failed:', muxError.message);
-          }
-
-          // Analyze video segments for step-by-step mode
-          if (pinterestRecipe.instructions.length > 0) {
-            try {
-              const segments = await analyzeVideoSegments(
-                videoUrl,
-                pinterestRecipe.instructions
-              );
-              if (segments && segments.length > 0) {
-                videoSegments = segments;
-                console.log(`[Pinterest Import] ✅ Generated ${segments.length} video segments`);
-              }
-            } catch (segmentError: any) {
-              console.warn('[Pinterest Import] ⚠️ Video segmentation failed:', segmentError.message);
-            }
           }
         } catch (error: any) {
           console.warn('[Pinterest Import] ⚠️ Video extraction failed:', error.message);
@@ -1064,7 +1049,7 @@ export async function POST(request: NextRequest) {
           };
         }
       } else {
-        // No recipe in description - extract from video
+        // No recipe in description - extract from video (combined extraction)
         console.log('[YouTube Import] No recipe in description, extracting from video...');
 
         if (!videoUrl) {
@@ -1072,8 +1057,10 @@ export async function POST(request: NextRequest) {
         }
 
         try {
-          recipe = await extractRecipeFromVideo(videoUrl, title);
-          console.log(`[YouTube Import] ✅ Extracted from video: ${recipe.instructions.length} instructions, ${recipe.instructions.length} ingredients`);
+          const extractionResult = await extractRecipeWithSegments(videoUrl, title);
+          recipe = extractionResult;
+          videoSegmentsFromExtraction = extractionResult.segments;
+          console.log(`[YouTube Import] ✅ Extracted from video: ${recipe.instructions.length} instructions, ${recipe.ingredients.length} ingredients, ${videoSegmentsFromExtraction?.length || 0} segments`);
         } catch (error: any) {
           throw new Error(`Failed to extract recipe from YouTube video: ${error.message}`);
         }
@@ -1104,9 +1091,10 @@ export async function POST(request: NextRequest) {
       }
 
       // SECOND: Try video extraction if no recipe from website
+      // Uses combined extraction to get recipe + segments in ONE API call (saves 50% cost)
       if (!instagramRecipe && downloadedVideoUrl) {
         try {
-          console.log('[Instagram Import] Extracting recipe from video...');
+          console.log('[Instagram Import] Extracting recipe WITH segments (single API call)...');
 
           // Only extract title from caption if it has useful content
           // (otherwise AI makes up a title that biases video extraction)
@@ -1131,13 +1119,19 @@ export async function POST(request: NextRequest) {
             console.log('[Instagram Import] Skipping caption title extraction - caption too short or generic');
           }
 
-          // Watch video and extract full recipe
-          instagramRecipe = await extractRecipeFromVideo(
+          // Watch video and extract full recipe WITH segments in one call
+          const extractionResult = await extractRecipeWithSegments(
             downloadedVideoUrl,
             captionTitle
           );
 
-          console.log(`[Instagram Import] ✅ Extracted from video: ${instagramRecipe.instructions.length} instructions, ${instagramRecipe.ingredients.length} ingredients`);
+          // Store recipe data
+          instagramRecipe = extractionResult;
+
+          // Store segments from combined extraction
+          videoSegmentsFromExtraction = extractionResult.segments;
+
+          console.log(`[Instagram Import] ✅ Extracted from video: ${instagramRecipe.instructions.length} instructions, ${instagramRecipe.ingredients.length} ingredients, ${videoSegmentsFromExtraction?.length || 0} segments`);
         } catch (error: any) {
           console.warn('[Instagram Import] ⚠️ Video extraction failed:', error.message);
         }
@@ -1166,21 +1160,10 @@ export async function POST(request: NextRequest) {
       recipe = instagramRecipe;
     }
 
-    // Step 4: Analyze video to get timestamps for each instruction (ALWAYS for both platforms)
-    let videoSegments: VideoSegment[] | undefined;
-    if (downloadedVideoUrl && recipe.instructions.length > 0) {
-      try {
-        console.log(`[${platform} Import] Analyzing video for step-by-step timestamps...`);
-        const analysis = await analyzeVideoSegments(
-          downloadedVideoUrl,
-          recipe.instructions
-        );
-        videoSegments = analysis.segments;
-        console.log(`[${platform} Import] ✅ Found ${videoSegments.length} video segments`);
-      } catch (error: any) {
-        console.warn(`[${platform} Import] ⚠️ Video analysis failed:`, error.message);
-        // Continue without segments - user can still see full video
-      }
+    // Step 4: Use segments from combined extraction (no separate API call needed!)
+    let videoSegments: VideoSegment[] | undefined = videoSegmentsFromExtraction;
+    if (videoSegments && videoSegments.length > 0) {
+      console.log(`[${platform} Import] ✅ Using ${videoSegments.length} segments from combined extraction`);
     }
 
     // Step 4b: Use smart thumbnail if we have thumbnailTime from Gemini
