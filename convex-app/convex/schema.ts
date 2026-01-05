@@ -580,23 +580,27 @@ export default defineSchema({
     // Deduplication
     contentHash: v.string(), // SHA-256 of normalized text
 
-    // Metadata
-    extractedFrom: v.object({
+    // Metadata (optional for Gemini Live memories that don't have chat session context)
+    extractedFrom: v.optional(v.object({
       sessionId: v.id("chatSessions"),
       messageIds: v.array(v.id("chatMessages")),
       extractedAt: v.number(),
-    }),
+    })),
 
     // Lifecycle
     createdAt: v.number(),
     updatedAt: v.number(),
     version: v.number(), // Increment on UPDATE operations
+
+    // Gemini Live cooking assistant - starred/favourite memories
+    isFavourite: v.optional(v.boolean()),
   })
     .index("by_user", ["userId"])
     .index("by_user_agent", ["userId", "agentId"])
     .index("by_user_run", ["userId", "runId"])
     .index("by_hash", ["contentHash"]) // Deduplication
     .index("by_user_createdAt", ["userId", "createdAt"]) // For time-based queries (hybrid search)
+    .index("by_user_favourite", ["userId", "isFavourite"]) // For Gemini Live favourites
     .vectorIndex("by_embedding", {
       vectorField: "embedding",
       dimensions: 1536, // text-embedding-3-small
@@ -1399,5 +1403,70 @@ export default defineSchema({
   })
     .index("by_conversation", ["conversationId", "createdAt"])
     .index("by_user", ["userId", "createdAt"]),
+
+  // ========== GEMINI LIVE VOICE ASSISTANT ==========
+
+  // Voice Sessions - Stores full conversation transcripts
+  voiceSessions: defineTable({
+    userId: v.string(),
+    recipeId: v.optional(v.id("userRecipes")),
+
+    // Full transcript (both sides)
+    turns: v.array(v.object({
+      role: v.union(v.literal("user"), v.literal("model")),
+      text: v.string(),
+      timestamp: v.number(),
+    })),
+
+    // Session state
+    status: v.union(
+      v.literal("active"),
+      v.literal("ended"),
+      v.literal("processed")   // Facts extracted
+    ),
+
+    // Timing
+    startedAt: v.number(),
+    endedAt: v.optional(v.number()),
+    lastActivityAt: v.number(),
+
+    // Processing results
+    extractedFactIds: v.optional(v.array(v.id("voiceMemories"))),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_status", ["userId", "status"])
+    .index("by_status_activity", ["status", "lastActivityAt"]), // For timeout processing
+
+  // Voice Memories - Extracted facts + searchable memory
+  voiceMemories: defineTable({
+    userId: v.string(),
+
+    // Core content
+    text: v.string(),                          // The memory fact
+    type: v.union(
+      v.literal("fact"),                       // Extracted from conversation
+      v.literal("favourite")                   // User explicitly starred
+    ),
+
+    // For vector search
+    embedding: v.array(v.float64()),
+
+    // Context
+    recipeId: v.optional(v.id("userRecipes")), // Which recipe was discussed
+    sessionId: v.optional(v.id("voiceSessions")),
+
+    // Metadata
+    isFavourite: v.boolean(),                  // Is this important?
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_type", ["userId", "type"])
+    .index("by_user_favourite", ["userId", "isFavourite"])
+    .index("by_user_recent", ["userId", "createdAt"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["userId"],
+    }),
 });
 

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { UnifiedRecipeCard } from "@/components/recipe/UnifiedRecipeCard";
 import { CookbookSelectionSheet } from "@/components/cookbook/CookbookSelectionSheet";
+import { CookingAssistantFAB } from "@/components/recipe/CookingAssistantFAB";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -300,6 +301,18 @@ export default function RecipePage({ params }: RecipePageProps) {
         recipe={recipe}
         onSelectCookbook={handleSelectCookbook}
       />
+
+      {/* Gemini Live Cooking Assistant */}
+      {user?.id && recipe && (
+        <CookingAssistantFAB
+          userId={user.id}
+          recipe={{
+            title: recipe.title,
+            ingredients: recipe.ingredients,
+            instructions: recipe.instructions,
+          }}
+        />
+      )}
     </div>
   );
 }

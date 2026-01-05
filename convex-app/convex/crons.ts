@@ -19,6 +19,17 @@ crons.interval(
   internal.memory.sessionCacheQueries.expireOldCaches
 );
 
+/**
+ * Process timed-out voice sessions
+ * Runs every 5 minutes to find stale voice sessions (>5 min inactive)
+ * Ends them and extracts facts for memory storage
+ */
+crons.interval(
+  "process-stale-voice-sessions",
+  { minutes: 5 },
+  internal.voiceSessionsActions.processTimedOutSessions
+);
+
 // REMOVED: Instagram DM polling (replaced by webhooks)
 // Webhooks provide instant notifications instead of 15-second polling
 // Webhook registered automatically when Instagram account is connected
