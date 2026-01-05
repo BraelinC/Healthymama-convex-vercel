@@ -14,7 +14,7 @@ import { CreateCommunityModal } from "@/components/community/CreateCommunityModa
 import { CheckoutModal } from "@/components/community/CheckoutModal";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { BookMarked, Users, Plus, HandPlatter } from "lucide-react";
+import { BookMarked, Users, Plus, HandPlatter, Home, Search } from "lucide-react";
 import { AuthBlockerModal } from "@/components/auth/AuthBlockerModal";
 import { ProfileDropdownMenu } from "@/components/shared/ProfileDropdownMenu";
 import { NotificationBadge } from "@/components/shared/NotificationBadge";
@@ -444,6 +444,28 @@ function HomePageContent() {
           cancelUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/?tab=community&discover=true`}
         />
       )}
+
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-lg">
+        <div className="max-w-4xl mx-auto flex">
+          <Button
+            variant="ghost"
+            className="flex-1 h-16 flex flex-col items-center justify-center gap-1 rounded-none bg-gradient-to-br from-red-50 to-pink-50 text-pink-600"
+          >
+            <Home className="h-5 w-5" />
+            <span className="text-xs font-medium">Home</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className="flex-1 h-16 flex flex-col items-center justify-center gap-1 rounded-none text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+            onClick={() => router.push("/discover")}
+          >
+            <Search className="h-5 w-5" />
+            <span className="text-xs font-medium">Discover</span>
+          </Button>
+        </div>
+      </nav>
+
     </div>
   );
 }
