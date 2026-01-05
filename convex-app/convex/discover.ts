@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { query, internalQuery } from "./_generated/server";
 
 /**
  * Discover module - Public recipe discovery and search
@@ -68,6 +68,57 @@ export const getAllExtractedRecipes = query({
  * Search extracted recipes by title or ingredients
  * Simple text-based search for the discover page
  */
+/**
+ * Internal version for HTTP actions
+ */
+export const internalGetAllExtractedRecipes = internalQuery({
+  args: {
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 20;
+
+    let recipesQuery = ctx.db
+      .query("extractedRecipes")
+      .order("desc");
+
+    if (args.cursor) {
+      recipesQuery = recipesQuery.filter((q) =>
+        q.lt(q.field("createdAt"), args.cursor!)
+      );
+    }
+
+    const recipes = await recipesQuery.take(limit + 1);
+    const hasMore = recipes.length > limit;
+    const returnedRecipes = hasMore ? recipes.slice(0, limit) : recipes;
+    const nextCursor = hasMore
+      ? returnedRecipes[returnedRecipes.length - 1]?.createdAt
+      : undefined;
+
+    return {
+      recipes: returnedRecipes.map(recipe => ({
+        _id: recipe._id,
+        title: recipe.title,
+        description: recipe.description,
+        imageUrl: recipe.imageUrl,
+        ingredients: recipe.ingredients,
+        instructions: recipe.instructions,
+        servings: recipe.servings,
+        prep_time: recipe.prep_time,
+        cook_time: recipe.cook_time,
+        category: recipe.category,
+        method: recipe.method,
+        createdAt: recipe.createdAt,
+        url: recipe.url,
+        enrichedMetadata: recipe.enrichedMetadata,
+      })),
+      nextCursor,
+      hasMore,
+    };
+  },
+});
+
 export const searchExtractedRecipes = query({
   args: {
     searchTerm: v.string(),

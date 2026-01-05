@@ -5,9 +5,74 @@
 
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { internal, api } from "./_generated/api";
 
 const http = httpRouter();
+
+/**
+ * Public Recipes API Endpoint
+ * Returns all extracted recipes from all users for cross-project access
+ * GET /api/recipes - Returns all recipes (paginated)
+ * Query params: limit (default 50), cursor (timestamp for pagination)
+ */
+http.route({
+  path: "/api/recipes",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const url = new URL(request.url);
+      const limit = parseInt(url.searchParams.get("limit") || "50", 10);
+      const cursor = url.searchParams.get("cursor")
+        ? parseInt(url.searchParams.get("cursor")!, 10)
+        : undefined;
+
+      console.log("[PUBLIC RECIPES API] Fetching recipes with limit:", limit, "cursor:", cursor);
+
+      // Query all extracted recipes using the public API query
+      const result = await ctx.runQuery(api.discover.getAllExtractedRecipes, {
+        limit,
+        cursor,
+      });
+
+      console.log("[PUBLIC RECIPES API] Found", result.recipes.length, "recipes, hasMore:", result.hasMore);
+
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+        },
+      });
+    } catch (error) {
+      console.error("[PUBLIC RECIPES API] Error:", error);
+      return new Response(
+        JSON.stringify({ error: error instanceof Error ? error.message : "Failed to fetch recipes" }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+  }),
+});
+
+// CORS preflight for /api/recipes
+http.route({
+  path: "/api/recipes",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
+  }),
+});
 
 /**
  * Stripe Webhook Endpoint
