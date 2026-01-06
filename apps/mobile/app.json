@@ -1,0 +1,77 @@
+{
+  "expo": {
+    "name": "HealthyMama",
+    "slug": "healthymama",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "healthymama",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#fdf2f8"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.healthymama.app",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "HealthyMama uses your camera to show your cooking to the AI assistant for real-time guidance.",
+        "NSMicrophoneUsageDescription": "HealthyMama uses your microphone for voice-based cooking assistance.",
+        "NSPhotoLibraryUsageDescription": "HealthyMama accesses your photos to extract recipes from images."
+      }
+    },
+    "android": {
+      "package": "com.healthymama.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#fdf2f8"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-asset",
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow HealthyMama to access your camera for recipe extraction."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow HealthyMama to access your microphone for voice cooking assistance."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow HealthyMama to access your photos for recipe extraction."
+        }
+      ],
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "YOUR_EAS_PROJECT_ID"
+      }
+    }
+  }
+}

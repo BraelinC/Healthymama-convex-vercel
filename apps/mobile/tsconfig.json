@@ -1,0 +1,25 @@
+{
+  "extends": "@healthymama/tsconfig/react-native.json",
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@/*": ["./*"],
+      "@healthymama/convex": ["../../packages/convex/_generated/api"],
+      "@healthymama/convex/*": ["../../packages/convex/*"],
+      "@healthymama/shared": ["../../packages/shared/src"],
+      "@healthymama/shared/*": ["../../packages/shared/src/*"]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "../../packages/convex/**/*",
+    "../../packages/shared/**/*"
+  ]
+}
