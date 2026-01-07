@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
+import { verifyToken } from '@clerk/backend';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '@healthymama/convex';
 import {
@@ -25,6 +26,25 @@ import { extractRecipeWithOpenRouter } from '@healthymama/convex/lib/openRouterE
 
 // Initialize Convex client for blocklist updates
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+// Development Clerk credentials (for mobile app testing)
+const DEV_CLERK_SECRET_KEY = process.env.DEV_CLERK_SECRET_KEY || 'sk_test_TF6TOlbN0PKU6htQvR7Y2XWINbS0dyo12EdO41E0JS';
+
+/**
+ * Try to authenticate using development Clerk instance
+ * This allows mobile apps using dev Clerk to work with production API
+ */
+async function tryDevClerkAuth(token: string): Promise<string | null> {
+  try {
+    const result = await verifyToken(token, {
+      secretKey: DEV_CLERK_SECRET_KEY,
+    });
+    return result.sub || null;
+  } catch (error) {
+    console.log('[Auth] Dev Clerk verification failed:', error);
+    return null;
+  }
+}
 
 // Allow up to 60 seconds for extraction
 export const maxDuration = 60;
@@ -327,15 +347,22 @@ export async function POST(request: NextRequest) {
     // Log auth debug info
     const authHeader = request.headers.get('Authorization');
     console.log('[Recipe URL Extract] Auth header present:', !!authHeader);
-    console.log('[Recipe URL Extract] Auth header starts with Bearer:', authHeader?.startsWith('Bearer '));
 
-    // Validate authentication
+    // Try production Clerk auth first
     const authResult = await auth();
-    console.log('[Recipe URL Extract] Auth result:', { userId: authResult.userId, sessionId: authResult.sessionId });
+    let userId = authResult.userId;
+    console.log('[Recipe URL Extract] Production auth result:', { userId });
 
-    const { userId } = authResult;
+    // If production auth fails, try development Clerk auth
+    if (!userId && authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      console.log('[Recipe URL Extract] Trying dev Clerk auth...');
+      userId = await tryDevClerkAuth(token);
+      console.log('[Recipe URL Extract] Dev auth result:', { userId });
+    }
+
     if (!userId) {
-      console.log('[Recipe URL Extract] No userId - returning 401');
+      console.log('[Recipe URL Extract] No userId from either auth method - returning 401');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }

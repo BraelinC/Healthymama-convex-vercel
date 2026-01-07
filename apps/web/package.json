@@ -10,6 +10,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@clerk/backend": "^2.29.1",
     "@clerk/nextjs": "^6.35.2",
     "@elevenlabs/client": "^0.10.0",
     "@elevenlabs/react": "^0.10.0",
