@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { api } from "@workspace/convex/_generated/api";
+import { api } from "@healthymama/convex";
 import { XTerminal } from "./Terminal";
 
 interface SandboxPanelProps {
