@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
       // December 2025 version - should have fixes from earlier preview issues
       model: "models/gemini-2.5-flash-native-audio-preview-12-2025",
       websocketUrl:
-        "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent",
+        "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
       config: {
         systemInstruction,
         tools: [{ functionDeclarations: GEMINI_TOOLS }],

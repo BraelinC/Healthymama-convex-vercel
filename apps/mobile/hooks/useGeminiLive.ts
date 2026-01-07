@@ -32,7 +32,7 @@ interface UseGeminiLiveOptions {
 }
 
 const GEMINI_WS_URL =
-  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
+  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 const VIDEO_FRAME_INTERVAL_MS = 1000;
 
 export function useGeminiLive(options: UseGeminiLiveOptions) {
@@ -258,10 +258,35 @@ export function useGeminiLive(options: UseGeminiLiveOptions) {
   const handleWebSocketMessage = useCallback(
     async (event: { data?: string | ArrayBuffer | Blob }) => {
       try {
-        const data =
-          typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        console.log("[GeminiLive Mobile] Raw message received:", {
+          type: typeof event.data,
+          isBlob: event.data instanceof Blob,
+          isArrayBuffer: event.data instanceof ArrayBuffer,
+          preview: typeof event.data === "string" ? event.data.substring(0, 200) : "non-string",
+        });
+
+        let data: any;
+
+        // Handle different data types from WebSocket
+        if (typeof event.data === "string") {
+          data = JSON.parse(event.data);
+        } else if (event.data instanceof Blob) {
+          // Browser/some RN implementations send Blob
+          const text = await (event.data as Blob).text();
+          data = JSON.parse(text);
+        } else if (event.data instanceof ArrayBuffer) {
+          // Some implementations send ArrayBuffer
+          const text = new TextDecoder().decode(event.data);
+          data = JSON.parse(text);
+        } else {
+          console.log("[GeminiLive Mobile] Unknown data type, trying direct parse");
+          data = event.data;
+        }
+
+        console.log("[GeminiLive Mobile] Parsed message keys:", Object.keys(data || {}));
 
         if (data.setupComplete) {
+          console.log("[GeminiLive Mobile] Setup complete!");
           setState("listening");
           return;
         }
@@ -339,26 +364,44 @@ export function useGeminiLive(options: UseGeminiLiveOptions) {
         throw new Error(`Failed to get Gemini token: ${errorText}`);
       }
 
-      const { apiKey, model, config } = await tokenResponse.json() as {
+      const tokenData = await tokenResponse.json() as {
         apiKey: string;
         model: string;
+        websocketUrl?: string;
         config: { systemInstruction: string };
       };
+      const { apiKey, model, websocketUrl, config } = tokenData;
+      console.log("[GeminiLive Mobile] Token received, model:", model);
+
+      // Use websocketUrl from API if provided, otherwise use default
+      const wsUrl = websocketUrl || GEMINI_WS_URL;
+      console.log("[GeminiLive Mobile] Connecting to:", wsUrl);
 
       // Connect WebSocket (type assertion needed due to undici/browser WebSocket type conflicts)
-      const ws = new WebSocket(`${GEMINI_WS_URL}?key=${apiKey}`) as unknown as WebSocket;
+      const ws = new WebSocket(`${wsUrl}?key=${apiKey}`) as unknown as WebSocket;
       wsRef.current = ws;
 
       ws.onopen = () => {
+        console.log("[GeminiLive Mobile] WebSocket connected, sending setup...");
         const setupMessage = {
           setup: {
             model,
-            generationConfig: { responseModalities: ["AUDIO"] },
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName: "Aoede",
+                  },
+                },
+              },
+            },
             systemInstruction: {
               parts: [{ text: config.systemInstruction }],
             },
           },
         };
+        console.log("[GeminiLive Mobile] Setup message:", JSON.stringify(setupMessage).substring(0, 500));
         ws.send(JSON.stringify(setupMessage));
         startAudioRecording();
 
