@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd apps/web && bun run build",
+  "buildCommand": "turbo run build --filter=@healthymama/web",
   "outputDirectory": "apps/web/.next",
   "installCommand": "bun install",
   "framework": "nextjs"
