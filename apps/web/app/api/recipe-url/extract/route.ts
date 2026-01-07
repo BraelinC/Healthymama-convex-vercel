@@ -324,9 +324,18 @@ async function extractRecipeFromUrl(url: string): Promise<ParsedRecipe | null> {
 
 export async function POST(request: NextRequest) {
   try {
+    // Log auth debug info
+    const authHeader = request.headers.get('Authorization');
+    console.log('[Recipe URL Extract] Auth header present:', !!authHeader);
+    console.log('[Recipe URL Extract] Auth header starts with Bearer:', authHeader?.startsWith('Bearer '));
+
     // Validate authentication
-    const { userId } = await auth();
+    const authResult = await auth();
+    console.log('[Recipe URL Extract] Auth result:', { userId: authResult.userId, sessionId: authResult.sessionId });
+
+    const { userId } = authResult;
     if (!userId) {
+      console.log('[Recipe URL Extract] No userId - returning 401');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
