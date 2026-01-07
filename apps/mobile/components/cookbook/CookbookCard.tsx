@@ -39,6 +39,8 @@ export function CookbookCard({ name, recipes, onPress }: CookbookCardProps) {
                   cachePolicy="memory-disk"
                   transition={150}
                   placeholder={{ blurhash: "L6PZfSi_.AyE_3t7t7R**0o#DgR4" }}
+                  onError={(e) => console.log("[CookbookCard] Image failed to load:", recipe.imageUrl, e.error)}
+                  onLoad={() => console.log("[CookbookCard] Image loaded:", recipe.imageUrl?.substring(0, 50))}
                 />
               ) : (
                 <View style={styles.imagePlaceholder}>
@@ -71,7 +73,7 @@ export function CookbookCard({ name, recipes, onPress }: CookbookCardProps) {
   );
 }
 
-export function NewCookbookCard({ onPress }: { onPress: () => void }) {
+export function NewRecipeCard({ onPress }: { onPress: () => void }) {
   return (
     <TouchableOpacity style={styles.newCard} onPress={onPress} activeOpacity={0.8}>
       <LinearGradient
@@ -86,7 +88,7 @@ export function NewCookbookCard({ onPress }: { onPress: () => void }) {
             <Plus size={32} color="#ffffff" />
           </LinearGradient>
         </View>
-        <Text style={styles.newCardText}>New cookbook</Text>
+        <Text style={styles.newCardText}>New Recipe</Text>
       </LinearGradient>
     </TouchableOpacity>
   );

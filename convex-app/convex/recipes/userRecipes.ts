@@ -969,6 +969,58 @@ export const getAllUserRecipes = query({
 });
 
 /**
+ * List user recipes (auth-based - for mobile app)
+ * Uses authenticated user's ID from Clerk
+ */
+export const listUserRecipes = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return [];
+    }
+
+    const userId = identity.subject;
+
+    const recipes = await ctx.db
+      .query("userRecipes")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .order("desc")
+      .collect();
+
+    // Enrich and map to simpler format for mobile app
+    const enrichedRecipes = await Promise.all(
+      recipes.map((recipe) => enrichUserRecipeWithSource(ctx, recipe))
+    );
+
+    return enrichedRecipes.map((recipe) => {
+      // Prioritize Mux thumbnail (permanent) over stored imageUrl (may be expired CDN URL)
+      let imageUrl = recipe.imageUrl;
+
+      if (recipe.muxPlaybackId) {
+        // Generate Mux thumbnail URL - these don't expire
+        imageUrl = `https://image.mux.com/${recipe.muxPlaybackId}/thumbnail.jpg?width=400&height=400&fit_mode=crop`;
+      } else if (recipe.cachedImageUrl && !recipe.cachedImageUrl.includes('lookaside.fbsbx.com') && !recipe.cachedImageUrl.includes('cdninstagram.com')) {
+        // Use cached image if it's not an expired Instagram/Facebook CDN URL
+        imageUrl = recipe.cachedImageUrl;
+      } else if (recipe.imageUrl && (recipe.imageUrl.includes('lookaside.fbsbx.com') || recipe.imageUrl.includes('cdninstagram.com'))) {
+        // Instagram/Facebook CDN URLs expire - don't use them
+        imageUrl = undefined;
+      }
+
+      return {
+        _id: recipe._id,
+        name: recipe.title || "Untitled Recipe",
+        description: recipe.description || "",
+        imageUrl,
+        isFavorited: recipe.isFavorited,
+        createdAt: recipe.createdAt,
+      };
+    });
+  },
+});
+
+/**
  * Get user's favorited recipes
  */
 export const getFavoritedRecipes = query({

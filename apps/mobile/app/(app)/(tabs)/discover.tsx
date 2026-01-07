@@ -1,37 +1,227 @@
-import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, RefreshControl, Dimensions } from "react-native";
-import { useState, useCallback } from "react";
+import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, RefreshControl, Dimensions, Alert, Animated, ActivityIndicator } from "react-native";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
+import { useMutation } from "convex/react";
 import { Image } from "expo-image";
 import { api } from "@healthymama/convex";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Search, X, Clock, Sparkles } from "lucide-react-native";
+import { Search, X, Clock, Sparkles, Globe } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useAuth, useUser } from "@clerk/clerk-expo";
+import { WebSearchResultCard } from "../../../components/discover/WebSearchResultCard";
+import { ExtractionProgressModal } from "../../../components/discover/ExtractionProgressModal";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
 
+interface WebSearchResult {
+  title: string;
+  url: string;
+  description: string;
+}
+
+interface ExtractedRecipe {
+  title: string;
+  description?: string;
+  ingredients: string[];
+  instructions: string[];
+  imageUrl?: string;
+  servings?: string;
+  prep_time?: string;
+  cook_time?: string;
+  cuisine?: string;
+}
+
+type ExtractionStep = "fetching" | "extracting" | "formatting" | "done" | "error";
+
 export default function DiscoverScreen() {
   const router = useRouter();
+  const { getToken, isSignedIn } = useAuth();
+  const { user } = useUser();
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [isSearchingWeb, setIsSearchingWeb] = useState(false);
+  const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
 
-  // Get all extracted recipes from the database
+  // Extraction modal state
+  const [extractionUrl, setExtractionUrl] = useState<string | null>(null);
+  const [extractionStep, setExtractionStep] = useState<ExtractionStep>("fetching");
+  const [extractedRecipe, setExtractedRecipe] = useState<ExtractedRecipe | null>(null);
+  const [extractionError, setExtractionError] = useState<string | undefined>();
+
+  // Pulsing animation for search loading
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Get all extracted recipes from the database (shown when not searching)
   const recipesData = useQuery(api.discover.getAllExtractedRecipes, { limit: 50 });
-  const searchResults = useQuery(
-    api.discover.searchExtractedRecipes,
-    searchQuery.length > 0 ? { searchTerm: searchQuery, limit: 30 } : "skip"
-  );
+  const saveRecipe = useMutation(api.recipes.userRecipes.saveRecipeToUserCookbook);
+
+  // Perform web search when user presses Search
+  const handleSearch = async () => {
+    if (searchQuery.length < 2) return;
+
+    setIsSearchingWeb(true);
+    setHasSearched(true);
+    setWebResults([]);
+
+    // Start pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.5, duration: 600, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      ])
+    ).start();
+
+    try {
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+      if (!apiUrl) throw new Error("API URL not configured");
+
+      const response = await fetch(`${apiUrl}/api/brave-search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: `${searchQuery} recipe` }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.results) {
+        setWebResults(data.results);
+      } else {
+        setWebResults([]);
+      }
+    } catch (error) {
+      console.error("Web search error:", error);
+      setWebResults([]);
+    } finally {
+      setIsSearchingWeb(false);
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  };
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1000);
   }, []);
 
-  // Use search results if searching, otherwise use all recipes
-  const displayRecipes = searchQuery.length > 0
-    ? (searchResults || [])
-    : (recipesData?.recipes || []);
+  // Handle starting the extraction process
+  const handleImportRecipe = async (url: string) => {
+    // Check auth first
+    if (!isSignedIn) {
+      Alert.alert("Sign In Required", "Please sign in to import recipes.");
+      return;
+    }
+
+    // Reset and show modal
+    setExtractionUrl(url);
+    setExtractionStep("fetching");
+    setExtractedRecipe(null);
+    setExtractionError(undefined);
+
+    try {
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+      if (!apiUrl) throw new Error("API URL not configured");
+
+      // Get session token for API auth
+      const token = await getToken();
+      console.log("[Discover] Got auth token:", token ? "yes" : "no");
+
+      if (!token) {
+        throw new Error("Could not get authentication token");
+      }
+
+      // Step 1: Fetching
+      await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay for UX
+      setExtractionStep("extracting");
+
+      // Step 2: Extract recipe
+      const response = await fetch(`${apiUrl}/api/recipe-url/extract`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      console.log("[Discover] Extract response status:", response.status);
+
+      const data = await response.json();
+
+      if (data.success && data.recipe) {
+        // Step 3: Formatting
+        setExtractionStep("formatting");
+        await new Promise(resolve => setTimeout(resolve, 400)); // Brief delay for UX
+
+        // Done - show preview
+        setExtractedRecipe({
+          title: data.recipe.title,
+          description: data.recipe.description,
+          ingredients: data.recipe.ingredients || [],
+          instructions: data.recipe.instructions || [],
+          imageUrl: data.recipe.imageUrl,
+          servings: data.recipe.servings,
+          prep_time: data.recipe.prep_time,
+          cook_time: data.recipe.cook_time,
+          cuisine: data.recipe.cuisine,
+        });
+        setExtractionStep("done");
+      } else {
+        setExtractionError(data.error || "Could not extract recipe from this page.");
+        setExtractionStep("error");
+      }
+    } catch (error: any) {
+      console.error("Recipe extraction error:", error);
+      setExtractionError("Failed to extract recipe. Please try again.");
+      setExtractionStep("error");
+    }
+  };
+
+  // Handle saving the extracted recipe
+  const handleSaveRecipe = async () => {
+    if (!extractedRecipe || !user?.id || !extractionUrl) return;
+
+    try {
+      const recipeId = await saveRecipe({
+        userId: user.id,
+        recipeType: "custom",
+        cookbookCategory: "My Recipes",
+        title: extractedRecipe.title,
+        description: extractedRecipe.description || "",
+        ingredients: extractedRecipe.ingredients,
+        instructions: extractedRecipe.instructions,
+        servings: extractedRecipe.servings,
+        prep_time: extractedRecipe.prep_time,
+        cook_time: extractedRecipe.cook_time,
+        cuisine: extractedRecipe.cuisine,
+        imageUrl: extractedRecipe.imageUrl,
+      });
+
+      // Close modal and clear search
+      setExtractionUrl(null);
+      setSearchQuery("");
+      setWebResults([]);
+      setHasSearched(false);
+
+      // Navigate to saved recipe
+      router.push({ pathname: "/(app)/recipe/[id]", params: { id: recipeId } });
+    } catch (error: any) {
+      console.error("Recipe save error:", error);
+      Alert.alert("Error", "Failed to save recipe. Please try again.");
+    }
+  };
+
+  // Handle closing extraction modal
+  const handleCancelExtraction = () => {
+    setExtractionUrl(null);
+    setExtractedRecipe(null);
+    setExtractionError(undefined);
+  };
+
+  // Show local recipes when not searching
+  const displayRecipes = recipesData?.recipes || [];
 
   const handleRecipePress = (recipeId: string) => {
     // Navigate to extracted recipe route (different from userRecipes)
@@ -56,13 +246,17 @@ export default function DiscoverScreen() {
             <Search size={18} color="#9ca3af" style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search recipes..."
+              placeholder="Search any recipe..."
               placeholderTextColor="#9ca3af"
               value={searchQuery}
               onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery("")} style={styles.clearButton}>
+              <TouchableOpacity onPress={() => { setSearchQuery(""); setWebResults([]); setHasSearched(false); }} style={styles.clearButton}>
                 <X size={18} color="#9ca3af" />
               </TouchableOpacity>
             )}
@@ -76,80 +270,132 @@ export default function DiscoverScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ec4899" />
         }
+        keyboardShouldPersistTaps="handled"
       >
-        {searchQuery && (
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <Sparkles size={18} color="#ec4899" />
-              <Text style={styles.sectionTitle}>Search Results</Text>
-            </View>
-            <Text style={styles.resultCount}>{displayRecipes.length} recipes found</Text>
+        {/* Web Search Loading State */}
+        {isSearchingWeb && (
+          <View style={styles.searchingContainer}>
+            <Animated.View style={{ opacity: pulseAnim }}>
+              <View style={styles.searchingRow}>
+                <ActivityIndicator size="small" color="#ec4899" />
+                <Text style={styles.searchingText}>Searching the web...</Text>
+              </View>
+            </Animated.View>
           </View>
         )}
 
-        <View style={styles.grid}>
-          {displayRecipes.map((recipe: { _id: string; title?: string; imageUrl?: string; cook_time?: string; category?: string }) => (
-            <TouchableOpacity
-              key={recipe._id}
-              style={styles.recipeCard}
-              onPress={() => handleRecipePress(recipe._id)}
-              activeOpacity={0.9}
-            >
-              <View style={styles.imageContainer}>
-                {recipe.imageUrl ? (
-                  <Image
-                    source={{ uri: recipe.imageUrl }}
-                    style={styles.recipeImage}
-                    contentFit="cover"
-                    cachePolicy="memory-disk"
-                    transition={200}
-                  />
-                ) : (
-                  <View style={styles.imagePlaceholder}>
-                    <Text style={styles.placeholderEmoji}>🍽️</Text>
-                  </View>
-                )}
-                {recipe.cook_time && (
-                  <View style={styles.timeBadge}>
-                    <Clock size={12} color="#374151" />
-                    <Text style={styles.timeText}>{recipe.cook_time}</Text>
-                  </View>
-                )}
+        {/* Web Search Results */}
+        {hasSearched && !isSearchingWeb && webResults.length > 0 && (
+          <View style={styles.webResultsSection}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Globe size={18} color="#ec4899" />
+                <Text style={styles.sectionTitle}>Web Results</Text>
               </View>
-              <View style={styles.recipeInfo}>
-                <Text style={styles.recipeName} numberOfLines={2}>{recipe.title}</Text>
-                {recipe.category && (
-                  <View style={styles.tagsRow}>
-                    <View style={styles.tag}>
-                      <Text style={styles.tagText}>{recipe.category}</Text>
-                    </View>
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
+              <Text style={styles.resultCount}>{webResults.length} recipes found</Text>
+            </View>
 
-        {displayRecipes.length === 0 && !searchQuery && (
+            {webResults.map((result, index) => (
+              <WebSearchResultCard
+                key={result.url}
+                result={result}
+                index={index}
+                onPress={handleImportRecipe}
+              />
+            ))}
+          </View>
+        )}
+
+        {/* No Web Results */}
+        {hasSearched && !isSearchingWeb && webResults.length === 0 && (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🔍</Text>
-            <Text style={styles.emptyTitle}>Discover Recipes</Text>
+            <Text style={styles.emptyTitle}>No recipes found</Text>
             <Text style={styles.emptySubtitle}>
-              Browse recipes from the community
+              Try different keywords
             </Text>
           </View>
         )}
 
-        {displayRecipes.length === 0 && searchQuery && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>😕</Text>
-            <Text style={styles.emptyTitle}>No recipes found</Text>
-            <Text style={styles.emptySubtitle}>
-              Try a different search term
-            </Text>
-          </View>
+        {/* Local Recipes (shown when not searching) */}
+        {!hasSearched && !isSearchingWeb && (
+          <>
+            {displayRecipes.length > 0 && (
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionTitleRow}>
+                  <Sparkles size={18} color="#ec4899" />
+                  <Text style={styles.sectionTitle}>Popular Recipes</Text>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.grid}>
+              {displayRecipes.map((recipe: { _id: string; title?: string; imageUrl?: string; cook_time?: string; category?: string }) => (
+                <TouchableOpacity
+                  key={recipe._id}
+                  style={styles.recipeCard}
+                  onPress={() => handleRecipePress(recipe._id)}
+                  activeOpacity={0.9}
+                >
+                  <View style={styles.imageContainer}>
+                    {recipe.imageUrl ? (
+                      <Image
+                        source={{ uri: recipe.imageUrl }}
+                        style={styles.recipeImage}
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                        transition={200}
+                      />
+                    ) : (
+                      <View style={styles.imagePlaceholder}>
+                        <Text style={styles.placeholderEmoji}>🍽️</Text>
+                      </View>
+                    )}
+                    {recipe.cook_time && (
+                      <View style={styles.timeBadge}>
+                        <Clock size={12} color="#374151" />
+                        <Text style={styles.timeText}>{recipe.cook_time}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.recipeInfo}>
+                    <Text style={styles.recipeName} numberOfLines={2}>{recipe.title}</Text>
+                    {recipe.category && (
+                      <View style={styles.tagsRow}>
+                        <View style={styles.tag}>
+                          <Text style={styles.tagText}>{recipe.category}</Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {displayRecipes.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyEmoji}>🔍</Text>
+                <Text style={styles.emptyTitle}>Discover Recipes</Text>
+                <Text style={styles.emptySubtitle}>
+                  Search for any recipe to import from the web
+                </Text>
+              </View>
+            )}
+          </>
         )}
+
       </ScrollView>
+
+      {/* Extraction Progress Modal */}
+      <ExtractionProgressModal
+        visible={!!extractionUrl}
+        url={extractionUrl || ""}
+        currentStep={extractionStep}
+        recipe={extractedRecipe}
+        error={extractionError}
+        onSave={handleSaveRecipe}
+        onCancel={handleCancelExtraction}
+      />
     </SafeAreaView>
   );
 }
@@ -335,5 +581,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6b7280",
     textAlign: "center",
+  },
+  searchingContainer: {
+    paddingVertical: 40,
+    alignItems: "center",
+  },
+  searchingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  searchingText: {
+    fontSize: 15,
+    color: "#6b7280",
+    fontWeight: "500",
+  },
+  webResultsSection: {
+    marginBottom: 20,
   },
 });

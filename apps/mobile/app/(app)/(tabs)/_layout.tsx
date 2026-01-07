@@ -55,7 +55,6 @@ export default function TabLayout() {
         }}
       />
       {/* Hide old tabs */}
-      <Tabs.Screen name="cookbook/index" options={{ href: null }} />
       <Tabs.Screen name="create/index" options={{ href: null }} />
       <Tabs.Screen name="plan/index" options={{ href: null }} />
       <Tabs.Screen name="profile/index" options={{ href: null }} />

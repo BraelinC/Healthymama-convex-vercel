@@ -46,3 +46,6 @@ yarn-error.log*
 # Misc
 .replit
 package-lock.json
+
+.vercel
+.env*.local

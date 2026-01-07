@@ -9,7 +9,7 @@ export default function Index() {
   }
 
   if (isSignedIn) {
-    return <Redirect href="/(app)/(tabs)/cookbook" />;
+    return <Redirect href="/(app)/(tabs)" />;
   }
 
   return <Redirect href="/(auth)/login" />;

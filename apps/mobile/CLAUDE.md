@@ -2,28 +2,73 @@
 
 ## Expo Go Testing
 
-### URL for Android Emulator
-Always use `localhost` with ADB reverse port forwarding:
+### CRITICAL: Startup Procedure (Run in Order)
 
+**Step 1: Start the Android Emulator**
+```powershell
+# From any directory - starts Pixel_API_34 emulator
+Start-Process -FilePath "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -ArgumentList '-avd Pixel_API_34' -WindowStyle Hidden
+```
+
+**Step 2: Wait for emulator to boot, then set up ADB reverse**
+```powershell
+# Wait for device and set up port forwarding
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" wait-for-device
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" reverse tcp:8085 tcp:8085
+```
+
+**Step 3: Start Expo dev server**
 ```bash
-# Set up port forwarding (run once per session)
-adb reverse tcp:8081 tcp:8081
-
-# Or for custom port
-adb reverse tcp:8090 tcp:8090
+cd apps/mobile
+npx expo start --port 8085
 ```
 
-Then use this URL in Expo Go:
-```
-exp://localhost:8081
+**Step 4: Open Expo Go with the correct URL (run this command)**
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" shell am start -a android.intent.action.VIEW -d 'exp://localhost:8085' host.exp.exponent
 ```
 
-**DO NOT use** `exp://10.0.2.2:8081` - it causes HTTP protocol errors on Windows.
+This directly opens Expo Go and connects to `exp://localhost:8085`.
+
+### Quick One-Liner (PowerShell)
+```powershell
+# Start emulator, wait, set up ADB reverse, start Expo
+Start-Process "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -ArgumentList '-avd Pixel_API_34' -WindowStyle Hidden; Start-Sleep 20; & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" reverse tcp:8085 tcp:8085; cd C:\HealthyMama\Healthymama-convex-vercel\apps\mobile; npx expo start --port 8085
+```
+
+### Why Port 8085?
+We use port 8085 to avoid conflicts with other services. Always use this port consistently.
+
+### URL Rules
+- **USE:** `exp://localhost:8085` (with ADB reverse)
+- **DO NOT use:** `exp://10.0.2.2:8085` - causes HTTP protocol errors on Windows
+- **DO NOT use:** `exp://192.168.x.x:8085` - causes bundling to hang
+
+### Why localhost Works But IP Address Doesn't
+
+**ADB Reverse (localhost) - WORKS:**
+```
+Emulator:8085 → USB/ADB Tunnel → Host:8085 → Metro Bundler
+```
+- Direct tunnel through USB connection
+- Bypasses all network complexity
+- No firewall issues (ADB is already trusted)
+- Fast and reliable for large bundles (5-10MB)
+
+**IP Address (192.168.x.x) - FAILS:**
+```
+Emulator → Virtual Network → NAT → Windows Firewall → WiFi Stack → Host → Metro
+```
+- Goes through emulator's virtual network adapter
+- Windows Firewall blocks incoming connections on custom ports
+- NAT translation adds overhead and potential packet loss
+- Metro's chunked HTTP responses can timeout or get corrupted
+- Result: "Stuck at bundling" - Expo Go waits for data that never arrives
 
 ### Starting the Dev Server
 ```bash
 cd apps/mobile
-npx expo start --clear
+npx expo start --port 8085 --clear
 ```
 
 ## Configuration Rules

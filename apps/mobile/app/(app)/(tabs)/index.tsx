@@ -1,20 +1,16 @@
-import { View, Text, ScrollView, StyleSheet, RefreshControl, Modal, TextInput, TouchableOpacity } from "react-native";
+import { View, ScrollView, StyleSheet, RefreshControl } from "react-native";
 import { useState, useCallback } from "react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
-import { useMutation } from "convex/react";
 import { api } from "@healthymama/convex";
-import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { X } from "lucide-react-native";
 import Header from "../../../components/shared/Header";
-import { CookbookCard, NewCookbookCard } from "../../../components/cookbook/CookbookCard";
+import { CookbookCard, NewRecipeCard } from "../../../components/cookbook/CookbookCard";
 import { RecipesListModal } from "../../../components/cookbook/RecipesListModal";
+import { AddRecipeModal } from "../../../components/recipe/AddRecipeModal";
 
 export default function HomeScreen() {
-  const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
-  const [showNewCookbook, setShowNewCookbook] = useState(false);
-  const [newCookbookName, setNewCookbookName] = useState("");
+  const [showAddRecipe, setShowAddRecipe] = useState(false);
   const [showRecipesList, setShowRecipesList] = useState(false);
   const [selectedCookbook, setSelectedCookbook] = useState<{ id: string; name: string } | null>(null);
 
@@ -40,14 +36,14 @@ export default function HomeScreen() {
     setShowRecipesList(true);
   };
 
-  const handleNewCookbook = () => {
-    setShowNewCookbook(true);
+  const handleAddRecipe = () => {
+    setShowAddRecipe(true);
   };
 
-  const handleCreateCookbook = () => {
-    // TODO: Create cookbook mutation
-    setShowNewCookbook(false);
-    setNewCookbookName("");
+  const handleImageSelected = (imageUri: string, base64: string) => {
+    // Recipe was extracted from image - it's already saved by the modal
+    // Just close and let Convex update the list
+    console.log("Recipe extracted from image");
   };
 
   return (
@@ -62,7 +58,7 @@ export default function HomeScreen() {
         }
       >
         <View style={styles.grid}>
-          <NewCookbookCard onPress={handleNewCookbook} />
+          <NewRecipeCard onPress={handleAddRecipe} />
 
           {cookbooks.map((cookbook) => (
             <CookbookCard
@@ -75,41 +71,12 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-      {/* New Cookbook Modal */}
-      <Modal
-        visible={showNewCookbook}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowNewCookbook(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Cookbook</Text>
-              <TouchableOpacity onPress={() => setShowNewCookbook(false)}>
-                <X size={24} color="#6b7280" />
-              </TouchableOpacity>
-            </View>
-
-            <TextInput
-              style={styles.input}
-              placeholder="Cookbook name"
-              placeholderTextColor="#9ca3af"
-              value={newCookbookName}
-              onChangeText={setNewCookbookName}
-              autoFocus
-            />
-
-            <TouchableOpacity
-              style={[styles.createButton, !newCookbookName && styles.createButtonDisabled]}
-              onPress={handleCreateCookbook}
-              disabled={!newCookbookName}
-            >
-              <Text style={styles.createButtonText}>Create Cookbook</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      {/* Add Recipe Modal */}
+      <AddRecipeModal
+        visible={showAddRecipe}
+        onClose={() => setShowAddRecipe(false)}
+        onImageSelected={handleImageSelected}
+      />
 
       {/* Recipes List Modal */}
       <RecipesListModal
@@ -145,50 +112,5 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 16,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: "#ffffff",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1f2937",
-  },
-  input: {
-    backgroundColor: "#f3f4f6",
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: "#1f2937",
-    marginBottom: 16,
-  },
-  createButton: {
-    backgroundColor: "#ec4899",
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-  },
-  createButtonDisabled: {
-    backgroundColor: "#d1d5db",
-  },
-  createButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
   },
 });
