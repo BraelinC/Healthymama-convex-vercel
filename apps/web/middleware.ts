@@ -9,12 +9,13 @@ const isPublicRoute = createRouteMatcher([
   '/api/webhook(.*)',
   '/api/cron(.*)',
   '/api/mikey/arshare/callback(.*)',
+  '/api/scrape-recipe(.*)',
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
-  // Skip auth for public routes
-  if (isPublicRoute(request)) {
-    return;
+  // Protect non-public routes - this validates Bearer tokens from mobile
+  if (!isPublicRoute(request)) {
+    await auth.protect();
   }
 });
 
