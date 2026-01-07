@@ -1,14 +1,18 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from "react-native";
-import { useState } from "react";
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
+import { useState, useRef } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import { Image } from "expo-image";
+import { Video, ResizeMode } from "expo-av";
 import { useUser } from "@clerk/clerk-expo";
 import { api } from "@healthymama/convex";
-import { ArrowLeft, Clock, Users } from "lucide-react-native";
+import { ArrowLeft, Clock, Users, Play, Pause, Volume2, VolumeX } from "lucide-react-native";
 import { Id } from "@healthymama/convex/dataModel";
 import { CookingAssistantFAB } from "@/components/recipe/CookingAssistantFAB";
+import { LinearGradient } from "expo-linear-gradient";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -16,10 +20,39 @@ export default function RecipeDetailScreen() {
   const { user } = useUser();
   const [activeTab, setActiveTab] = useState<"ingredients" | "instructions">("ingredients");
 
+  // Video playback state
+  const videoRef = useRef<Video>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [showControls, setShowControls] = useState(true);
+
   const recipe = useQuery(
     api.recipes.userRecipes.getUserRecipeById,
     id ? { recipeId: id as Id<"userRecipes"> } : "skip"
   );
+
+  // Generate MUX stream URL
+  const muxStreamUrl = recipe?.muxPlaybackId
+    ? `https://stream.mux.com/${recipe.muxPlaybackId}.m3u8`
+    : null;
+
+  const handlePlayPause = async () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        await videoRef.current.pauseAsync();
+      } else {
+        await videoRef.current.playAsync();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleMuteToggle = async () => {
+    if (videoRef.current) {
+      await videoRef.current.setIsMutedAsync(!isMuted);
+      setIsMuted(!isMuted);
+    }
+  };
 
   if (!recipe) {
     return (
@@ -38,14 +71,65 @@ export default function RecipeDetailScreen() {
           <ArrowLeft size={24} color="#1f2937" />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          {recipe.name}
+          {recipe.title || recipe.name}
         </Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Hero Image */}
-        {recipe.imageUrl && (
+        {/* Hero Media - Video or Image */}
+        {muxStreamUrl ? (
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => setShowControls(!showControls)}
+            style={styles.videoContainer}
+          >
+            <Video
+              ref={videoRef}
+              source={{ uri: muxStreamUrl }}
+              style={styles.video}
+              resizeMode={ResizeMode.CONTAIN}
+              shouldPlay={false}
+              isLooping
+              isMuted={isMuted}
+              posterSource={recipe.imageUrl ? { uri: recipe.imageUrl } : undefined}
+              usePoster
+              posterStyle={styles.videoPoster}
+              onPlaybackStatusUpdate={(status) => {
+                if (status.isLoaded) {
+                  setIsPlaying(status.isPlaying);
+                }
+              }}
+            />
+            {/* Video Controls Overlay */}
+            {showControls && (
+              <LinearGradient
+                colors={["transparent", "rgba(0,0,0,0.6)"]}
+                style={styles.videoOverlay}
+              >
+                <View style={styles.videoControls}>
+                  <TouchableOpacity onPress={handlePlayPause} style={styles.playButton}>
+                    {isPlaying ? (
+                      <Pause size={32} color="#ffffff" fill="#ffffff" />
+                    ) : (
+                      <Play size={32} color="#ffffff" fill="#ffffff" />
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleMuteToggle} style={styles.muteButton}>
+                    {isMuted ? (
+                      <VolumeX size={24} color="#ffffff" />
+                    ) : (
+                      <Volume2 size={24} color="#ffffff" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+                {recipe.instagramUsername && (
+                  <Text style={styles.instagramCredit}>@{recipe.instagramUsername}</Text>
+                )}
+              </LinearGradient>
+            )}
+          </TouchableOpacity>
+        ) : recipe.imageUrl ? (
           <Image
             source={{ uri: recipe.imageUrl }}
             style={styles.heroImage}
@@ -53,29 +137,32 @@ export default function RecipeDetailScreen() {
             cachePolicy="memory-disk"
             transition={200}
           />
-        )}
+        ) : null}
 
-        {/* Title Section */}
-        <View style={styles.titleSection}>
-          <Text style={styles.title}>{recipe.name}</Text>
+        {/* Recipe Info Card - Title, Meta, Description */}
+        <View style={styles.infoCard}>
+          {/* Title */}
+          <Text style={styles.title}>{recipe.title || recipe.name}</Text>
+
+          {/* Meta Row */}
+          <View style={styles.metaRow}>
+            {(recipe.prep_time || recipe.cook_time) && (
+              <View style={styles.metaBadge}>
+                <Clock size={14} color="#6b7280" />
+                <Text style={styles.metaText}>{recipe.prep_time || recipe.cook_time}</Text>
+              </View>
+            )}
+            {recipe.servings && (
+              <View style={styles.metaBadge}>
+                <Users size={14} color="#6b7280" />
+                <Text style={styles.metaText}>{recipe.servings}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Description */}
           {recipe.description && (
             <Text style={styles.description}>{recipe.description}</Text>
-          )}
-        </View>
-
-        {/* Meta Badges */}
-        <View style={styles.metaRow}>
-          {recipe.prepTime && (
-            <View style={styles.metaBadge}>
-              <Clock size={14} color="#6b7280" />
-              <Text style={styles.metaText}>{recipe.prepTime}</Text>
-            </View>
-          )}
-          {recipe.servings && (
-            <View style={styles.metaBadge}>
-              <Users size={14} color="#6b7280" />
-              <Text style={styles.metaText}>{recipe.servings}</Text>
-            </View>
           )}
         </View>
 
@@ -136,7 +223,7 @@ export default function RecipeDetailScreen() {
         <CookingAssistantFAB
           userId={user.id}
           recipe={{
-            title: recipe.name,
+            title: recipe.title || recipe.name || "Recipe",
             ingredients: recipe.ingredients || [],
             instructions: recipe.instructions || [],
           }}
@@ -188,29 +275,83 @@ const styles = StyleSheet.create({
     height: 220,
     backgroundColor: "#f3f4f6",
   },
-  titleSection: {
-    backgroundColor: "#ffffff",
-    padding: 20,
+  videoContainer: {
+    width: "100%",
+    height: 400,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  video: {
+    width: "100%",
+    height: "100%",
+  },
+  videoPoster: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  videoOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+    justifyContent: "flex-end",
+    paddingHorizontal: 16,
     paddingBottom: 16,
   },
+  videoControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  playButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  muteButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  instagramCredit: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 8,
+    opacity: 0.9,
+  },
+  infoCard: {
+    backgroundColor: "#ffffff",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "700",
     color: "#1f2937",
+    marginBottom: 12,
   },
   description: {
-    fontSize: 14,
+    fontSize: 15,
     color: "#6b7280",
-    marginTop: 8,
-    lineHeight: 20,
+    lineHeight: 22,
+    marginTop: 12,
   },
   metaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    backgroundColor: "#ffffff",
   },
   metaBadge: {
     flexDirection: "row",

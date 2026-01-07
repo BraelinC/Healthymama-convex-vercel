@@ -11,6 +11,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useAuth, useUser } from "@clerk/clerk-expo";
 import { WebSearchResultCard } from "../../../components/discover/WebSearchResultCard";
 import { ExtractionProgressModal } from "../../../components/discover/ExtractionProgressModal";
+import { CookbookSelectionSheet } from "../../../components/cookbook/CookbookSelectionSheet";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
@@ -50,6 +51,10 @@ export default function DiscoverScreen() {
   const [extractionStep, setExtractionStep] = useState<ExtractionStep>("fetching");
   const [extractedRecipe, setExtractedRecipe] = useState<ExtractedRecipe | null>(null);
   const [extractionError, setExtractionError] = useState<string | undefined>();
+
+  // Cookbook selection state
+  const [showCookbookSelection, setShowCookbookSelection] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Pulsing animation for search loading
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -179,15 +184,24 @@ export default function DiscoverScreen() {
     }
   };
 
-  // Handle saving the extracted recipe
-  const handleSaveRecipe = async () => {
-    if (!extractedRecipe || !user?.id || !extractionUrl) return;
+  // Handle showing cookbook selection when user wants to save
+  const handleSaveRecipe = () => {
+    if (!extractedRecipe) return;
+    // Close extraction modal and show cookbook selection
+    setExtractionUrl(null);
+    setShowCookbookSelection(true);
+  };
 
+  // Handle saving recipe to selected cookbook
+  const handleSelectCookbook = async (cookbookId: string, cookbookName: string) => {
+    if (!extractedRecipe || !user?.id || isSaving) return;
+
+    setIsSaving(true);
     try {
       const recipeId = await saveRecipe({
         userId: user.id,
         recipeType: "custom",
-        cookbookCategory: "My Recipes",
+        cookbookCategory: cookbookId, // Use lowercase ID to match database convention
         title: extractedRecipe.title,
         description: extractedRecipe.description || "",
         ingredients: extractedRecipe.ingredients,
@@ -200,17 +214,26 @@ export default function DiscoverScreen() {
       });
 
       // Close modal and clear search
-      setExtractionUrl(null);
+      setShowCookbookSelection(false);
+      setExtractedRecipe(null);
       setSearchQuery("");
       setWebResults([]);
       setHasSearched(false);
+      setIsSaving(false);
 
       // Navigate to saved recipe
       router.push({ pathname: "/(app)/recipe/[id]", params: { id: recipeId } });
     } catch (error: any) {
       console.error("Recipe save error:", error);
+      setIsSaving(false);
       Alert.alert("Error", "Failed to save recipe. Please try again.");
     }
+  };
+
+  // Handle creating a new cookbook and saving recipe to it
+  const handleCreateCookbook = async (cookbookName: string) => {
+    // Save to the new cookbook name
+    await handleSelectCookbook(cookbookName.toLowerCase().replace(/\s+/g, "-"), cookbookName);
   };
 
   // Handle closing extraction modal
@@ -395,6 +418,18 @@ export default function DiscoverScreen() {
         error={extractionError}
         onSave={handleSaveRecipe}
         onCancel={handleCancelExtraction}
+      />
+
+      {/* Cookbook Selection Sheet */}
+      <CookbookSelectionSheet
+        visible={showCookbookSelection}
+        recipe={extractedRecipe}
+        onSelectCookbook={handleSelectCookbook}
+        onCreateCookbook={handleCreateCookbook}
+        onClose={() => {
+          setShowCookbookSelection(false);
+          setExtractedRecipe(null);
+        }}
       />
     </SafeAreaView>
   );

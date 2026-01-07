@@ -1,5 +1,5 @@
 import { View, ScrollView, StyleSheet, RefreshControl } from "react-native";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useQuery } from "convex-helpers/react/cache/hooks";
 import { api } from "@healthymama/convex";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -8,31 +8,73 @@ import { CookbookCard, NewRecipeCard } from "../../../components/cookbook/Cookbo
 import { RecipesListModal } from "../../../components/cookbook/RecipesListModal";
 import { AddRecipeModal } from "../../../components/recipe/AddRecipeModal";
 
+// Default cookbook categories with display order (lowercase to match database values)
+const COOKBOOK_ORDER = ["favorites", "breakfast", "lunch", "dinner", "dessert", "snacks"];
+
+// Display names for categories
+const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
+  favorites: "Favorites",
+  breakfast: "Breakfast",
+  lunch: "Lunch",
+  dinner: "Dinner",
+  dessert: "Dessert",
+  snacks: "Snacks",
+  uncategorized: "My Recipes",
+};
+
 export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showAddRecipe, setShowAddRecipe] = useState(false);
   const [showRecipesList, setShowRecipesList] = useState(false);
-  const [selectedCookbook, setSelectedCookbook] = useState<{ id: string; name: string } | null>(null);
+  const [selectedCookbook, setSelectedCookbook] = useState<{ id: string; name: string; recipes: any[] } | null>(null);
 
   const recipes = useQuery(api.recipes.userRecipes.listUserRecipes);
 
-  // Group recipes by cookbook/category (for now, show all in "My Recipes")
-  const cookbooks = [
-    {
-      id: "my-recipes",
-      name: "My Recipes",
-      recipes: recipes || [],
-    },
-  ];
+  // Group recipes by cookbookCategory
+  const cookbooks = useMemo(() => {
+    if (!recipes || recipes.length === 0) return [];
+
+    // Group by category (lowercase)
+    const grouped: Record<string, any[]> = {};
+
+    for (const recipe of recipes) {
+      // Database stores lowercase categories like "favorites", "breakfast", etc.
+      const category = recipe.cookbookCategory || "uncategorized";
+      if (!grouped[category]) {
+        grouped[category] = [];
+      }
+      grouped[category].push(recipe);
+    }
+
+    // Convert to array with display names
+    const result = Object.entries(grouped).map(([categoryId, recipeList]) => ({
+      id: categoryId,
+      name: CATEGORY_DISPLAY_NAMES[categoryId] || categoryId.charAt(0).toUpperCase() + categoryId.slice(1),
+      recipes: recipeList,
+    }));
+
+    // Sort: known categories first in order, then custom ones alphabetically
+    result.sort((a, b) => {
+      const aIndex = COOKBOOK_ORDER.indexOf(a.id);
+      const bIndex = COOKBOOK_ORDER.indexOf(b.id);
+
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return result;
+  }, [recipes]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1000);
   }, []);
 
-  const handleCookbookPress = (cookbookId: string, cookbookName: string) => {
+  const handleCookbookPress = (cookbook: { id: string; name: string; recipes: any[] }) => {
     // Show recipes list modal instead of navigating
-    setSelectedCookbook({ id: cookbookId, name: cookbookName });
+    setSelectedCookbook(cookbook);
     setShowRecipesList(true);
   };
 
@@ -65,7 +107,7 @@ export default function HomeScreen() {
               key={cookbook.id}
               name={cookbook.name}
               recipes={cookbook.recipes}
-              onPress={() => handleCookbookPress(cookbook.id, cookbook.name)}
+              onPress={() => handleCookbookPress(cookbook)}
             />
           ))}
         </View>
@@ -86,11 +128,7 @@ export default function HomeScreen() {
           setSelectedCookbook(null);
         }}
         title={selectedCookbook?.name || "Recipes"}
-        recipes={
-          selectedCookbook?.id === "my-recipes"
-            ? (recipes || [])
-            : []
-        }
+        recipes={selectedCookbook?.recipes || []}
       />
     </SafeAreaView>
   );

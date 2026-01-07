@@ -7,10 +7,30 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { verifyToken } from "@clerk/backend";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@healthymama/convex";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+// Development Clerk credentials (for mobile app testing)
+const DEV_CLERK_SECRET_KEY = process.env.DEV_CLERK_SECRET_KEY || 'sk_test_TF6TOlbN0PKU6htQvR7Y2XWINbS0dyo12EdO41E0JS';
+
+/**
+ * Try to authenticate using development Clerk instance
+ * This allows mobile apps using dev Clerk to work with production API
+ */
+async function tryDevClerkAuth(token: string): Promise<string | null> {
+  try {
+    const result = await verifyToken(token, {
+      secretKey: DEV_CLERK_SECRET_KEY,
+    });
+    return result.sub || null;
+  } catch (error) {
+    console.log('[Gemini Token] Dev Clerk verification failed:', error);
+    return null;
+  }
+}
 
 // Gemini Live tool definitions for cooking assistant
 const GEMINI_TOOLS = [
@@ -173,8 +193,18 @@ Be helpful, be safe, and make cooking fun!`;
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Authenticate user
-    const { userId } = await auth();
+    // 1. Authenticate user (try production first, then dev Clerk)
+    const authHeader = request.headers.get('Authorization');
+    const authResult = await auth();
+    let userId = authResult.userId;
+
+    // If production auth fails, try development Clerk auth
+    if (!userId && authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      console.log('[Gemini Token] Trying dev Clerk auth...');
+      userId = await tryDevClerkAuth(token);
+    }
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -220,9 +250,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       mode: "api_key",
       apiKey: googleApiKey,
+      // December 2025 version - should have fixes from earlier preview issues
       model: "models/gemini-2.5-flash-native-audio-preview-12-2025",
       websocketUrl:
-        "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
+        "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent",
       config: {
         systemInstruction,
         tools: [{ functionDeclarations: GEMINI_TOOLS }],

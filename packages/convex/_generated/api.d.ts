@@ -74,7 +74,6 @@ import type * as recipes_recipeRetrieval from "../recipes/recipeRetrieval.js";
 import type * as recipes_recipes from "../recipes/recipes.js";
 import type * as recipes_userRecipes from "../recipes/userRecipes.js";
 import type * as retrieval from "../retrieval.js";
-import type * as sandbox from "../sandbox.js";
 import type * as sharedCookbooks from "../sharedCookbooks.js";
 import type * as sharing from "../sharing.js";
 import type * as stories from "../stories.js";
@@ -168,7 +167,6 @@ declare const fullApi: ApiFromModules<{
   "recipes/recipes": typeof recipes_recipes;
   "recipes/userRecipes": typeof recipes_userRecipes;
   retrieval: typeof retrieval;
-  sandbox: typeof sandbox;
   sharedCookbooks: typeof sharedCookbooks;
   sharing: typeof sharing;
   stories: typeof stories;

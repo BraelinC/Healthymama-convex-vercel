@@ -1,6 +1,6 @@
 import { View, Text, Modal, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
 import { Image } from "expo-image";
-import { X, Clock, Users } from "lucide-react-native";
+import { X, Clock, Users, Play } from "lucide-react-native";
 import { useRouter } from "expo-router";
 
 const { height } = Dimensions.get("window");
@@ -13,6 +13,7 @@ interface Recipe {
   prepTime?: string;
   servings?: string;
   ingredients?: string[];
+  muxPlaybackId?: string; // Video recipes have this
 }
 
 interface RecipesListModalProps {
@@ -81,13 +82,21 @@ export function RecipesListModal({ visible, onClose, title, recipes }: RecipesLi
                 >
                   <View style={styles.recipeImageContainer}>
                     {recipe.imageUrl ? (
-                      <Image
-                        source={{ uri: recipe.imageUrl }}
-                        style={styles.recipeImage}
-                        contentFit="cover"
-                        cachePolicy="memory-disk"
-                        transition={150}
-                      />
+                      <>
+                        <Image
+                          source={{ uri: recipe.imageUrl }}
+                          style={styles.recipeImage}
+                          contentFit="cover"
+                          cachePolicy="memory-disk"
+                          transition={150}
+                        />
+                        {/* Video indicator for MUX videos */}
+                        {recipe.muxPlaybackId && (
+                          <View style={styles.videoIndicator}>
+                            <Play size={16} color="#ffffff" fill="#ffffff" />
+                          </View>
+                        )}
+                      </>
                     ) : (
                       <View style={styles.imagePlaceholder}>
                         <Text style={styles.placeholderEmoji}>🍽️</Text>
@@ -222,6 +231,17 @@ const styles = StyleSheet.create({
   recipeImage: {
     width: "100%",
     height: "100%",
+  },
+  videoIndicator: {
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    borderRadius: 12,
+    width: 28,
+    height: 28,
+    justifyContent: "center",
+    alignItems: "center",
   },
   imagePlaceholder: {
     width: "100%",

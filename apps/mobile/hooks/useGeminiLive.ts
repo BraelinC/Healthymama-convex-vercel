@@ -32,7 +32,7 @@ interface UseGeminiLiveOptions {
 }
 
 const GEMINI_WS_URL =
-  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
 const VIDEO_FRAME_INTERVAL_MS = 1000;
 
 export function useGeminiLive(options: UseGeminiLiveOptions) {

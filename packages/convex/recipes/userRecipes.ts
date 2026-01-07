@@ -949,7 +949,13 @@ export const listUserRecipes = query({
         description: recipe.description || "",
         imageUrl,
         isFavorited: recipe.isFavorited,
+        cookbookCategory: recipe.cookbookCategory,
         createdAt: recipe.createdAt,
+        // Video fields for MUX playback
+        muxPlaybackId: recipe.muxPlaybackId,
+        muxAssetId: recipe.muxAssetId,
+        videoSegments: recipe.videoSegments,
+        instagramUsername: recipe.instagramUsername,
       };
     });
   },

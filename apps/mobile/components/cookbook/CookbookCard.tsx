@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from "react-native";
 import { Image } from "expo-image";
-import { Book, Plus } from "lucide-react-native";
+import { Book, Plus, Play } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");
@@ -10,6 +10,7 @@ interface Recipe {
   _id: string;
   name: string;
   imageUrl?: string;
+  muxPlaybackId?: string; // Video recipes have this
 }
 
 interface CookbookCardProps {
@@ -32,16 +33,22 @@ export function CookbookCard({ name, recipes, onPress }: CookbookCardProps) {
           recipeImages.map((recipe, index) => (
             <View key={recipe._id} style={styles.imageCell}>
               {recipe.imageUrl ? (
-                <Image
-                  source={{ uri: recipe.imageUrl }}
-                  style={styles.image}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  transition={150}
-                  placeholder={{ blurhash: "L6PZfSi_.AyE_3t7t7R**0o#DgR4" }}
-                  onError={(e) => console.log("[CookbookCard] Image failed to load:", recipe.imageUrl, e.error)}
-                  onLoad={() => console.log("[CookbookCard] Image loaded:", recipe.imageUrl?.substring(0, 50))}
-                />
+                <>
+                  <Image
+                    source={{ uri: recipe.imageUrl }}
+                    style={styles.image}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    transition={150}
+                    placeholder={{ blurhash: "L6PZfSi_.AyE_3t7t7R**0o#DgR4" }}
+                  />
+                  {/* Video indicator for MUX videos */}
+                  {recipe.muxPlaybackId && (
+                    <View style={styles.videoIndicator}>
+                      <Play size={12} color="#ffffff" fill="#ffffff" />
+                    </View>
+                  )}
+                </>
               ) : (
                 <View style={styles.imagePlaceholder}>
                   <Book size={24} color="#d1d5db" />
@@ -119,6 +126,17 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     height: "100%",
+  },
+  videoIndicator: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
   },
   imagePlaceholder: {
     width: "100%",
