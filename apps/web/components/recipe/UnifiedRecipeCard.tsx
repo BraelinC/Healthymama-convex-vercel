@@ -31,10 +31,10 @@ function selectPriorityTags(
   const allDietTags = [
     ...(recipe.dietTags || []),
     ...(recipe.enrichedMetadata?.dietTags || []),
-  ].filter((tag) => tag.toLowerCase() !== "gemini");
+  ].filter((tag): tag is string => typeof tag === 'string' && tag.toLowerCase() !== "gemini");
 
   const allMealTypes = (recipe.enrichedMetadata?.mealTypes || []).filter(
-    (tag) => tag.toLowerCase() !== "gemini"
+    (tag): tag is string => typeof tag === 'string' && tag.toLowerCase() !== "gemini"
   );
 
   // Separate meal types from diet types in dietTags

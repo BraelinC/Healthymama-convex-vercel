@@ -96,7 +96,7 @@ export default function CommunityPage({ params }: CommunityPageProps) {
     const targetTags = filterTagMap[activeFilter] || [];
 
     return communityRecipes.filter(recipe =>
-      recipe.dietTags?.some(tag =>
+      recipe.dietTags?.some(tag => tag &&
         targetTags.some(filterTag =>
           tag.toLowerCase().includes(filterTag.toLowerCase())
         )
